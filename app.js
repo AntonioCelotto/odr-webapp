@@ -43,6 +43,33 @@ const validationCodes = [
   },
 ];
 
+let promotions = [
+  {
+    id: 'promo-pazienti',
+    name: 'Convenzione pazienti ODR',
+    audience: 'Pazienti ospedalieri',
+    coupon: 'ODR10',
+    status: 'Attiva',
+    rule: 'Sconto dedicato dopo validazione codice',
+  },
+  {
+    id: 'promo-birthday',
+    name: 'Coupon compleanno',
+    audience: 'Utenti fidelity',
+    coupon: 'AUGURIODR',
+    status: 'Bozza',
+    rule: 'Invio automatico nel mese del compleanno',
+  },
+  {
+    id: 'promo-centri',
+    name: 'Campagna centri estetici',
+    audience: 'Centri e punti vendita',
+    coupon: 'CENTRI20',
+    status: 'Programmabile',
+    rule: 'Promo per riordino su WooCommerce',
+  },
+];
+
 let networkRows = [
   {
     id: 'dist-nord',
@@ -86,7 +113,7 @@ let networkRows = [
   },
 ];
 
-const reportOrders = [
+let reportOrders = [
   {
     id: 'WC-1024',
     date: '2026-07-08',
@@ -117,6 +144,16 @@ const reportOrders = [
     distributor: 'Distribuzione Centro',
     status: 'processing',
   },
+];
+
+const permissions = [
+  ['Dashboard', true, true, true, true, false],
+  ['Validazione codici', true, false, false, false, true],
+  ['Gestione codici', true, false, false, false, false],
+  ['Rete commerciale', true, true, true, false, false],
+  ['Promozioni', true, true, false, true, true],
+  ['Report vendite', true, true, true, false, false],
+  ['Impostazioni WordPress', true, false, false, false, false],
 ];
 
 let validatedCode = null;
@@ -161,6 +198,22 @@ function renderCodes() {
     .join('');
 }
 
+function renderPromotions() {
+  byId('promotion-list').innerHTML = promotions
+    .map((promo) => `
+      <article class="promo-card">
+        <div>
+          <span>${promo.audience}</span>
+          <h3>${promo.name}</h3>
+        </div>
+        <strong>${promo.coupon}</strong>
+        <p>${promo.rule}</p>
+        <em class="state ${promo.status === 'Attiva' ? 'ok' : 'off'}">${promo.status}</em>
+      </article>
+    `)
+    .join('');
+}
+
 function renderNetwork() {
   const query = byId('network-search').value.trim().toLowerCase();
   const rows = networkRows.filter((row) => {
@@ -198,6 +251,34 @@ function renderOrders() {
         <td>${order.distributor || '-'}</td>
         <td>${money(order.amount)}</td>
         <td><span class="state ok">${order.status}</span></td>
+      </tr>
+    `)
+    .join('');
+  renderReportSummary();
+}
+
+function renderReportSummary() {
+  const total = reportOrders.reduce((sum, order) => sum + order.amount, 0);
+  const byCoupon = reportOrders.reduce((acc, order) => {
+    const key = order.coupon || 'Senza coupon';
+    acc[key] = (acc[key] || 0) + order.amount;
+    return acc;
+  }, {});
+  const topCoupon = Object.entries(byCoupon).sort((a, b) => b[1] - a[1])[0];
+
+  byId('report-summary').innerHTML = `
+    <div><span>Ordini importati</span><strong>${reportOrders.length}</strong></div>
+    <div><span>Totale vendite</span><strong>${money(total)}</strong></div>
+    <div><span>Coupon principale</span><strong>${topCoupon ? `${topCoupon[0]} · ${money(topCoupon[1])}` : '-'}</strong></div>
+  `;
+}
+
+function renderPermissions() {
+  byId('permissions-table').innerHTML = permissions
+    .map((row) => `
+      <tr>
+        <td>${row[0]}</td>
+        ${row.slice(1).map((allowed) => `<td><span class="permission ${allowed ? 'yes' : 'no'}">${allowed ? 'Si' : 'No'}</span></td>`).join('')}
       </tr>
     `)
     .join('');
@@ -254,6 +335,31 @@ function parseCsv(text) {
   }).filter((row) => row.name);
 }
 
+function parseOrderCsv(text) {
+  const separator = text.includes('\t') ? '\t' : ';';
+  const lines = text
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean);
+  if (lines.length < 2) return [];
+
+  const headers = lines[0].split(separator).map((header) => header.trim().toLowerCase());
+  return lines.slice(1).map((line, index) => {
+    const cells = line.split(separator).map((cell) => cell.trim());
+    const row = Object.fromEntries(headers.map((header, cellIndex) => [header, cells[cellIndex] || '']));
+    return {
+      id: row.ordine || row.order || row.id || `WC-IMPORT-${Date.now()}-${index}`,
+      date: row.data || row.date || new Date().toISOString().slice(0, 10),
+      customer: row.cliente || row.customer || row.nome || 'Cliente WooCommerce',
+      amount: Number(String(row.importo || row.totale || row.amount || '0').replace(',', '.')) || 0,
+      coupon: row.coupon || row.codice || '',
+      agent: row.agente || '',
+      distributor: row.distributore || '',
+      status: row.stato || row.status || 'completed',
+    };
+  });
+}
+
 function importNetworkFile(file) {
   const reader = new FileReader();
   reader.onload = () => {
@@ -264,6 +370,32 @@ function importNetworkFile(file) {
     updateMetrics();
   };
   reader.readAsText(file);
+}
+
+function importOrdersFile(file) {
+  const reader = new FileReader();
+  reader.onload = () => {
+    const rows = parseOrderCsv(String(reader.result || ''));
+    reportOrders = [...rows, ...reportOrders];
+    renderOrders();
+    updateMetrics();
+  };
+  reader.readAsText(file);
+}
+
+function addPromotionDemo() {
+  promotions = [
+    {
+      id: `promo-${Date.now()}`,
+      name: 'Nuova campagna demo',
+      audience: 'Segmento da definire',
+      coupon: `ODR${promotions.length + 10}`,
+      status: 'Bozza',
+      rule: 'Regola da configurare su WordPress/WooCommerce',
+    },
+    ...promotions,
+  ];
+  renderPromotions();
 }
 
 function exportReport() {
@@ -297,6 +429,7 @@ function initSupabaseStatus() {
 }
 
 byId('validate-code').addEventListener('click', validateCode);
+byId('add-promotion').addEventListener('click', addPromotionDemo);
 byId('role').addEventListener('change', updateMetrics);
 byId('account-email').addEventListener('input', updateMetrics);
 byId('network-search').addEventListener('input', renderNetwork);
@@ -304,10 +437,16 @@ byId('network-import').addEventListener('change', (event) => {
   const file = event.target.files?.[0];
   if (file) importNetworkFile(file);
 });
+byId('orders-import').addEventListener('change', (event) => {
+  const file = event.target.files?.[0];
+  if (file) importOrdersFile(file);
+});
 byId('export-report').addEventListener('click', exportReport);
 
 initSupabaseStatus();
 renderCodes();
+renderPromotions();
 renderNetwork();
 renderOrders();
+renderPermissions();
 updateMetrics();
