@@ -1,0 +1,223 @@
+<!doctype html>
+<html lang="it">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>ODR</title>
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <div class="app-shell">
+      <aside class="sidebar">
+        <div class="brand">
+          <img src="/odr-logo.png" alt="ODR" />
+          <div>
+            <strong>ODR</strong>
+            <span>Operations</span>
+          </div>
+        </div>
+        <nav class="nav" aria-label="Navigazione principale">
+          <a class="active" href="#dashboard">Dashboard</a>
+          <a href="#access">Codici</a>
+          <a href="#network">Rete</a>
+          <a href="#wordpress">WordPress</a>
+          <a href="#reports">Report</a>
+          <a href="#setup">Setup</a>
+        </nav>
+        <div class="sidebar-status">
+          <span id="supabase-dot" class="dot warn"></span>
+          <span id="supabase-status">Modalita demo</span>
+        </div>
+      </aside>
+
+      <main class="main">
+        <header class="topbar">
+          <div>
+            <p class="eyebrow">Webapp gestionale collegata a WooCommerce</p>
+            <h1>ODR</h1>
+          </div>
+          <div class="account-strip">
+            <select id="role">
+              <option value="admin">Amministratore</option>
+              <option value="distributor">Distributore</option>
+              <option value="agent">Agente</option>
+              <option value="center">Centro / punto vendita</option>
+              <option value="patient">Paziente</option>
+            </select>
+            <input id="account-email" value="admin@odr.local" aria-label="Email account" />
+            <button class="icon-button" type="button" aria-label="Esci">Esci</button>
+          </div>
+        </header>
+
+        <section id="dashboard" class="workspace">
+          <div class="section-heading">
+            <div>
+              <h2>Dashboard</h2>
+              <p>Controllo rapido di codici, rete commerciale e vendite lette da WooCommerce.</p>
+            </div>
+            <a id="shop-link" class="primary-action" href="#" target="_blank" rel="noreferrer">Apri shop</a>
+          </div>
+          <div class="metrics">
+            <div class="metric">
+              <span>Vendite WooCommerce</span>
+              <strong id="metric-revenue">€ 0,00</strong>
+              <small>demo report import/API</small>
+            </div>
+            <div class="metric">
+              <span>Codici attivi</span>
+              <strong id="metric-codes">0</strong>
+              <small>convenzioni utilizzabili</small>
+            </div>
+            <div class="metric">
+              <span>Rete attiva</span>
+              <strong id="metric-network">0</strong>
+              <small>distributori, agenti, centri</small>
+            </div>
+            <div class="metric">
+              <span>Ruolo corrente</span>
+              <strong id="metric-role">Amministratore</strong>
+              <small id="metric-email">admin@odr.local</small>
+            </div>
+          </div>
+        </section>
+
+        <section id="access" class="split">
+          <div class="panel">
+            <div class="panel-title">
+              <h2>Validazione codice paziente</h2>
+            </div>
+            <div class="code-form">
+              <input id="code-input" placeholder="Inserisci codice ospedaliero" />
+              <button id="validate-code" type="button">Valida</button>
+            </div>
+            <div id="code-result" class="empty-box">
+              <span>Codice demo valido: <strong>ODR-DEMO</strong></span>
+            </div>
+          </div>
+
+          <div class="panel">
+            <div class="panel-title">
+              <h2>Convenzioni</h2>
+            </div>
+            <div id="code-list" class="code-list"></div>
+          </div>
+        </section>
+
+        <section id="network" class="workspace">
+          <div class="section-heading">
+            <div>
+              <h2>Rete commerciale</h2>
+              <p>Importa distributori e agenti da file Excel esportato in CSV, poi associa vendite e codici per report.</p>
+            </div>
+            <label class="secondary-action">
+              Import CSV
+              <input id="network-import" type="file" accept=".csv,.tsv,text/csv" />
+            </label>
+          </div>
+
+          <div class="toolbar">
+            <input id="network-search" placeholder="Cerca nome, zona, email, distributore" />
+            <span id="import-notice"></span>
+          </div>
+
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Tipo</th>
+                  <th>Nome</th>
+                  <th>Zona</th>
+                  <th>Collegato a</th>
+                  <th>Contatto</th>
+                  <th>Stato</th>
+                </tr>
+              </thead>
+              <tbody id="network-table"></tbody>
+            </table>
+          </div>
+        </section>
+
+        <section id="wordpress" class="split">
+          <div class="panel">
+            <div class="panel-title">
+              <h2>Collegamento WordPress</h2>
+            </div>
+            <div class="integration-line">
+              <span>Shop base</span>
+              <strong id="wp-base-url">Da configurare</strong>
+            </div>
+            <div class="integration-line">
+              <span>Passaggio codice</span>
+              <strong>coupon + odr_code via URL</strong>
+            </div>
+            <div class="integration-line">
+              <span>Acquisto e pagamento</span>
+              <strong>WooCommerce</strong>
+            </div>
+          </div>
+
+          <div class="panel">
+            <div class="panel-title">
+              <h2>Flusso MVP</h2>
+            </div>
+            <ol class="flow">
+              <li>ODR valida codice o accesso paziente.</li>
+              <li>ODR apre WooCommerce con coupon/convenzione.</li>
+              <li>WooCommerce gestisce prodotti, carrello e pagamento.</li>
+              <li>ODR importa ordini per report di rete.</li>
+            </ol>
+          </div>
+        </section>
+
+        <section id="reports" class="workspace">
+          <div class="section-heading">
+            <div>
+              <h2>Report vendite</h2>
+              <p>Vista iniziale sugli ordini WooCommerce collegati a coupon, agenti e distributori.</p>
+            </div>
+            <button id="export-report" class="secondary-action" type="button">Esporta CSV</button>
+          </div>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Ordine</th>
+                  <th>Data</th>
+                  <th>Cliente</th>
+                  <th>Coupon</th>
+                  <th>Agente</th>
+                  <th>Distributore</th>
+                  <th>Importo</th>
+                  <th>Stato</th>
+                </tr>
+              </thead>
+              <tbody id="orders-table"></tbody>
+            </table>
+          </div>
+        </section>
+
+        <section id="setup" class="split bottom-space">
+          <div class="panel">
+            <div class="panel-title">
+              <h2>Supabase</h2>
+            </div>
+            <p class="setting-copy">
+              Usa Supabase Auth per gli accessi e Postgres per codici, rete, report importati e log di validazione.
+            </p>
+            <span id="supabase-pill" class="config-pill warn">Configura env</span>
+          </div>
+          <div class="panel">
+            <div class="panel-title">
+              <h2>Excel rete</h2>
+            </div>
+            <p class="setting-copy">
+              Per il primo MVP importa il file Excel esportato in CSV con colonne: tipo, nome, email, telefono, zona, distributore, agente.
+            </p>
+            <span class="config-pill">Import CSV pronto</span>
+          </div>
+        </section>
+      </main>
+    </div>
+    <script src="/app.js"></script>
+  </body>
+</html>
