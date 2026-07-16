@@ -157,6 +157,7 @@ const permissions = [
 ];
 
 let validatedCode = null;
+let currentUser = null;
 
 function byId(id) {
   return document.getElementById(id);
@@ -307,6 +308,49 @@ function validateCode() {
   updateMetrics();
 }
 
+function setAuthMode(mode) {
+  const loginActive = mode === 'login';
+  byId('show-login').classList.toggle('active', loginActive);
+  byId('show-register').classList.toggle('active', !loginActive);
+  byId('login-form').classList.toggle('hidden', !loginActive);
+  byId('register-form').classList.toggle('hidden', loginActive);
+  byId('auth-message').textContent = loginActive
+    ? 'Modalita demo: Supabase Auth verra collegato appena il progetto ODR sara attivo.'
+    : 'Registrazione demo: i dati non vengono ancora salvati finche il database non sara collegato.';
+}
+
+function enterApp(user) {
+  currentUser = user;
+  byId('auth-screen').classList.add('hidden');
+  byId('app-shell').classList.remove('hidden');
+  byId('role').value = user.role;
+  byId('account-email').value = user.email;
+  byId('code-input').value = user.code || '';
+  if (user.code) validateCode();
+  updateMetrics();
+}
+
+function submitLogin(event) {
+  event.preventDefault();
+  const email = byId('login-email').value.trim() || 'paziente@odr.local';
+  const code = byId('login-code').value.trim();
+  enterApp({ email, code, role: 'patient' });
+}
+
+function submitRegistration(event) {
+  event.preventDefault();
+  if (!byId('register-privacy').checked) {
+    byId('auth-message').textContent = 'Per creare il profilo serve accettare la privacy.';
+    return;
+  }
+
+  const email = byId('register-email').value.trim() || 'paziente@odr.local';
+  const code = byId('register-code').value.trim();
+  const fullName = `${byId('register-name').value.trim()} ${byId('register-surname').value.trim()}`.trim();
+  byId('auth-message').textContent = `Profilo demo creato per ${fullName || email}.`;
+  enterApp({ email, code, role: 'patient' });
+}
+
 function parseCsv(text) {
   const separator = text.includes('\t') ? '\t' : ';';
   const lines = text
@@ -428,6 +472,10 @@ function initSupabaseStatus() {
   byId('supabase-pill').textContent = configured ? 'Configurato' : 'Configura env';
 }
 
+byId('show-login').addEventListener('click', () => setAuthMode('login'));
+byId('show-register').addEventListener('click', () => setAuthMode('register'));
+byId('login-form').addEventListener('submit', submitLogin);
+byId('register-form').addEventListener('submit', submitRegistration);
 byId('validate-code').addEventListener('click', validateCode);
 byId('add-promotion').addEventListener('click', addPromotionDemo);
 byId('role').addEventListener('change', updateMetrics);
