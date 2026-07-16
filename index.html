@@ -19,9 +19,11 @@
         <nav class="nav" aria-label="Navigazione principale">
           <a class="active" href="#dashboard">Dashboard</a>
           <a href="#access">Codici</a>
+          <a href="#promotions">Promozioni</a>
           <a href="#network">Rete</a>
           <a href="#wordpress">WordPress</a>
           <a href="#reports">Report</a>
+          <a href="#permissions">Permessi</a>
           <a href="#setup">Setup</a>
         </nav>
         <div class="sidebar-status">
@@ -103,6 +105,17 @@
           </div>
         </section>
 
+        <section id="promotions" class="workspace">
+          <div class="section-heading">
+            <div>
+              <h2>Promozioni e fidelity</h2>
+              <p>Bozza operativa per campagne, coupon compleanno e convenzioni prima del collegamento a Supabase.</p>
+            </div>
+            <button id="add-promotion" class="secondary-action" type="button">Aggiungi demo</button>
+          </div>
+          <div class="promo-grid" id="promotion-list"></div>
+        </section>
+
         <section id="network" class="workspace">
           <div class="section-heading">
             <div>
@@ -175,8 +188,15 @@
               <h2>Report vendite</h2>
               <p>Vista iniziale sugli ordini WooCommerce collegati a coupon, agenti e distributori.</p>
             </div>
-            <button id="export-report" class="secondary-action" type="button">Esporta CSV</button>
+            <div class="action-row">
+              <label class="secondary-action">
+                Import ordini CSV
+                <input id="orders-import" type="file" accept=".csv,.tsv,text/csv" />
+              </label>
+              <button id="export-report" class="secondary-action" type="button">Esporta CSV</button>
+            </div>
           </div>
+          <div class="report-summary" id="report-summary"></div>
           <div class="table-wrap">
             <table>
               <thead>
@@ -192,6 +212,30 @@
                 </tr>
               </thead>
               <tbody id="orders-table"></tbody>
+            </table>
+          </div>
+        </section>
+
+        <section id="permissions" class="workspace">
+          <div class="section-heading">
+            <div>
+              <h2>Ruoli e permessi</h2>
+              <p>Struttura iniziale per decidere cosa vede ogni profilo prima dell'attivazione login reale.</p>
+            </div>
+          </div>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Modulo</th>
+                  <th>Admin</th>
+                  <th>Distributore</th>
+                  <th>Agente</th>
+                  <th>Centro</th>
+                  <th>Paziente</th>
+                </tr>
+              </thead>
+              <tbody id="permissions-table"></tbody>
             </table>
           </div>
         </section>
