@@ -7,7 +7,71 @@
     <link rel="stylesheet" href="/styles.css" />
   </head>
   <body>
-    <div class="app-shell">
+    <section id="auth-screen" class="auth-screen">
+      <div class="auth-visual">
+        <img src="/odr-logo.svg" alt="ODR" />
+        <p>Accesso convenzionato</p>
+        <h1>ODR</h1>
+        <span>Codice paziente, promozioni e acquisto su WooCommerce in un flusso unico.</span>
+      </div>
+
+      <div class="auth-panel">
+        <div class="auth-tabs" role="tablist" aria-label="Accesso ODR">
+          <button class="active" id="show-login" type="button">Accedi</button>
+          <button id="show-register" type="button">Registrati</button>
+        </div>
+
+        <form id="login-form" class="auth-form">
+          <label>
+            Email
+            <input id="login-email" type="email" value="paziente@odr.local" autocomplete="email" />
+          </label>
+          <label>
+            Password
+            <input type="password" value="passworddemo" autocomplete="current-password" />
+          </label>
+          <label>
+            Codice convenzione
+            <input id="login-code" value="ODR-DEMO" />
+          </label>
+          <button class="primary-action full" type="submit">Entra in ODR</button>
+        </form>
+
+        <form id="register-form" class="auth-form hidden">
+          <div class="form-grid">
+            <label>
+              Nome
+              <input id="register-name" value="Mario" autocomplete="given-name" />
+            </label>
+            <label>
+              Cognome
+              <input id="register-surname" value="Rossi" autocomplete="family-name" />
+            </label>
+          </div>
+          <label>
+            Email
+            <input id="register-email" type="email" value="mario.rossi@example.com" autocomplete="email" />
+          </label>
+          <label>
+            Telefono
+            <input id="register-phone" value="+39 333 0000000" autocomplete="tel" />
+          </label>
+          <label>
+            Codice fornito
+            <input id="register-code" value="ODR-DEMO" />
+          </label>
+          <label class="check-row">
+            <input id="register-privacy" type="checkbox" checked />
+            <span>Accetto privacy e comunicazioni operative ODR.</span>
+          </label>
+          <button class="primary-action full" type="submit">Crea profilo demo</button>
+        </form>
+
+        <div id="auth-message" class="auth-message">Modalita demo: Supabase Auth verra collegato appena il progetto ODR sara attivo.</div>
+      </div>
+    </section>
+
+    <div id="app-shell" class="app-shell hidden">
       <aside class="sidebar">
         <div class="brand">
           <img src="/odr-logo.svg" alt="ODR" />
@@ -30,6 +94,12 @@
           <span id="supabase-dot" class="dot warn"></span>
           <span id="supabase-status">Modalita demo</span>
         </div>
+        <nav class="mobile-tabbar" aria-label="Navigazione mobile">
+          <a href="#dashboard">Home</a>
+          <a href="#access">Codice</a>
+          <a href="#promotions">Promo</a>
+          <a href="#reports">Report</a>
+        </nav>
       </aside>
 
       <main class="main">
