@@ -103,7 +103,7 @@
         </nav>
         <div class="sidebar-status">
           <span id="supabase-dot" class="dot warn"></span>
-          <span id="supabase-status">Modalita demo</span>
+          <span id="supabase-status">Connessione dati</span>
         </div>
         <nav class="mobile-tabbar" aria-label="Navigazione mobile">
           <a href="/dashboard" data-route="dashboard"><span>⌂</span>Home</a>
@@ -146,7 +146,7 @@
             <div class="metric">
               <span>Vendite WooCommerce</span>
               <strong id="metric-revenue">€ 0,00</strong>
-              <small>demo report import/API</small>
+              <small>ordini WooCommerce aggiornati</small>
             </div>
             <div class="metric">
               <span>Codici attivi</span>
@@ -161,7 +161,7 @@
             <div class="metric">
               <span>Ruolo corrente</span>
               <strong id="metric-role">Amministratore</strong>
-              <small id="metric-email">admin@odr.local</small>
+              <small id="metric-email">-</small>
             </div>
           </div>
         </section>
@@ -374,7 +374,7 @@
             </div>
             <div class="integration-line">
               <span>Shop base</span>
-              <strong id="wp-base-url">Da configurare</strong>
+              <strong id="wp-base-url">Collegamento in corso</strong>
             </div>
             <div class="integration-line">
               <span>Passaggio codice</span>
@@ -388,7 +388,7 @@
 
           <div class="panel">
             <div class="panel-title">
-              <h2>Flusso MVP</h2>
+              <h2>Flusso di acquisto</h2>
             </div>
             <ol class="flow">
               <li>ODR valida codice o accesso paziente.</li>
@@ -403,7 +403,7 @@
           <div class="section-heading">
             <div>
               <h2>Report vendite</h2>
-              <p>Vista iniziale sugli ordini WooCommerce collegati a coupon, agenti e distributori.</p>
+              <p>Ordini WooCommerce collegati a coupon, agenti, distributori e centri.</p>
             </div>
             <div class="action-row">
               <label class="secondary-action">
@@ -506,18 +506,18 @@
               <h2>Supabase</h2>
             </div>
             <p class="setting-copy">
-              Usa Supabase Auth per gli accessi e Postgres per codici, rete, report importati e log di validazione.
+              Gestisce in modo centralizzato accessi, codici, rete commerciale, report e log di validazione.
             </p>
-            <span id="supabase-pill" class="config-pill warn">Configura env</span>
+            <span id="supabase-pill" class="config-pill warn">Verifica connessione</span>
           </div>
           <div class="panel">
             <div class="panel-title">
               <h2>Excel rete</h2>
             </div>
             <p class="setting-copy">
-              Per il primo MVP importa il file Excel esportato in CSV con colonne: tipo, nome, email, telefono, zona, distributore, agente.
+              Puoi importare un file CSV con le colonne: tipo, nome, email, telefono, zona, distributore e agente.
             </p>
-            <span class="config-pill">Import CSV pronto</span>
+            <span class="config-pill">Importazione CSV disponibile</span>
           </div>
         </section>
       </main>
