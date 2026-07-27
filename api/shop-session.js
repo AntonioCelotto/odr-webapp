@@ -47,6 +47,20 @@ function safeCartItems(value) {
   })).filter((item) => Number.isInteger(item.product_id) && item.product_id > 0);
 }
 
+async function getActiveCoupon(token) {
+  const endpoint = new URL('/functions/v1/promo-codes', process.env.SUPABASE_URL);
+  endpoint.searchParams.set('view', 'active');
+  const result = await fetch(endpoint, {
+    headers: {
+      apikey: process.env.SUPABASE_PUBLISHABLE_KEY,
+      Authorization: `Bearer ${token}`,
+    },
+  });
+  if (!result.ok) return '';
+  const payload = await result.json();
+  return String(payload.activeCode?.woo_coupon || '').trim().slice(0, 100);
+}
+
 export default async function handler(request, response) {
   if (request.method !== 'POST') return json(response, 405, { error: 'Metodo non consentito' });
 
@@ -66,6 +80,7 @@ export default async function handler(request, response) {
     const sessionEndpoint = new URL('/wp-json/odr/v1/session', storeUrl);
     sessionEndpoint.searchParams.set('consumer_key', key);
     sessionEndpoint.searchParams.set('consumer_secret', secret);
+    const activeCoupon = await getActiveCoupon(token);
     const wordpressResponse = await fetch(sessionEndpoint, {
       method: 'POST',
       headers: {
@@ -77,6 +92,7 @@ export default async function handler(request, response) {
         role: profile.role,
         redirect: safeWooDestination(request.body?.redirect, storeUrl),
         items: safeCartItems(request.body?.items),
+        coupon: activeCoupon,
       }),
     });
     const payload = await wordpressResponse.json().catch(() => ({}));
