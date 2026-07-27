@@ -155,12 +155,23 @@ Deno.serve(async (request) => {
   const role = approved
     ? (wordpressAccount?.mapped_role || profile.requested_role)
     : "patient";
+  let networkEntityId = null;
+  if (approved && ["distributor", "agent", "center"].includes(role)) {
+    const { data: networkEntity } = await admin
+      .from("network_entities")
+      .select("id")
+      .eq("type", role)
+      .ilike("email", profile.email)
+      .maybeSingle();
+    networkEntityId = networkEntity?.id || null;
+  }
   const { error: updateError } = await admin
     .from("profiles")
     .update({
       role,
       approval_status: approved ? "approved" : "rejected",
       wordpress_user_id: approved ? wordpressAccount?.wordpress_user_id || null : null,
+      network_entity_id: approved ? networkEntityId : null,
       updated_at: new Date().toISOString(),
     })
     .eq("id", userId);
