@@ -66,7 +66,7 @@
             </select>
           </label>
           <label>
-            Codice fornito dall'ospedale (solo pazienti)
+            Codice fornito dall'ospedale (facoltativo)
             <input id="register-code" autocomplete="off" />
           </label>
           <label class="check-row">
@@ -232,7 +232,7 @@
               <button id="validate-code" type="button">Valida</button>
             </div>
             <div id="code-result" class="empty-box">
-              <span>Codice demo valido: <strong>ODR-DEMO</strong></span>
+              <span>Inserisci il codice ricevuto dall’ospedale o dalla convenzione.</span>
             </div>
           </div>
 
@@ -242,16 +242,64 @@
             </div>
             <div id="code-list" class="code-list"></div>
           </div>
+
+          <div id="admin-code-manager" class="panel code-manager hidden">
+            <div class="panel-title code-manager-title">
+              <div>
+                <h2>Gestione codici promozionali</h2>
+                <p>Crea codici ODR e collegali ai coupon già presenti in WooCommerce.</p>
+              </div>
+              <button id="new-code-button" class="secondary-action" type="button">Nuovo codice</button>
+            </div>
+            <form id="code-admin-form" class="code-admin-form hidden">
+              <input id="admin-code-id" type="hidden" />
+              <label>Codice ODR <input id="admin-code-value" maxlength="64" required /></label>
+              <label>Descrizione <input id="admin-code-label" maxlength="160" required /></label>
+              <label>Ospedale / convenzione <input id="admin-code-hospital" maxlength="160" /></label>
+              <label>Messaggio sconto <input id="admin-code-discount" maxlength="160" /></label>
+              <label>
+                Coupon WooCommerce
+                <select id="admin-code-coupon" required><option value="">Caricamento coupon...</option></select>
+              </label>
+              <label>
+                Profilo autorizzato
+                <select id="admin-code-audience">
+                  <option value="">Tutti i profili</option>
+                  <option value="patient">Paziente</option>
+                  <option value="center">Centro / punto vendita</option>
+                  <option value="agent">Agente</option>
+                  <option value="distributor">Distributore</option>
+                </select>
+              </label>
+              <label>Inizio <input id="admin-code-start" type="datetime-local" /></label>
+              <label>Scadenza <input id="admin-code-end" type="datetime-local" /></label>
+              <label>Numero massimo utilizzi <input id="admin-code-max" type="number" min="1" placeholder="Senza limite" /></label>
+              <label class="check-row"><input id="admin-code-active" type="checkbox" checked /><span>Codice attivo</span></label>
+              <div class="action-row">
+                <button class="primary-action" type="submit">Salva codice</button>
+                <button id="cancel-code-button" class="secondary-action" type="button">Annulla</button>
+              </div>
+            </form>
+            <div id="code-admin-message" class="auth-message">Caricamento codici...</div>
+            <div class="table-wrap">
+              <table>
+                <thead><tr><th>Codice</th><th>Convenzione</th><th>Coupon</th><th>Profilo</th><th>Utilizzi</th><th>Scadenza</th><th>Stato</th><th></th></tr></thead>
+                <tbody id="admin-code-table"></tbody>
+              </table>
+            </div>
+            <h3 class="code-history-title">Ultime validazioni</h3>
+            <div id="code-validation-history" class="code-validation-history"></div>
+          </div>
         </section>
 
         <section id="promotions" class="workspace route-screen">
           <div class="section-heading">
             <div>
               <h2>Promozioni e fidelity</h2>
-              <p>Bozza operativa per campagne, coupon compleanno e convenzioni prima del collegamento a Supabase.</p>
+              <p>Coupon reali disponibili in WooCommerce e utilizzabili nei codici ODR.</p>
             </div>
-            <button id="add-promotion" class="secondary-action" type="button">Aggiungi demo</button>
           </div>
+          <div id="promotion-message" class="auth-message">Caricamento coupon WooCommerce...</div>
           <div class="promo-grid" id="promotion-list"></div>
         </section>
 
