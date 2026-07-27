@@ -6,7 +6,6 @@ const config = {
   supabasePublishableKey: runtimeConfig.supabasePublishableKey || '',
   wooBaseUrl: runtimeConfig.wooBaseUrl || 'https://odr.ioxina.com',
   wooShopPath: '/shop',
-  defaultValidationCode: 'ODR-DEMO',
 };
 const isSupabaseConfigured = Boolean(config.supabaseUrl && config.supabasePublishableKey);
 const supabase = isSupabaseConfigured
@@ -21,61 +20,9 @@ const roleLabels = {
   patient: 'Paziente',
 };
 
-const validationCodes = [
-  {
-    code: config.defaultValidationCode,
-    label: 'Convenzione demo paziente',
-    hospital: 'Ospedale convenzionato',
-    discountLabel: 'Accesso prodotti convenzionati',
-    coupon: 'ODR10',
-    active: true,
-    uses: 18,
-  },
-  {
-    code: 'HOSP-LILLA-25',
-    label: 'Campagna reparto dermatologia',
-    hospital: 'Ospedale San Luca',
-    discountLabel: 'Coupon paziente 25%',
-    coupon: 'LILLA25',
-    active: true,
-    uses: 42,
-  },
-  {
-    code: 'ODR-BIRTHDAY',
-    label: 'Coupon compleanno',
-    discountLabel: 'Omaggio fidelity',
-    coupon: 'AUGURIODR',
-    active: false,
-    uses: 7,
-  },
-];
-
-let promotions = [
-  {
-    id: 'promo-pazienti',
-    name: 'Convenzione pazienti ODR',
-    audience: 'Pazienti ospedalieri',
-    coupon: 'ODR10',
-    status: 'Attiva',
-    rule: 'Sconto dedicato dopo validazione codice',
-  },
-  {
-    id: 'promo-birthday',
-    name: 'Coupon compleanno',
-    audience: 'Utenti fidelity',
-    coupon: 'AUGURIODR',
-    status: 'Bozza',
-    rule: 'Invio automatico nel mese del compleanno',
-  },
-  {
-    id: 'promo-centri',
-    name: 'Campagna centri estetici',
-    audience: 'Centri e punti vendita',
-    coupon: 'CENTRI20',
-    status: 'Programmabile',
-    rule: 'Promo per riordino su WooCommerce',
-  },
-];
+let validationCodes = [];
+let promotions = [];
+let codeValidations = [];
 
 let networkRows = [
   {
@@ -120,38 +67,7 @@ let networkRows = [
   },
 ];
 
-let reportOrders = [
-  {
-    id: 'WC-1024',
-    date: '2026-07-08',
-    customer: 'Paziente convenzionato',
-    amount: 148.6,
-    coupon: 'ODR10',
-    agent: 'Laura Rossi',
-    distributor: 'Distribuzione Nord',
-    status: 'completed',
-  },
-  {
-    id: 'WC-1028',
-    date: '2026-07-11',
-    customer: 'Centro Aurora',
-    amount: 612.9,
-    coupon: 'LILLA25',
-    agent: 'Laura Rossi',
-    distributor: 'Distribuzione Nord',
-    status: 'paid',
-  },
-  {
-    id: 'WC-1031',
-    date: '2026-07-14',
-    customer: 'Punto vendita Demo',
-    amount: 284.2,
-    coupon: 'ODR10',
-    agent: 'Marco Bianchi',
-    distributor: 'Distribuzione Centro',
-    status: 'processing',
-  },
-];
+let reportOrders = [];
 
 const moduleLabels = {
   dashboard: 'Dashboard',
@@ -516,12 +432,16 @@ function updateMetrics() {
 }
 
 function renderCodes() {
+  if (!validationCodes.length) {
+    byId('code-list').innerHTML = '<div class="empty-box">Nessuna convenzione disponibile.</div>';
+    return;
+  }
   byId('code-list').innerHTML = validationCodes
     .map((code) => `
       <div class="list-row">
         <div>
           <strong>${code.code}</strong>
-          <span>${code.label}</span>
+          <span>${escapeHtml(code.label)}${code.hospital ? ` · ${escapeHtml(code.hospital)}` : ''}</span>
         </div>
         <em class="state ${code.active ? 'ok' : 'off'}">${code.active ? 'Attivo' : 'Spento'}</em>
       </div>
@@ -530,19 +450,188 @@ function renderCodes() {
 }
 
 function renderPromotions() {
+  byId('promotion-message').classList.toggle('hidden', promotions.length > 0);
+  if (!promotions.length) {
+    byId('promotion-list').innerHTML = '';
+    return;
+  }
   byId('promotion-list').innerHTML = promotions
     .map((promo) => `
       <article class="promo-card">
         <div>
-          <span>${promo.audience}</span>
-          <h3>${promo.name}</h3>
+          <span>${escapeHtml(promo.discountType === 'percent' ? 'Sconto percentuale' : 'Sconto sul carrello')}</span>
+          <h3>${escapeHtml(promo.code)}</h3>
         </div>
-        <strong>${promo.coupon}</strong>
-        <p>${promo.rule}</p>
-        <em class="state ${promo.status === 'Attiva' ? 'ok' : 'off'}">${promo.status}</em>
+        <strong>${escapeHtml(promo.code)}</strong>
+        <p>${escapeHtml(promo.description || `${promo.discountType}: ${promo.amount}`)}</p>
+        <em class="state ${promo.expired ? 'off' : 'ok'}">${promo.expired ? 'Scaduto' : `${promo.usageCount || 0} utilizzi`}</em>
       </article>
     `)
     .join('');
+}
+
+function codeDate(value) {
+  return value ? new Date(value).toLocaleDateString('it-IT') : 'Nessuna';
+}
+
+function renderAdminCodes() {
+  byId('admin-code-table').innerHTML = validationCodes.map((code) => `
+    <tr>
+      <td><strong>${escapeHtml(code.code)}</strong></td>
+      <td>${escapeHtml(code.label)}${code.hospital ? `<br><small>${escapeHtml(code.hospital)}</small>` : ''}</td>
+      <td>${escapeHtml(code.woo_coupon)}</td>
+      <td>${escapeHtml(roleLabels[code.audience_role] || 'Tutti')}</td>
+      <td>${code.current_uses}${code.max_uses ? ` / ${code.max_uses}` : ''}</td>
+      <td>${codeDate(code.ends_at)}</td>
+      <td><span class="state ${code.active ? 'ok' : 'off'}">${code.active ? 'Attivo' : 'Spento'}</span></td>
+      <td>
+        <div class="user-actions">
+          <button type="button" data-code-edit="${code.id}">Modifica</button>
+          <button type="button" data-code-toggle="${code.id}" data-code-active="${code.active ? 'false' : 'true'}">
+            ${code.active ? 'Disattiva' : 'Attiva'}
+          </button>
+        </div>
+      </td>
+    </tr>
+  `).join('');
+  byId('code-validation-history').innerHTML = codeValidations.length
+    ? codeValidations.map((entry) => {
+      const profile = entry.profiles || {};
+      return `<div class="list-row">
+        <div><strong>${escapeHtml(entry.code)}</strong><span>${escapeHtml(profile.full_name || profile.email || 'Utente')}</span></div>
+        <div><span class="state ${entry.valid ? 'ok' : 'off'}">${entry.valid ? 'Valido' : escapeHtml(entry.failure_reason || 'Rifiutato')}</span><small>${codeDate(entry.created_at)}</small></div>
+      </div>`;
+    }).join('')
+    : '<div class="empty-box">Nessuna validazione registrata.</div>';
+}
+
+function resetCodeForm() {
+  byId('code-admin-form').reset();
+  byId('admin-code-id').value = '';
+  byId('admin-code-active').checked = true;
+  byId('code-admin-form').classList.add('hidden');
+}
+
+function openCodeForm(code = null) {
+  byId('code-admin-form').classList.remove('hidden');
+  byId('admin-code-id').value = code?.id || '';
+  byId('admin-code-value').value = code?.code || `ODR-${Math.random().toString(36).slice(2, 8).toUpperCase()}`;
+  byId('admin-code-label').value = code?.label || '';
+  byId('admin-code-hospital').value = code?.hospital || '';
+  byId('admin-code-discount').value = code?.discount_label || '';
+  byId('admin-code-coupon').value = code?.woo_coupon || '';
+  byId('admin-code-audience').value = code?.audience_role || '';
+  byId('admin-code-start').value = code?.starts_at ? code.starts_at.slice(0, 16) : '';
+  byId('admin-code-end').value = code?.ends_at ? code.ends_at.slice(0, 16) : '';
+  byId('admin-code-max').value = code?.max_uses || '';
+  byId('admin-code-active').checked = code?.active ?? true;
+  byId('admin-code-value').focus();
+}
+
+async function loadWooCoupons() {
+  const { data } = await supabase.auth.getSession();
+  const response = await fetch('/api/coupons', {
+    headers: { Authorization: `Bearer ${data.session?.access_token || ''}` },
+  });
+  const payload = await response.json();
+  if (!response.ok) throw new Error(payload.error || 'Coupon non disponibili');
+  promotions = (payload.coupons || []).map((coupon) => ({
+    ...coupon,
+    expired: coupon.expiresAt ? Date.parse(coupon.expiresAt) < Date.now() : false,
+  }));
+  byId('admin-code-coupon').innerHTML = [
+    '<option value="">Seleziona un coupon</option>',
+    ...promotions.map((coupon) => `<option value="${escapeHtml(coupon.code)}">${escapeHtml(coupon.code)} · ${escapeHtml(coupon.amount)}</option>`),
+  ].join('');
+  renderPromotions();
+}
+
+async function loadWooOrders() {
+  const { data } = await supabase.auth.getSession();
+  const response = await fetch('/api/orders', {
+    headers: { Authorization: `Bearer ${data.session?.access_token || ''}` },
+  });
+  const payload = await response.json();
+  if (!response.ok) return;
+  reportOrders = payload.orders || [];
+  renderOrders();
+  updateMetrics();
+}
+
+async function loadPromoCodes() {
+  const { data, error } = await supabase.functions.invoke('promo-codes', { method: 'GET' });
+  if (error || data?.error) {
+    byId('code-admin-message').textContent = data?.error || 'Codici non disponibili.';
+    return;
+  }
+  validationCodes = data.codes || [];
+  codeValidations = data.validations || [];
+  renderCodes();
+  if (currentUser?.role === 'admin') {
+    renderAdminCodes();
+    byId('code-admin-message').textContent = `${validationCodes.length} codici ODR configurati.`;
+  }
+}
+
+async function loadActivePromoCode() {
+  const { data: sessionData } = await supabase.auth.getSession();
+  const response = await fetch(`${config.supabaseUrl}/functions/v1/promo-codes?view=active`, {
+    headers: {
+      apikey: config.supabasePublishableKey,
+      Authorization: `Bearer ${sessionData.session?.access_token || ''}`,
+    },
+  });
+  const payload = response.ok ? await response.json() : {};
+  if (payload.activeCode) {
+    validatedCode = payload.activeCode;
+    byId('code-result').className = 'success-box';
+    byId('code-result').innerHTML = `<div><strong>${escapeHtml(validatedCode.label)}</strong><span>${escapeHtml(validatedCode.discount_label || 'Convenzione attiva')}</span></div>`;
+  }
+}
+
+async function saveAdminCode(event) {
+  event.preventDefault();
+  const button = event.submitter;
+  if (button) button.disabled = true;
+  const body = {
+    action: 'save',
+    id: byId('admin-code-id').value || null,
+    code: byId('admin-code-value').value,
+    label: byId('admin-code-label').value,
+    hospital: byId('admin-code-hospital').value,
+    discountLabel: byId('admin-code-discount').value,
+    wooCoupon: byId('admin-code-coupon').value,
+    audienceRole: byId('admin-code-audience').value || null,
+    startsAt: byId('admin-code-start').value ? new Date(byId('admin-code-start').value).toISOString() : null,
+    endsAt: byId('admin-code-end').value ? new Date(byId('admin-code-end').value).toISOString() : null,
+    maxUses: byId('admin-code-max').value || null,
+    active: byId('admin-code-active').checked,
+  };
+  const { data, error } = await supabase.functions.invoke('promo-codes', { method: 'POST', body });
+  if (button) button.disabled = false;
+  if (error || data?.error) {
+    byId('code-admin-message').textContent = data?.error || 'Salvataggio non riuscito.';
+    return;
+  }
+  resetCodeForm();
+  await loadPromoCodes();
+}
+
+async function handleCodeAdminAction(event) {
+  const edit = event.target.closest('[data-code-edit]');
+  if (edit) {
+    openCodeForm(validationCodes.find((code) => code.id === edit.dataset.codeEdit));
+    return;
+  }
+  const toggle = event.target.closest('[data-code-toggle]');
+  if (!toggle) return;
+  toggle.disabled = true;
+  const { data, error } = await supabase.functions.invoke('promo-codes', {
+    method: 'POST',
+    body: { action: 'toggle', id: toggle.dataset.codeToggle, active: toggle.dataset.codeActive === 'true' },
+  });
+  if (error || data?.error) byId('code-admin-message').textContent = data?.error || 'Aggiornamento non riuscito.';
+  await loadPromoCodes();
 }
 
 function renderNetwork() {
@@ -696,26 +785,38 @@ async function updatePermission(event) {
   checkbox.disabled = false;
 }
 
-function validateCode() {
-  const input = byId('code-input').value.trim().toLowerCase();
-  const found = validationCodes.find((code) => code.active && code.code.toLowerCase() === input);
-  validatedCode = found || null;
-
-  if (!found) {
+async function validateCode() {
+  const input = byId('code-input').value.trim();
+  if (!input || !supabase) return;
+  byId('validate-code').disabled = true;
+  byId('code-result').className = 'empty-box';
+  byId('code-result').innerHTML = '<span>Verifica del codice in corso...</span>';
+  const { data, error } = await supabase.functions.invoke('promo-codes', {
+    method: 'POST',
+    body: { action: 'validate', code: input },
+  });
+  byId('validate-code').disabled = false;
+  if (error || data?.error || !data?.valid) {
+    validatedCode = null;
     byId('code-result').className = 'empty-box';
-    byId('code-result').innerHTML = '<span>Codice non valido o non attivo.</span>';
+    byId('code-result').innerHTML = `<span>${escapeHtml(data?.error || 'Codice non valido o non attivo.')}</span>`;
     updateMetrics();
     return;
   }
-
+  const found = data.activeCode;
+  validatedCode = found;
   byId('code-result').className = 'success-box';
   byId('code-result').innerHTML = `
     <div>
-      <strong>${found.label}</strong>
-      <span>${found.discountLabel} - coupon ${found.coupon}</span>
-      <a href="${buildShopUrl(found)}" target="_blank" rel="noreferrer">Vai allo shop WordPress</a>
+      <strong>${escapeHtml(found.label)}</strong>
+      <span>${escapeHtml(found.discount_label || 'Convenzione applicata al prossimo acquisto')}</span>
+      <a href="/shop" data-route="shop">Vai ai prodotti</a>
     </div>
   `;
+  byId('code-result').querySelector('[data-route]').addEventListener('click', (event) => {
+    event.preventDefault();
+    showRoute('shop', { push: true, smooth: true });
+  });
   updateMetrics();
 }
 
@@ -785,14 +886,26 @@ function enterApp(user) {
   byId('account-email').value = user.email;
   byId('code-input').value = user.code || '';
   renderCurrentProfile(user);
-  if (user.code) validateCode();
   const isAdmin = user.role === 'admin';
+  byId('admin-code-manager').classList.toggle('hidden', !isAdmin);
   byId('admin-users-nav').classList.toggle('hidden', !isAdmin);
   byId('admin-users').classList.remove('hidden');
   byId('admin-users').classList.toggle('module-denied', !isAdmin);
-  if (isAdmin) loadAdminUsers();
+  if (isAdmin) {
+    loadAdminUsers();
+    loadPromoCodes();
+    loadWooCoupons().catch((error) => {
+      byId('promotion-message').textContent = error.message;
+      byId('code-admin-message').textContent = error.message;
+    });
+  } else {
+    validationCodes = [];
+    renderCodes();
+  }
+  loadActivePromoCode();
   loadPermissions();
   loadShop();
+  loadWooOrders();
   updateMetrics();
 }
 
@@ -937,10 +1050,6 @@ async function submitRegistration(event) {
 
   const requestedRole = byId('register-role').value;
   const code = byId('register-code').value.trim();
-  if (requestedRole === 'patient' && !code) {
-    showAuthMessage('Per il profilo paziente inserisci il codice fornito dall’ospedale.', 'error');
-    return;
-  }
 
   const email = byId('register-email').value.trim();
   const fullName = `${byId('register-name').value.trim()} ${byId('register-surname').value.trim()}`.trim();
@@ -1142,7 +1251,10 @@ byId('refresh-users').addEventListener('click', loadAdminUsers);
 byId('admin-users-table').addEventListener('click', handleAdminUserAction);
 byId('permissions-table').addEventListener('change', updatePermission);
 byId('validate-code').addEventListener('click', validateCode);
-byId('add-promotion').addEventListener('click', addPromotionDemo);
+byId('new-code-button').addEventListener('click', () => openCodeForm());
+byId('cancel-code-button').addEventListener('click', resetCodeForm);
+byId('code-admin-form').addEventListener('submit', saveAdminCode);
+byId('admin-code-table').addEventListener('click', handleCodeAdminAction);
 byId('network-search').addEventListener('input', renderNetwork);
 byId('network-import').addEventListener('change', (event) => {
   const file = event.target.files?.[0];
