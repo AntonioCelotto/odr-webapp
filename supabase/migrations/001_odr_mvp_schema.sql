@@ -77,6 +77,7 @@ create table public.code_validations (
 create table public.woocommerce_orders (
   id uuid primary key default gen_random_uuid(),
   woo_order_id text not null unique,
+  patient_id uuid references public.profiles(id) on delete set null,
   woo_customer_id text,
   customer_email text,
   customer_name text,
@@ -112,6 +113,7 @@ create index validation_codes_active_idx on public.validation_codes(active);
 create index code_validations_patient_id_idx on public.code_validations(patient_id);
 create index code_validations_created_at_idx on public.code_validations(created_at);
 create index woocommerce_orders_coupon_code_idx on public.woocommerce_orders(coupon_code);
+create index woocommerce_orders_patient_id_idx on public.woocommerce_orders(patient_id);
 create index woocommerce_orders_ordered_at_idx on public.woocommerce_orders(ordered_at);
 create index woocommerce_orders_network_idx on public.woocommerce_orders(distributor_id, agent_id, center_id);
 
@@ -128,18 +130,28 @@ for select
 to authenticated
 using ((select auth.uid()) = id);
 
-create policy "Profiles can update own profile"
+create policy "Administrators can read all profiles"
 on public.profiles
-for update
+for select
 to authenticated
-using ((select auth.uid()) = id)
-with check ((select auth.uid()) = id);
+using ((select auth.jwt() -> 'app_metadata' ->> 'role') = 'admin');
 
-create policy "Authenticated can read active validation codes"
+create policy "Authorized users can read active validation codes"
 on public.validation_codes
 for select
 to authenticated
-using (active is true);
+using (
+  active is true
+  and (
+    (select auth.jwt() -> 'app_metadata' ->> 'role') = 'admin'
+    or exists (
+      select 1
+      from public.profiles
+      where profiles.id = (select auth.uid())
+        and profiles.role in ('distributor', 'agent', 'center')
+    )
+  )
+);
 
 create policy "Authenticated can insert validation logs"
 on public.code_validations
@@ -153,21 +165,51 @@ for select
 to authenticated
 using ((select auth.uid()) = patient_id);
 
--- MVP read policies. Tighten these when admin role enforcement is implemented.
-create policy "Authenticated can read network entities"
+create policy "Authorized users can read network entities"
 on public.network_entities
 for select
 to authenticated
-using (active is true);
+using (
+  (select auth.jwt() -> 'app_metadata' ->> 'role') = 'admin'
+  or id = (
+    select profiles.network_entity_id
+    from public.profiles
+    where profiles.id = (select auth.uid())
+  )
+);
 
-create policy "Authenticated can read WooCommerce order snapshots"
+create policy "Authorized users can read WooCommerce order snapshots"
 on public.woocommerce_orders
 for select
 to authenticated
-using (true);
+using (
+  (select auth.jwt() -> 'app_metadata' ->> 'role') = 'admin'
+  or patient_id = (select auth.uid())
+  or exists (
+    select 1
+    from public.profiles
+    where profiles.id = (select auth.uid())
+      and profiles.network_entity_id is not null
+      and profiles.network_entity_id in (distributor_id, agent_id, center_id)
+  )
+);
 
 create policy "Authenticated can read active WordPress settings"
 on public.wordpress_settings
 for select
 to authenticated
 using (active is true);
+
+revoke all on public.profiles from anon, authenticated;
+revoke all on public.network_entities from anon, authenticated;
+revoke all on public.validation_codes from anon, authenticated;
+revoke all on public.code_validations from anon, authenticated;
+revoke all on public.woocommerce_orders from anon, authenticated;
+revoke all on public.wordpress_settings from anon, authenticated;
+
+grant select on public.profiles to authenticated;
+grant select on public.network_entities to authenticated;
+grant select on public.validation_codes to authenticated;
+grant select, insert on public.code_validations to authenticated;
+grant select on public.woocommerce_orders to authenticated;
+grant select on public.wordpress_settings to authenticated;
