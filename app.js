@@ -477,14 +477,14 @@ function codeDate(value) {
 function renderAdminCodes() {
   byId('admin-code-table').innerHTML = validationCodes.map((code) => `
     <tr>
-      <td><strong>${escapeHtml(code.code)}</strong></td>
-      <td>${escapeHtml(code.label)}${code.hospital ? `<br><small>${escapeHtml(code.hospital)}</small>` : ''}</td>
-      <td>${escapeHtml(code.woo_coupon)}</td>
-      <td>${escapeHtml(roleLabels[code.audience_role] || 'Tutti')}</td>
-      <td>${code.current_uses}${code.max_uses ? ` / ${code.max_uses}` : ''}</td>
-      <td>${codeDate(code.ends_at)}</td>
-      <td><span class="state ${code.active ? 'ok' : 'off'}">${code.active ? 'Attivo' : 'Spento'}</span></td>
-      <td>
+      <td data-label="Codice"><strong>${escapeHtml(code.code)}</strong></td>
+      <td data-label="Convenzione">${escapeHtml(code.label)}${code.hospital ? `<br><small>${escapeHtml(code.hospital)}</small>` : ''}</td>
+      <td data-label="Coupon">${escapeHtml(code.woo_coupon)}</td>
+      <td data-label="Profilo">${escapeHtml(roleLabels[code.audience_role] || 'Tutti')}</td>
+      <td data-label="Utilizzi">${code.current_uses}${code.max_uses ? ` / ${code.max_uses}` : ''}</td>
+      <td data-label="Scadenza">${codeDate(code.ends_at)}</td>
+      <td data-label="Stato"><span class="state ${code.active ? 'ok' : 'off'}">${code.active ? 'Attivo' : 'Spento'}</span></td>
+      <td data-label="Azioni">
         <div class="user-actions">
           <button type="button" data-code-edit="${code.id}">Modifica</button>
           <button type="button" data-code-toggle="${code.id}" data-code-active="${code.active ? 'false' : 'true'}">
