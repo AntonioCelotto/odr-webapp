@@ -24,15 +24,11 @@
         <form id="login-form" class="auth-form">
           <label>
             Email
-            <input id="login-email" type="email" value="paziente@odr.local" autocomplete="email" />
+            <input id="login-email" type="email" autocomplete="email" required />
           </label>
           <label>
             Password
-            <input type="password" value="passworddemo" autocomplete="current-password" />
-          </label>
-          <label>
-            Codice convenzione
-            <input id="login-code" value="ODR-DEMO" />
+            <input id="login-password" type="password" autocomplete="current-password" required />
           </label>
           <button class="primary-action full" type="submit">Entra in ODR</button>
         </form>
@@ -41,33 +37,46 @@
           <div class="form-grid">
             <label>
               Nome
-              <input id="register-name" value="Mario" autocomplete="given-name" />
+              <input id="register-name" autocomplete="given-name" required />
             </label>
             <label>
               Cognome
-              <input id="register-surname" value="Rossi" autocomplete="family-name" />
+              <input id="register-surname" autocomplete="family-name" required />
             </label>
           </div>
           <label>
             Email
-            <input id="register-email" type="email" value="mario.rossi@example.com" autocomplete="email" />
+            <input id="register-email" type="email" autocomplete="email" required />
+          </label>
+          <label>
+            Password
+            <input id="register-password" type="password" minlength="8" autocomplete="new-password" required />
           </label>
           <label>
             Telefono
-            <input id="register-phone" value="+39 333 0000000" autocomplete="tel" />
+            <input id="register-phone" autocomplete="tel" />
           </label>
           <label>
-            Codice fornito
-            <input id="register-code" value="ODR-DEMO" />
+            Tipo di profilo
+            <select id="register-role">
+              <option value="patient">Paziente</option>
+              <option value="center">Centro / punto vendita</option>
+              <option value="agent">Agente</option>
+              <option value="distributor">Distributore</option>
+            </select>
+          </label>
+          <label>
+            Codice fornito dall'ospedale (solo pazienti)
+            <input id="register-code" autocomplete="off" />
           </label>
           <label class="check-row">
             <input id="register-privacy" type="checkbox" checked />
             <span>Accetto privacy e comunicazioni operative ODR.</span>
           </label>
-          <button class="primary-action full" type="submit">Crea profilo demo</button>
+          <button class="primary-action full" type="submit">Crea profilo</button>
         </form>
 
-        <div id="auth-message" class="auth-message">Modalita demo: Supabase Auth verra collegato appena il progetto ODR sara attivo.</div>
+        <div id="auth-message" class="auth-message">Accedi oppure crea il tuo profilo ODR.</div>
       </div>
     </section>
 
@@ -81,47 +90,51 @@
           </div>
         </div>
         <nav class="nav" aria-label="Navigazione principale">
-          <a class="active" href="#dashboard">Dashboard</a>
-          <a href="#access">Codici</a>
-          <a href="#promotions">Promozioni</a>
-          <a href="#network">Rete</a>
-          <a href="#wordpress">WordPress</a>
-          <a href="#reports">Report</a>
-          <a href="#permissions">Permessi</a>
-          <a href="#setup">Setup</a>
+          <a class="active" href="/dashboard" data-route="dashboard">Dashboard</a>
+          <a href="/shop" data-route="shop">Shop</a>
+          <a href="/profilo" data-route="profile">Profilo</a>
+          <a href="/codici" data-route="access">Codici</a>
+          <a href="/promozioni" data-route="promotions">Promozioni</a>
+          <a href="/rete" data-route="network">Rete</a>
+          <a href="/report" data-route="reports">Report</a>
+          <a id="admin-users-nav" class="hidden" href="/utenti" data-route="admin-users">Gestione utenti</a>
+          <a href="/permessi" data-route="permissions">Permessi</a>
+          <a href="/impostazioni" data-route="setup">Impostazioni</a>
         </nav>
         <div class="sidebar-status">
           <span id="supabase-dot" class="dot warn"></span>
           <span id="supabase-status">Modalita demo</span>
         </div>
         <nav class="mobile-tabbar" aria-label="Navigazione mobile">
-          <a href="#dashboard">Home</a>
-          <a href="#access">Codice</a>
-          <a href="#promotions">Promo</a>
-          <a href="#reports">Report</a>
+          <a href="/dashboard" data-route="dashboard"><span>⌂</span>Home</a>
+          <a href="/shop" data-route="shop"><span>▦</span>Shop</a>
+          <a href="/codici" data-route="access"><span>◇</span>Codici</a>
+          <a href="/profilo" data-route="profile"><span>○</span>Profilo</a>
+          <button id="mobile-menu-button" type="button" aria-expanded="false"><span>☰</span>Menu</button>
         </nav>
       </aside>
+      <button id="mobile-nav-backdrop" class="mobile-nav-backdrop hidden" type="button" aria-label="Chiudi menu"></button>
 
       <main class="main">
         <header class="topbar">
           <div>
             <p class="eyebrow">Webapp gestionale collegata a WooCommerce</p>
-            <h1>ODR</h1>
+            <h1 id="page-title">Dashboard</h1>
           </div>
           <div class="account-strip">
-            <select id="role">
+            <select id="role" disabled>
               <option value="admin">Amministratore</option>
               <option value="distributor">Distributore</option>
               <option value="agent">Agente</option>
               <option value="center">Centro / punto vendita</option>
               <option value="patient">Paziente</option>
             </select>
-            <input id="account-email" value="admin@odr.local" aria-label="Email account" />
-            <button class="icon-button" type="button" aria-label="Esci">Esci</button>
+            <input id="account-email" aria-label="Email account" readonly />
+            <button id="logout-button" class="icon-button" type="button" aria-label="Esci">Esci</button>
           </div>
         </header>
 
-        <section id="dashboard" class="workspace">
+        <section id="dashboard" class="workspace route-screen">
           <div class="section-heading">
             <div>
               <h2>Dashboard</h2>
@@ -153,7 +166,63 @@
           </div>
         </section>
 
-        <section id="access" class="split">
+        <section id="profile" class="workspace route-screen">
+          <div class="section-heading">
+            <div>
+              <h2>Il mio profilo</h2>
+              <p>Dati dell’account ODR e collegamento con l’utente WordPress/WooCommerce.</p>
+            </div>
+            <span id="profile-link-status" class="config-pill">Solo ODR</span>
+          </div>
+          <div class="profile-grid">
+            <div><span>Nome</span><strong id="profile-name">-</strong></div>
+            <div><span>Email</span><strong id="profile-email">-</strong></div>
+            <div><span>Ruolo ODR</span><strong id="profile-role">-</strong></div>
+            <div><span>Stato</span><strong id="profile-status">-</strong></div>
+            <div><span>ID WordPress</span><strong id="profile-wordpress-id">Non collegato</strong></div>
+          </div>
+        </section>
+
+        <section id="shop" class="workspace shop-workspace route-screen">
+          <div class="section-heading">
+            <div>
+              <p class="eyebrow">Catalogo personale</p>
+              <h2>Prodotti ODR</h2>
+              <p id="shop-intro">Il catalogo e i prezzi vengono letti direttamente da WooCommerce.</p>
+            </div>
+            <button id="shop-cart-link" class="secondary-action shop-cart-button" type="button">
+              Carrello <span id="shop-cart-count">0</span>
+            </button>
+          </div>
+          <div class="shop-toolbar">
+            <label class="shop-search">
+              <span>Cerca</span>
+              <input id="shop-search" type="search" placeholder="Nome prodotto o codice SKU" />
+            </label>
+            <div id="shop-categories" class="shop-categories" aria-label="Filtra per categoria"></div>
+          </div>
+          <div id="shop-message" class="auth-message">Caricamento del tuo listino...</div>
+          <aside id="shop-cart-panel" class="shop-cart-panel hidden" aria-label="Carrello ODR">
+            <div class="shop-cart-heading">
+              <div>
+                <p class="eyebrow">Il tuo ordine</p>
+                <h3>Carrello</h3>
+              </div>
+              <button id="shop-cart-close" class="icon-button" type="button" aria-label="Chiudi carrello">Chiudi</button>
+            </div>
+            <div id="shop-cart-items" class="shop-cart-items"></div>
+            <div class="shop-cart-footer">
+              <div>
+                <span>Totale prodotti</span>
+                <strong id="shop-cart-total">€ 0,00</strong>
+              </div>
+              <button id="shop-checkout" class="primary-action" type="button">Procedi all’acquisto</button>
+            </div>
+          </aside>
+          <div id="shop-products" class="product-grid"></div>
+        </section>
+
+        <section id="access" class="split route-screen">
           <div class="panel">
             <div class="panel-title">
               <h2>Validazione codice paziente</h2>
@@ -175,7 +244,7 @@
           </div>
         </section>
 
-        <section id="promotions" class="workspace">
+        <section id="promotions" class="workspace route-screen">
           <div class="section-heading">
             <div>
               <h2>Promozioni e fidelity</h2>
@@ -186,7 +255,7 @@
           <div class="promo-grid" id="promotion-list"></div>
         </section>
 
-        <section id="network" class="workspace">
+        <section id="network" class="workspace route-screen">
           <div class="section-heading">
             <div>
               <h2>Rete commerciale</h2>
@@ -220,7 +289,7 @@
           </div>
         </section>
 
-        <section id="wordpress" class="split">
+        <section id="wordpress" class="split route-screen">
           <div class="panel">
             <div class="panel-title">
               <h2>Collegamento WordPress</h2>
@@ -252,7 +321,7 @@
           </div>
         </section>
 
-        <section id="reports" class="workspace">
+        <section id="reports" class="workspace route-screen">
           <div class="section-heading">
             <div>
               <h2>Report vendite</h2>
@@ -286,13 +355,14 @@
           </div>
         </section>
 
-        <section id="permissions" class="workspace">
+        <section id="permissions" class="workspace route-screen">
           <div class="section-heading">
             <div>
               <h2>Ruoli e permessi</h2>
-              <p>Struttura iniziale per decidere cosa vede ogni profilo prima dell'attivazione login reale.</p>
+              <p>L’amministratore può abilitare o disabilitare la visibilità dei moduli per ciascun ruolo.</p>
             </div>
           </div>
+          <div id="permissions-message" class="auth-message">Caricamento permessi...</div>
           <div class="table-wrap">
             <table>
               <thead>
@@ -310,7 +380,31 @@
           </div>
         </section>
 
-        <section id="setup" class="split bottom-space">
+        <section id="admin-users" class="workspace route-screen hidden">
+          <div class="section-heading">
+            <div>
+              <h2>Gestione utenti</h2>
+              <p>Approva le richieste professionali e assegna il livello operativo corretto.</p>
+            </div>
+            <button id="refresh-users" class="secondary-action" type="button">Aggiorna</button>
+          </div>
+          <div id="admin-users-message" class="auth-message">Nessuna richiesta caricata.</div>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Utente</th>
+                  <th>Ruolo richiesto</th>
+                  <th>Stato</th>
+                  <th>Azioni</th>
+                </tr>
+              </thead>
+              <tbody id="admin-users-table"></tbody>
+            </table>
+          </div>
+        </section>
+
+        <section id="setup" class="split bottom-space route-screen">
           <div class="panel">
             <div class="panel-title">
               <h2>Supabase</h2>
@@ -332,6 +426,7 @@
         </section>
       </main>
     </div>
+    <script src="/config.js"></script>
     <script src="/app.js"></script>
   </body>
 </html>
