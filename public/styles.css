@@ -983,6 +983,79 @@ h2 {
   gap: 9px;
 }
 
+.code-manager {
+  grid-column: 1 / -1;
+}
+
+.code-manager-title {
+  align-items: flex-start;
+  justify-content: space-between;
+}
+
+.code-manager-title p {
+  margin: 5px 0 0;
+  color: var(--muted);
+}
+
+.code-admin-form {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+  margin: 18px 0;
+  padding: 16px;
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  background: #faf9fd;
+}
+
+.code-admin-form label {
+  display: grid;
+  gap: 7px;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.code-admin-form input,
+.code-admin-form select {
+  width: 100%;
+  min-height: 42px;
+  padding: 0 12px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  color: var(--ink);
+  background: white;
+}
+
+.code-admin-form .check-row,
+.code-admin-form .action-row {
+  align-self: end;
+}
+
+.code-admin-form .check-row {
+  display: flex;
+}
+
+.code-admin-form .check-row input {
+  width: 18px;
+  min-height: 18px;
+}
+
+.code-history-title {
+  margin-top: 24px;
+}
+
+.code-validation-history {
+  display: grid;
+  gap: 4px;
+}
+
+.code-validation-history .list-row > div:last-child {
+  display: grid;
+  justify-items: end;
+  gap: 4px;
+}
+
 .promo-grid {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -1309,6 +1382,15 @@ tr:last-child td {
 }
 
 @media (max-width: 620px) {
+  .code-admin-form {
+    grid-template-columns: 1fr;
+  }
+
+  .code-manager-title {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
   .shop-cart-panel {
     margin-inline: -10px;
     padding: 16px 12px;
