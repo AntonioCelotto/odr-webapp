@@ -1301,21 +1301,6 @@ function importOrdersFile(file) {
   reader.readAsText(file);
 }
 
-function addPromotionDemo() {
-  promotions = [
-    {
-      id: `promo-${Date.now()}`,
-      name: 'Nuova campagna demo',
-      audience: 'Segmento da definire',
-      coupon: `ODR${promotions.length + 10}`,
-      status: 'Bozza',
-      rule: 'Regola da configurare su WordPress/WooCommerce',
-    },
-    ...promotions,
-  ];
-  renderPromotions();
-}
-
 function exportReport() {
   const header = ['ordine', 'data', 'cliente', 'email', 'coupon', 'agente', 'distributore', 'centro', 'importo', 'stato'];
   const lines = filteredReportOrders.map((order) => [
@@ -1344,7 +1329,7 @@ function initSupabaseStatus() {
   byId('supabase-dot').className = isSupabaseConfigured ? 'dot ok' : 'dot warn';
   byId('supabase-status').textContent = isSupabaseConfigured ? 'Supabase collegato' : 'Configurazione mancante';
   byId('supabase-pill').className = isSupabaseConfigured ? 'config-pill ok' : 'config-pill warn';
-  byId('supabase-pill').textContent = isSupabaseConfigured ? 'Configurato' : 'Configura env';
+  byId('supabase-pill').textContent = isSupabaseConfigured ? 'Connessione attiva' : 'Connessione non disponibile';
   if (!isSupabaseConfigured) {
     showAuthMessage('Configurazione Supabase non disponibile in questo ambiente.', 'error');
   }
