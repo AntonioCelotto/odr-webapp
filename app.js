@@ -24,48 +24,9 @@ let validationCodes = [];
 let promotions = [];
 let codeValidations = [];
 
-let networkRows = [
-  {
-    id: 'dist-nord',
-    type: 'distributor',
-    name: 'Distribuzione Nord',
-    email: 'nord@example.com',
-    phone: '+39 011 000000',
-    area: 'Nord Ovest',
-    parentName: '',
-    active: true,
-  },
-  {
-    id: 'agent-rossi',
-    type: 'agent',
-    name: 'Laura Rossi',
-    email: 'laura.rossi@example.com',
-    phone: '',
-    area: 'Piemonte',
-    parentName: 'Distribuzione Nord',
-    active: true,
-  },
-  {
-    id: 'center-aurora',
-    type: 'center',
-    name: 'Centro Aurora',
-    email: 'info@centroaurora.example',
-    phone: '',
-    area: 'Torino',
-    parentName: 'Laura Rossi',
-    active: true,
-  },
-  {
-    id: 'dist-centro',
-    type: 'distributor',
-    name: 'Distribuzione Centro',
-    email: 'centro@example.com',
-    phone: '',
-    area: 'Centro Italia',
-    parentName: '',
-    active: true,
-  },
-];
+let networkRows = [];
+let networkAccounts = [];
+let canManageNetwork = false;
 
 let reportOrders = [];
 
@@ -638,7 +599,7 @@ function renderNetwork() {
   const query = byId('network-search').value.trim().toLowerCase();
   const rows = networkRows.filter((row) => {
     if (!query) return true;
-    return [row.type, row.name, row.email, row.phone, row.area, row.parentName]
+    return [row.type, row.name, row.email, row.phone, row.area, row.parentName, row.accountName]
       .filter(Boolean)
       .join(' ')
       .toLowerCase()
@@ -648,15 +609,142 @@ function renderNetwork() {
   byId('network-table').innerHTML = rows
     .map((row) => `
       <tr>
-        <td>${row.type}</td>
-        <td>${row.name}</td>
-        <td>${row.area || '-'}</td>
-        <td>${row.parentName || '-'}</td>
-        <td>${row.email || row.phone || '-'}</td>
-        <td><span class="state ok">Attivo</span></td>
+        <td data-label="Tipo">${escapeHtml(roleLabels[row.type] || row.type)}</td>
+        <td data-label="Nome"><strong>${escapeHtml(row.name)}</strong>${row.external_code ? `<br><small>${escapeHtml(row.external_code)}</small>` : ''}</td>
+        <td data-label="Zona">${escapeHtml(row.area || '-')}</td>
+        <td data-label="Collegato a">${escapeHtml(row.parentName || '-')}</td>
+        <td data-label="Contatto">${escapeHtml(row.email || row.phone || '-')}</td>
+        <td data-label="Account ODR">${escapeHtml(row.accountName || 'Non collegato')}</td>
+        <td data-label="Stato"><span class="state ${row.active ? 'ok' : 'off'}">${row.active ? 'Attivo' : 'Spento'}</span></td>
+        <td data-label="Azioni">${canManageNetwork ? `<div class="user-actions">
+          <button type="button" data-network-edit="${row.id}">Modifica</button>
+          <button type="button" data-network-toggle="${row.id}" data-network-active="${row.active ? 'false' : 'true'}">${row.active ? 'Disattiva' : 'Attiva'}</button>
+        </div>` : '-'}</td>
       </tr>
     `)
     .join('');
+}
+
+function normalizeNetworkRows(entities = [], accounts = []) {
+  const byEntity = new Map(entities.map((entity) => [entity.id, entity]));
+  const accountByEntity = new Map(accounts
+    .filter((account) => account.network_entity_id)
+    .map((account) => [account.network_entity_id, account]));
+  return entities.map((entity) => {
+    const account = accountByEntity.get(entity.id);
+    return {
+      ...entity,
+      parentName: byEntity.get(entity.parent_id)?.name || '',
+      accountId: account?.id || '',
+      accountName: account ? (account.full_name || account.email) : '',
+    };
+  });
+}
+
+async function loadNetwork() {
+  if (!supabase || !currentUser) return;
+  byId('import-notice').textContent = 'Caricamento rete...';
+  const { data, error } = await supabase.functions.invoke('network-management', { method: 'GET' });
+  if (error || data?.error) {
+    byId('import-notice').textContent = data?.error || 'Rete non disponibile.';
+    return;
+  }
+  networkAccounts = data.accounts || [];
+  canManageNetwork = Boolean(data.canManage);
+  networkRows = normalizeNetworkRows(data.entities || [], networkAccounts);
+  byId('network-admin-actions').classList.toggle('hidden', !canManageNetwork);
+  renderNetwork();
+  updateMetrics();
+  byId('import-notice').textContent = `${networkRows.length} elementi configurati.`;
+}
+
+function refreshNetworkFormOptions(selectedParent = '', selectedAccount = '') {
+  const type = byId('network-type').value;
+  const parentType = type === 'agent' ? 'distributor' : type === 'center' ? 'agent' : '';
+  const parents = networkRows.filter((row) => row.type === parentType && row.active);
+  byId('network-parent').disabled = !parentType;
+  byId('network-parent').required = Boolean(parentType);
+  byId('network-parent').innerHTML = [
+    `<option value="">${parentType ? 'Seleziona' : 'Nessun collegamento'}</option>`,
+    ...parents.map((row) => `<option value="${row.id}">${escapeHtml(row.name)}</option>`),
+  ].join('');
+  byId('network-parent').value = selectedParent;
+
+  const editingId = byId('network-id').value;
+  const accounts = networkAccounts.filter((account) =>
+    account.role === type && (!account.network_entity_id || account.network_entity_id === editingId));
+  byId('network-account').innerHTML = [
+    '<option value="">Nessun account</option>',
+    ...accounts.map((account) => `<option value="${account.id}">${escapeHtml(account.full_name || account.email)} · ${escapeHtml(account.email)}</option>`),
+  ].join('');
+  byId('network-account').value = selectedAccount;
+}
+
+function openNetworkForm(row = null) {
+  byId('network-form').classList.remove('hidden');
+  byId('network-id').value = row?.id || '';
+  byId('network-type').value = row?.type || 'distributor';
+  byId('network-name').value = row?.name || '';
+  byId('network-area').value = row?.area || '';
+  byId('network-email').value = row?.email || '';
+  byId('network-phone').value = row?.phone || '';
+  byId('network-external-code').value = row?.external_code || '';
+  byId('network-active').checked = row?.active ?? true;
+  refreshNetworkFormOptions(row?.parent_id || '', row?.accountId || '');
+  byId('network-name').focus();
+}
+
+function closeNetworkForm() {
+  byId('network-form').reset();
+  byId('network-id').value = '';
+  byId('network-form').classList.add('hidden');
+}
+
+async function saveNetworkEntity(event) {
+  event.preventDefault();
+  const button = event.submitter;
+  if (button) button.disabled = true;
+  byId('import-notice').textContent = 'Salvataggio in corso...';
+  const { data, error } = await supabase.functions.invoke('network-management', {
+    method: 'POST',
+    body: {
+      action: 'save',
+      id: byId('network-id').value || null,
+      type: byId('network-type').value,
+      name: byId('network-name').value,
+      area: byId('network-area').value,
+      parentId: byId('network-parent').value || null,
+      email: byId('network-email').value,
+      phone: byId('network-phone').value,
+      externalCode: byId('network-external-code').value,
+      accountId: byId('network-account').value || null,
+      active: byId('network-active').checked,
+    },
+  });
+  if (button) button.disabled = false;
+  if (error || data?.error) {
+    byId('import-notice').textContent = data?.error || 'Salvataggio non riuscito.';
+    return;
+  }
+  closeNetworkForm();
+  await loadNetwork();
+}
+
+async function handleNetworkAction(event) {
+  const edit = event.target.closest('[data-network-edit]');
+  if (edit) {
+    openNetworkForm(networkRows.find((row) => row.id === edit.dataset.networkEdit));
+    return;
+  }
+  const toggle = event.target.closest('[data-network-toggle]');
+  if (!toggle) return;
+  toggle.disabled = true;
+  const { data, error } = await supabase.functions.invoke('network-management', {
+    method: 'POST',
+    body: { action: 'toggle', id: toggle.dataset.networkToggle, active: toggle.dataset.networkActive === 'true' },
+  });
+  if (error || data?.error) byId('import-notice').textContent = data?.error || 'Aggiornamento non riuscito.';
+  await loadNetwork();
 }
 
 function renderOrders() {
@@ -906,6 +994,7 @@ function enterApp(user) {
   loadPermissions();
   loadShop();
   loadWooOrders();
+  loadNetwork();
   updateMetrics();
 }
 
@@ -1161,12 +1250,19 @@ function parseOrderCsv(text) {
 
 function importNetworkFile(file) {
   const reader = new FileReader();
-  reader.onload = () => {
+  reader.onload = async () => {
     const rows = parseCsv(String(reader.result || ''));
-    networkRows = [...rows, ...networkRows];
-    byId('import-notice').textContent = `${rows.length} righe importate da ${file.name}`;
-    renderNetwork();
-    updateMetrics();
+    byId('import-notice').textContent = `Importazione di ${rows.length} righe...`;
+    const { data, error } = await supabase.functions.invoke('network-management', {
+      method: 'POST',
+      body: { action: 'import', rows, fileName: file.name },
+    });
+    if (error || data?.error) {
+      byId('import-notice').textContent = data?.error || 'Importazione non riuscita.';
+      return;
+    }
+    await loadNetwork();
+    byId('import-notice').textContent = `${data.imported} righe importate e salvate da ${file.name}.`;
   };
   reader.readAsText(file);
 }
@@ -1256,6 +1352,11 @@ byId('cancel-code-button').addEventListener('click', resetCodeForm);
 byId('code-admin-form').addEventListener('submit', saveAdminCode);
 byId('admin-code-table').addEventListener('click', handleCodeAdminAction);
 byId('network-search').addEventListener('input', renderNetwork);
+byId('new-network-button').addEventListener('click', () => openNetworkForm());
+byId('cancel-network-button').addEventListener('click', closeNetworkForm);
+byId('network-type').addEventListener('change', () => refreshNetworkFormOptions());
+byId('network-form').addEventListener('submit', saveNetworkEntity);
+byId('network-table').addEventListener('click', handleNetworkAction);
 byId('network-import').addEventListener('change', (event) => {
   const file = event.target.files?.[0];
   if (file) importNetworkFile(file);
