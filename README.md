@@ -1,6 +1,6 @@
 # ODR Webapp
 
-MVP gestionale ODR collegato a WordPress/WooCommerce.
+Gestionale ODR collegato a WordPress/WooCommerce.
 
 ## Scopo
 
@@ -26,7 +26,7 @@ Il file `package.json` include anche `npm run dev`, che usa lo stesso server Pyt
 
 ## Configurazione iniziale
 
-Per il prototipo statico, configura questi valori in `app.js`:
+Configura questi valori in `app.js`:
 
 - `supabaseUrl`
 - `supabasePublishableKey`
@@ -47,13 +47,13 @@ Tabelle principali:
 - `woocommerce_orders`
 - `wordpress_settings`
 
-## MVP implementato
+## Funzioni implementate
 
 - Dashboard ODR
-- Validazione codice demo
+- Validazione codici promozionali
 - Link verso WooCommerce con parametri `coupon` e `odr_code`
 - Import rete commerciale da CSV esportato da Excel
-- Report demo ordini WooCommerce
+- Report ordini WooCommerce
 - Stato configurazione Supabase
 
 ## Prossimi passi tecnici
