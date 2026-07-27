@@ -1129,6 +1129,27 @@ h2 {
   margin-top: 6px;
 }
 
+.report-filters {
+  display: grid;
+  grid-template-columns: minmax(200px, 1.5fr) minmax(150px, 1fr) auto auto auto;
+  gap: 10px;
+  margin-bottom: 12px;
+}
+
+.report-filters input,
+.report-filters select {
+  width: 100%;
+  min-width: 0;
+}
+
+.report-filters label {
+  display: grid;
+  gap: 4px;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 700;
+}
+
 .permission {
   display: inline-flex;
   min-width: 46px;
@@ -1407,6 +1428,75 @@ tr:last-child td {
 }
 
 @media (max-width: 620px) {
+  .report-filters {
+    grid-template-columns: 1fr;
+  }
+
+  #reports {
+    width: 100%;
+    min-width: 0;
+    overflow: hidden;
+  }
+
+  #reports .table-wrap {
+    overflow: visible;
+  }
+
+  #reports table,
+  #reports tbody,
+  #reports tr,
+  #reports td {
+    display: block;
+    width: 100%;
+    max-width: 100%;
+    min-width: 0;
+  }
+
+  #reports thead {
+    display: none;
+  }
+
+  #reports tbody {
+    display: grid;
+    gap: 12px;
+  }
+
+  #reports tr {
+    padding: 14px;
+    border: 1px solid var(--line);
+    border-radius: 18px;
+    background: #fff;
+  }
+
+  #reports td {
+    display: grid;
+    grid-template-columns: minmax(92px, 35%) 1fr;
+    gap: 10px;
+    padding: 8px 0;
+    border: 0;
+    border-bottom: 1px solid var(--line);
+    overflow-wrap: anywhere;
+  }
+
+  #reports td:last-child {
+    border-bottom: 0;
+  }
+
+  #reports td::before {
+    content: attr(data-label);
+    color: var(--muted);
+    font-size: 12px;
+    font-weight: 700;
+  }
+
+  #reports .report-empty-row td {
+    display: block;
+  }
+
+  #reports .report-empty-row td::before {
+    content: none;
+  }
+
   #network .table-wrap {
     overflow: visible;
   }
