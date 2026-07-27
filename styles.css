@@ -1417,6 +1417,14 @@ tr:last-child td {
   #network td {
     display: block;
     width: 100%;
+    max-width: 100%;
+    min-width: 0;
+  }
+
+  #network {
+    width: 100%;
+    min-width: 0;
+    overflow: hidden;
   }
 
   #network thead {
@@ -1454,6 +1462,32 @@ tr:last-child td {
     color: var(--muted);
     font-size: 12px;
     font-weight: 700;
+  }
+
+  #network .user-actions {
+    display: grid;
+    grid-template-columns: 1fr;
+    min-width: 0;
+  }
+
+  #network .user-actions button,
+  #network-admin-actions,
+  #network-admin-actions > * {
+    width: 100%;
+    min-width: 0;
+  }
+
+  #network-admin-actions {
+    display: grid;
+    grid-template-columns: 1fr;
+  }
+
+  #network-form input,
+  #network-form select,
+  #network-search {
+    width: 100%;
+    max-width: 100%;
+    min-width: 0;
   }
 
   .code-manager {
