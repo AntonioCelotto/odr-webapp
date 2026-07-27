@@ -307,17 +307,45 @@
           <div class="section-heading">
             <div>
               <h2>Rete commerciale</h2>
-              <p>Importa distributori e agenti da file Excel esportato in CSV, poi associa vendite e codici per report.</p>
+              <p>Gestisci distributori, agenti e centri e collega gli account ODR alla rete commerciale.</p>
             </div>
-            <label class="secondary-action">
-              Import CSV
-              <input id="network-import" type="file" accept=".csv,.tsv,text/csv" />
-            </label>
+            <div id="network-admin-actions" class="action-row">
+              <button id="new-network-button" class="primary-action" type="button">Nuovo elemento</button>
+              <label class="secondary-action">
+                Import CSV
+                <input id="network-import" type="file" accept=".csv,.tsv,text/csv" />
+              </label>
+            </div>
           </div>
+
+          <form id="network-form" class="admin-form hidden">
+            <input id="network-id" type="hidden" />
+            <div class="form-grid">
+              <label>Tipo
+                <select id="network-type" required>
+                  <option value="distributor">Distributore</option>
+                  <option value="agent">Agente</option>
+                  <option value="center">Centro / punto vendita</option>
+                </select>
+              </label>
+              <label>Nome <input id="network-name" required maxlength="250" /></label>
+              <label>Zona <input id="network-area" maxlength="120" /></label>
+              <label>Collegato a <select id="network-parent"></select></label>
+              <label>Email <input id="network-email" type="email" maxlength="250" /></label>
+              <label>Telefono <input id="network-phone" maxlength="60" /></label>
+              <label>Codice esterno <input id="network-external-code" maxlength="100" /></label>
+              <label>Account ODR <select id="network-account"></select></label>
+            </div>
+            <label class="check-row"><input id="network-active" type="checkbox" checked /> Elemento attivo</label>
+            <div class="action-row">
+              <button class="primary-action" type="submit">Salva</button>
+              <button id="cancel-network-button" class="secondary-action" type="button">Annulla</button>
+            </div>
+          </form>
 
           <div class="toolbar">
             <input id="network-search" placeholder="Cerca nome, zona, email, distributore" />
-            <span id="import-notice"></span>
+            <span id="import-notice">Caricamento rete...</span>
           </div>
 
           <div class="table-wrap">
@@ -329,7 +357,9 @@
                   <th>Zona</th>
                   <th>Collegato a</th>
                   <th>Contatto</th>
+                  <th>Account ODR</th>
                   <th>Stato</th>
+                  <th></th>
                 </tr>
               </thead>
               <tbody id="network-table"></tbody>
