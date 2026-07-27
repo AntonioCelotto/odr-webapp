@@ -53,6 +53,10 @@ Deno.serve(async (request) => {
             visible.add(entity.id);
             changed = true;
           }
+          if (visible.has(entity.id) && entity.parent_id && !visible.has(entity.parent_id)) {
+            visible.add(entity.parent_id);
+            changed = true;
+          }
         }
       }
       entities = entities.filter((entity) => visible.has(entity.id));
