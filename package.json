@@ -4,9 +4,14 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "python3 -m http.server 5173",
-    "build": "node scripts/build-static.mjs"
+    "dev": "npm run build && python3 -m http.server 5173 -d public",
+    "build": "node scripts/build-static.mjs",
+    "verify": "node scripts/verify-static.mjs"
   },
-  "dependencies": {},
-  "devDependencies": {}
+  "dependencies": {
+    "@supabase/supabase-js": "2.110.8"
+  },
+  "devDependencies": {
+    "esbuild": "0.28.1"
+  }
 }
