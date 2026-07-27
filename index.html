@@ -413,6 +413,23 @@
               <button id="export-report" class="secondary-action" type="button">Esporta CSV</button>
             </div>
           </div>
+          <div class="report-filters">
+            <input id="report-search" type="search" placeholder="Cerca ordine, cliente, coupon o rete" />
+            <select id="report-status">
+              <option value="">Tutti gli stati</option>
+              <option value="processing">In lavorazione</option>
+              <option value="completed">Completato</option>
+              <option value="on-hold">In attesa</option>
+              <option value="pending">Pagamento in attesa</option>
+              <option value="cancelled">Annullato</option>
+              <option value="refunded">Rimborsato</option>
+              <option value="failed">Fallito</option>
+            </select>
+            <label>Dal <input id="report-date-from" type="date" /></label>
+            <label>Al <input id="report-date-to" type="date" /></label>
+            <button id="refresh-report" class="secondary-action" type="button">Aggiorna</button>
+          </div>
+          <div id="report-message" class="auth-message">Caricamento ordini WooCommerce...</div>
           <div class="report-summary" id="report-summary"></div>
           <div class="table-wrap">
             <table>
@@ -424,6 +441,7 @@
                   <th>Coupon</th>
                   <th>Agente</th>
                   <th>Distributore</th>
+                  <th>Centro</th>
                   <th>Importo</th>
                   <th>Stato</th>
                 </tr>
