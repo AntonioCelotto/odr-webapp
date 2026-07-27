@@ -29,6 +29,7 @@ let networkAccounts = [];
 let canManageNetwork = false;
 
 let reportOrders = [];
+let filteredReportOrders = [];
 
 const moduleLabels = {
   dashboard: 'Dashboard',
@@ -508,15 +509,20 @@ async function loadWooCoupons() {
 }
 
 async function loadWooOrders() {
+  byId('report-message').textContent = 'Aggiornamento ordini WooCommerce...';
   const { data } = await supabase.auth.getSession();
   const response = await fetch('/api/orders', {
     headers: { Authorization: `Bearer ${data.session?.access_token || ''}` },
   });
   const payload = await response.json();
-  if (!response.ok) return;
+  if (!response.ok) {
+    byId('report-message').textContent = payload.error || 'Report temporaneamente non disponibile.';
+    return;
+  }
   reportOrders = payload.orders || [];
   renderOrders();
   updateMetrics();
+  byId('report-message').textContent = `${reportOrders.length} ordini WooCommerce caricati.`;
 }
 
 async function loadPromoCodes() {
@@ -748,26 +754,43 @@ async function handleNetworkAction(event) {
 }
 
 function renderOrders() {
-  byId('orders-table').innerHTML = reportOrders
+  const query = byId('report-search').value.trim().toLowerCase();
+  const status = byId('report-status').value;
+  const dateFrom = byId('report-date-from').value;
+  const dateTo = byId('report-date-to').value;
+  filteredReportOrders = reportOrders.filter((order) => {
+    const haystack = [
+      order.id, order.customer, order.customerEmail, order.coupon,
+      order.agent, order.distributor, order.center,
+    ].filter(Boolean).join(' ').toLowerCase();
+    return (!query || haystack.includes(query))
+      && (!status || order.status === status)
+      && (!dateFrom || order.date >= dateFrom)
+      && (!dateTo || order.date <= dateTo);
+  });
+  byId('orders-table').innerHTML = filteredReportOrders.length
+    ? filteredReportOrders
     .map((order) => `
       <tr>
-        <td>${order.id}</td>
-        <td>${order.date}</td>
-        <td>${order.customer}</td>
-        <td>${order.coupon || '-'}</td>
-        <td>${order.agent || '-'}</td>
-        <td>${order.distributor || '-'}</td>
-        <td>${money(order.amount)}</td>
-        <td><span class="state ok">${order.status}</span></td>
+        <td data-label="Ordine">${escapeHtml(order.id)}</td>
+        <td data-label="Data">${escapeHtml(order.date)}</td>
+        <td data-label="Cliente"><strong>${escapeHtml(order.customer)}</strong>${order.customerEmail ? `<br><small>${escapeHtml(order.customerEmail)}</small>` : ''}</td>
+        <td data-label="Coupon">${escapeHtml(order.coupon || '-')}</td>
+        <td data-label="Agente">${escapeHtml(order.agent || '-')}</td>
+        <td data-label="Distributore">${escapeHtml(order.distributor || '-')}</td>
+        <td data-label="Centro">${escapeHtml(order.center || '-')}</td>
+        <td data-label="Importo"><strong>${money(order.amount)}</strong></td>
+        <td data-label="Stato"><span class="state ${['cancelled', 'failed', 'refunded'].includes(order.status) ? 'off' : 'ok'}">${escapeHtml(order.status)}</span></td>
       </tr>
     `)
-    .join('');
+    .join('')
+    : '<tr class="report-empty-row"><td colspan="9">Nessun ordine corrisponde ai filtri selezionati.</td></tr>';
   renderReportSummary();
 }
 
 function renderReportSummary() {
-  const total = reportOrders.reduce((sum, order) => sum + order.amount, 0);
-  const byCoupon = reportOrders.reduce((acc, order) => {
+  const total = filteredReportOrders.reduce((sum, order) => sum + order.amount, 0);
+  const byCoupon = filteredReportOrders.reduce((acc, order) => {
     const key = order.coupon || 'Senza coupon';
     acc[key] = (acc[key] || 0) + order.amount;
     return acc;
@@ -775,7 +798,7 @@ function renderReportSummary() {
   const topCoupon = Object.entries(byCoupon).sort((a, b) => b[1] - a[1])[0];
 
   byId('report-summary').innerHTML = `
-    <div><span>Ordini importati</span><strong>${reportOrders.length}</strong></div>
+    <div><span>Ordini visualizzati</span><strong>${filteredReportOrders.length}</strong></div>
     <div><span>Totale vendite</span><strong>${money(total)}</strong></div>
     <div><span>Coupon principale</span><strong>${topCoupon ? `${topCoupon[0]} · ${money(topCoupon[1])}` : '-'}</strong></div>
   `;
@@ -1294,14 +1317,16 @@ function addPromotionDemo() {
 }
 
 function exportReport() {
-  const header = ['ordine', 'data', 'cliente', 'coupon', 'agente', 'distributore', 'importo', 'stato'];
-  const lines = reportOrders.map((order) => [
+  const header = ['ordine', 'data', 'cliente', 'email', 'coupon', 'agente', 'distributore', 'centro', 'importo', 'stato'];
+  const lines = filteredReportOrders.map((order) => [
     order.id,
     order.date,
     order.customer,
+    order.customerEmail || '',
     order.coupon || '',
     order.agent || '',
     order.distributor || '',
+    order.center || '',
     order.amount.toFixed(2),
     order.status,
   ]);
@@ -1366,6 +1391,11 @@ byId('orders-import').addEventListener('change', (event) => {
   if (file) importOrdersFile(file);
 });
 byId('export-report').addEventListener('click', exportReport);
+byId('report-search').addEventListener('input', renderOrders);
+byId('report-status').addEventListener('change', renderOrders);
+byId('report-date-from').addEventListener('change', renderOrders);
+byId('report-date-to').addEventListener('change', renderOrders);
+byId('refresh-report').addEventListener('click', loadWooOrders);
 byId('shop-search').addEventListener('input', renderShopProducts);
 byId('shop-products').addEventListener('click', (event) => {
   const cartButton = event.target.closest('[data-cart-add]');
