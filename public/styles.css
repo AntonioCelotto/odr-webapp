@@ -21,6 +21,8 @@
 body {
   margin: 0;
   min-width: 320px;
+  max-width: 100%;
+  overflow-x: hidden;
 }
 
 button,
@@ -204,6 +206,8 @@ select {
 }
 
 .app-shell {
+  width: 100%;
+  min-width: 0;
   min-height: 100svh;
   display: grid;
   grid-template-columns: 280px minmax(0, 1fr);
@@ -303,6 +307,7 @@ select {
 }
 
 .main {
+  width: 100%;
   min-width: 0;
   padding: 24px;
 }
@@ -919,7 +924,13 @@ h2 {
   margin-bottom: 18px;
 }
 
+.split.route-screen:not(.route-active) {
+  display: none;
+}
+
 .panel {
+  min-width: 0;
+  max-width: 100%;
   padding: 20px;
 }
 
@@ -1205,7 +1216,12 @@ h2 {
 }
 
 .table-wrap {
+  display: block;
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
   overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
   border: 1px solid var(--line);
   border-radius: 8px;
 }
@@ -1280,6 +1296,7 @@ tr:last-child td {
   }
 
   .app-shell {
+    width: 100%;
     grid-template-columns: 1fr;
   }
 
@@ -1382,6 +1399,66 @@ tr:last-child td {
 }
 
 @media (max-width: 620px) {
+  .code-manager {
+    width: 100%;
+    overflow: hidden;
+  }
+
+  .code-manager .table-wrap {
+    overflow: visible;
+    border: 0;
+  }
+
+  .code-manager table,
+  .code-manager tbody,
+  .code-manager tr,
+  .code-manager td {
+    display: block;
+    width: 100%;
+    min-width: 0;
+  }
+
+  .code-manager thead {
+    display: none;
+  }
+
+  .code-manager tbody {
+    display: grid;
+    gap: 12px;
+  }
+
+  .code-manager tr {
+    padding: 12px;
+    border: 1px solid var(--line);
+    border-radius: 16px;
+    background: #fbfaff;
+  }
+
+  .code-manager td {
+    display: grid;
+    grid-template-columns: 92px minmax(0, 1fr);
+    gap: 10px;
+    padding: 8px 0;
+    border-bottom: 1px solid var(--line);
+    overflow-wrap: anywhere;
+  }
+
+  .code-manager td::before {
+    content: attr(data-label);
+    color: var(--muted);
+    font-size: 11px;
+    font-weight: 800;
+    text-transform: uppercase;
+  }
+
+  .code-manager td:last-child {
+    border-bottom: 0;
+  }
+
+  .code-manager td .user-actions {
+    min-width: 0;
+  }
+
   .code-admin-form {
     grid-template-columns: 1fr;
   }
