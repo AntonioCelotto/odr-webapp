@@ -88,7 +88,7 @@ create policy "Authenticated can insert own registration events"
 on public.registration_events
 for insert
 to authenticated
-with check (profile_id is null or (select auth.uid()) = profile_id);
+with check ((select auth.uid()) = profile_id);
 
 create policy "Users can read own consents"
 on public.user_consents
@@ -101,3 +101,42 @@ on public.user_consents
 for insert
 to authenticated
 with check ((select auth.uid()) = profile_id);
+
+create schema if not exists private;
+
+revoke all on schema private from public, anon, authenticated;
+
+create or replace function private.handle_new_user()
+returns trigger
+language plpgsql
+security definer
+set search_path = ''
+as $$
+begin
+  insert into public.profiles (id, email, full_name)
+  values (
+    new.id,
+    new.email,
+    nullif(trim(new.raw_user_meta_data ->> 'full_name'), '')
+  )
+  on conflict (id) do nothing;
+
+  return new;
+end;
+$$;
+
+revoke all on function private.handle_new_user() from public, anon, authenticated;
+
+create trigger on_auth_user_created
+  after insert on auth.users
+  for each row execute function private.handle_new_user();
+
+revoke all on public.hospitals from anon, authenticated;
+revoke all on public.patient_profiles from anon, authenticated;
+revoke all on public.registration_events from anon, authenticated;
+revoke all on public.user_consents from anon, authenticated;
+
+grant select on public.hospitals to authenticated;
+grant select, insert, update on public.patient_profiles to authenticated;
+grant insert on public.registration_events to authenticated;
+grant select, insert on public.user_consents to authenticated;
