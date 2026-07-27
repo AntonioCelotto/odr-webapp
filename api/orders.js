@@ -14,9 +14,9 @@ async function getProfile(token) {
   const authResponse = await fetch(`${base}/auth/v1/user`, { headers });
   if (!authResponse.ok) return null;
   const user = await authResponse.json();
-  const profileResponse = await fetch(`${base}/rest/v1/profiles?id=eq.${user.id}&select=role,approval_status`, { headers });
+  const profileResponse = await fetch(`${base}/rest/v1/profiles?id=eq.${user.id}&select=role,approval_status,network_entity_id`, { headers });
   const [profile] = profileResponse.ok ? await profileResponse.json() : [];
-  return profile?.approval_status === 'approved' ? { ...profile, email: user.email } : null;
+  return profile?.approval_status === 'approved' ? { ...profile, email: user.email, headers } : null;
 }
 
 export default async function handler(request, response) {
@@ -32,18 +32,41 @@ export default async function handler(request, response) {
     const authorization = `Basic ${Buffer.from(`${process.env.WOOCOMMERCE_CONSUMER_KEY}:${process.env.WOOCOMMERCE_CONSUMER_SECRET}`).toString('base64')}`;
     const wooResponse = await fetch(url, { headers: { Authorization: authorization } });
     if (!wooResponse.ok) throw new Error(`WooCommerce ${wooResponse.status}`);
+    const networkResponse = await fetch(
+      `${process.env.SUPABASE_URL}/functions/v1/network-management`,
+      { headers: profile.headers },
+    );
+    const networkPayload = networkResponse.ok ? await networkResponse.json() : {};
+    const network = networkPayload.entities || [];
+    const byId = new Map(network.map((entity) => [entity.id, entity]));
+    const byEmail = new Map(network
+      .filter((entity) => entity.email)
+      .map((entity) => [entity.email.toLowerCase(), entity]));
+
     const orders = (await wooResponse.json())
       .filter((order) => profile.role === 'admin' || order.billing?.email?.toLowerCase() === profile.email?.toLowerCase())
-      .map((order) => ({
-        id: `WC-${order.id}`,
-        date: order.date_created?.slice(0, 10) || '',
-        customer: `${order.billing?.first_name || ''} ${order.billing?.last_name || ''}`.trim() || order.billing?.email || 'Cliente',
-        amount: Number(order.total) || 0,
-        coupon: order.coupon_lines?.map((coupon) => coupon.code).join(', ') || '',
-        agent: '',
-        distributor: '',
-        status: order.status,
-      }));
+      .map((order) => {
+        const email = order.billing?.email?.toLowerCase() || '';
+        const entity = byEmail.get(email);
+        const parent = entity?.parent_id ? byId.get(entity.parent_id) : null;
+        const grandparent = parent?.parent_id ? byId.get(parent.parent_id) : null;
+        return {
+          id: `WC-${order.id}`,
+          date: order.date_created?.slice(0, 10) || '',
+          customer: `${order.billing?.first_name || ''} ${order.billing?.last_name || ''}`.trim() || order.billing?.email || 'Cliente',
+          customerEmail: order.billing?.email || '',
+          amount: Number(order.total) || 0,
+          coupon: order.coupon_lines?.map((coupon) => coupon.code).join(', ') || '',
+          center: entity?.type === 'center' ? entity.name : '',
+          agent: entity?.type === 'agent' ? entity.name : entity?.type === 'center' && parent?.type === 'agent' ? parent.name : '',
+          distributor: entity?.type === 'distributor'
+            ? entity.name
+            : entity?.type === 'agent' && parent?.type === 'distributor'
+              ? parent.name
+              : grandparent?.type === 'distributor' ? grandparent.name : '',
+          status: order.status,
+        };
+      });
     return json(response, 200, { orders });
   } catch (error) {
     console.error('orders_error', error instanceof Error ? error.message : error);
