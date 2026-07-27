@@ -7,7 +7,7 @@ for (const file of requiredFiles) {
 }
 
 const html = await readFile('index.html', 'utf8');
-for (const expected of ['/styles.css', '/app.js', '/odr-logo.svg']) {
+for (const expected of ['/styles.css', '/config.js', '/app.js', '/odr-logo.svg']) {
   if (!html.includes(expected)) {
     throw new Error(`index.html does not reference ${expected}`);
   }
