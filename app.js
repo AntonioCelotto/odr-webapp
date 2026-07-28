@@ -308,7 +308,7 @@ async function openWooSession(destination, trigger, items = []) {
   const originalText = trigger?.textContent;
   if (trigger) {
     trigger.classList.add('loading');
-    trigger.textContent = 'Accesso...';
+    trigger.textContent = items.length ? 'Pagamento...' : 'Apertura...';
   }
 
   try {
