@@ -425,7 +425,15 @@ function renderPromotions() {
         </div>
         <strong>${escapeHtml(promo.code)}</strong>
         <p>${escapeHtml(promo.description || `${promo.discountType}: ${promo.amount}`)}</p>
-        <em class="state ${promo.expired ? 'off' : 'ok'}">${promo.expired ? 'Scaduto' : `${promo.usageCount || 0} utilizzi`}</em>
+        <div class="promo-meta">
+          <span>${escapeHtml(promo.discountType === 'percent' ? `${promo.amount}%` : money(Number(promo.amount) || 0))}</span>
+          <span>${promo.usageCount || 0}${promo.usageLimit ? ` / ${promo.usageLimit}` : ''} utilizzi</span>
+          <span>${promo.expiresAt ? `Scade ${codeDate(promo.expiresAt)}` : 'Nessuna scadenza'}</span>
+        </div>
+        <div class="promo-actions">
+          <em class="state ${promo.expired ? 'off' : 'ok'}">${promo.expired ? 'Scaduto' : 'Attivo'}</em>
+          <button type="button" data-promotion-edit="${promo.id}">Modifica</button>
+        </div>
       </article>
     `)
     .join('');
@@ -505,6 +513,77 @@ async function loadWooCoupons() {
     ...promotions.map((coupon) => `<option value="${escapeHtml(coupon.code)}">${escapeHtml(coupon.code)} · ${escapeHtml(coupon.amount)}</option>`),
   ].join('');
   renderPromotions();
+}
+
+function openPromotionForm(coupon = null) {
+  byId('promotion-form').classList.remove('hidden');
+  byId('promotion-id').value = coupon?.id || '';
+  byId('promotion-code').value = coupon?.code || '';
+  byId('promotion-code').readOnly = Boolean(coupon?.id);
+  byId('promotion-type').value = coupon?.discountType || 'percent';
+  byId('promotion-amount').value = coupon?.amount || '';
+  byId('promotion-expires').value = coupon?.expiresAt ? coupon.expiresAt.slice(0, 10) : '';
+  byId('promotion-usage-limit').value = coupon?.usageLimit || '';
+  byId('promotion-user-limit').value = coupon?.usageLimitPerUser || '';
+  byId('promotion-minimum').value = coupon?.minimumAmount || '';
+  byId('promotion-maximum').value = coupon?.maximumAmount || '';
+  byId('promotion-description').value = coupon?.description || '';
+  byId('promotion-individual').checked = Boolean(coupon?.individualUse);
+  byId('promotion-free-shipping').checked = Boolean(coupon?.freeShipping);
+  byId('promotion-exclude-sale').checked = Boolean(coupon?.excludeSaleItems);
+  byId('promotion-code').focus();
+}
+
+function closePromotionForm() {
+  byId('promotion-form').reset();
+  byId('promotion-id').value = '';
+  byId('promotion-form').classList.add('hidden');
+}
+
+async function savePromotion(event) {
+  event.preventDefault();
+  const button = event.submitter;
+  if (button) button.disabled = true;
+  byId('promotion-message').textContent = 'Salvataggio coupon in WooCommerce...';
+  const id = byId('promotion-id').value;
+  const { data } = await supabase.auth.getSession();
+  const response = await fetch('/api/coupons', {
+    method: id ? 'PATCH' : 'POST',
+    headers: {
+      Authorization: `Bearer ${data.session?.access_token || ''}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      id: id || undefined,
+      code: byId('promotion-code').value,
+      discountType: byId('promotion-type').value,
+      amount: byId('promotion-amount').value,
+      expiresAt: byId('promotion-expires').value || null,
+      usageLimit: byId('promotion-usage-limit').value || null,
+      usageLimitPerUser: byId('promotion-user-limit').value || null,
+      minimumAmount: byId('promotion-minimum').value,
+      maximumAmount: byId('promotion-maximum').value,
+      description: byId('promotion-description').value,
+      individualUse: byId('promotion-individual').checked,
+      freeShipping: byId('promotion-free-shipping').checked,
+      excludeSaleItems: byId('promotion-exclude-sale').checked,
+    }),
+  });
+  const payload = await response.json();
+  if (button) button.disabled = false;
+  if (!response.ok) {
+    byId('promotion-message').textContent = payload.error || 'Salvataggio non riuscito.';
+    return;
+  }
+  closePromotionForm();
+  await loadWooCoupons();
+  byId('promotion-message').textContent = id ? 'Coupon aggiornato.' : 'Coupon creato.';
+}
+
+function handlePromotionAction(event) {
+  const button = event.target.closest('[data-promotion-edit]');
+  if (!button) return;
+  openPromotionForm(promotions.find((coupon) => String(coupon.id) === button.dataset.promotionEdit));
 }
 
 async function loadWooOrders() {
@@ -998,6 +1077,7 @@ function enterApp(user) {
   renderCurrentProfile(user);
   const isAdmin = user.role === 'admin';
   byId('admin-code-manager').classList.toggle('hidden', !isAdmin);
+  byId('new-promotion-button').classList.toggle('hidden', !isAdmin);
   byId('admin-users-nav').classList.toggle('hidden', !isAdmin);
   byId('admin-users').classList.remove('hidden');
   byId('admin-users').classList.toggle('module-denied', !isAdmin);
@@ -1375,6 +1455,10 @@ byId('orders-import').addEventListener('change', (event) => {
   if (file) importOrdersFile(file);
 });
 byId('export-report').addEventListener('click', exportReport);
+byId('new-promotion-button').addEventListener('click', () => openPromotionForm());
+byId('cancel-promotion-button').addEventListener('click', closePromotionForm);
+byId('promotion-form').addEventListener('submit', savePromotion);
+byId('promotion-list').addEventListener('click', handlePromotionAction);
 byId('report-search').addEventListener('input', renderOrders);
 byId('report-status').addEventListener('change', renderOrders);
 byId('report-date-from').addEventListener('change', renderOrders);
