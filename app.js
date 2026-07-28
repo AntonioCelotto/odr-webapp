@@ -389,7 +389,6 @@ function updateMetrics() {
   byId('metric-network').textContent = networkRows.filter((row) => row.active).length;
   byId('metric-role').textContent = roleLabels[byId('role').value] || 'Utente';
   byId('metric-email').textContent = byId('account-email').value;
-  byId('shop-link').href = buildShopUrl(validatedCode);
   byId('wp-base-url').textContent = config.wooBaseUrl;
 }
 
