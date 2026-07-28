@@ -295,9 +295,39 @@
           <div class="section-heading">
             <div>
               <h2>Promozioni e fidelity</h2>
-              <p>Coupon reali disponibili in WooCommerce e utilizzabili nei codici ODR.</p>
+              <p>Crea e gestisci i coupon WooCommerce utilizzabili nello shop e nei codici ODR.</p>
             </div>
+            <button id="new-promotion-button" class="primary-action" type="button">Nuovo coupon</button>
           </div>
+          <form id="promotion-form" class="admin-form hidden">
+            <input id="promotion-id" type="hidden" />
+            <div class="form-grid">
+              <label>Codice coupon <input id="promotion-code" required maxlength="100" /></label>
+              <label>Tipo di sconto
+                <select id="promotion-type" required>
+                  <option value="percent">Sconto percentuale</option>
+                  <option value="fixed_cart">Sconto fisso sul carrello</option>
+                  <option value="fixed_product">Sconto fisso sul prodotto</option>
+                </select>
+              </label>
+              <label>Valore sconto <input id="promotion-amount" type="number" min="0" step="0.01" required /></label>
+              <label>Scadenza <input id="promotion-expires" type="date" /></label>
+              <label>Limite totale utilizzi <input id="promotion-usage-limit" type="number" min="1" /></label>
+              <label>Limite per utente <input id="promotion-user-limit" type="number" min="1" /></label>
+              <label>Ordine minimo <input id="promotion-minimum" type="number" min="0" step="0.01" /></label>
+              <label>Ordine massimo <input id="promotion-maximum" type="number" min="0" step="0.01" /></label>
+            </div>
+            <label>Descrizione <textarea id="promotion-description" maxlength="500"></textarea></label>
+            <div class="promotion-checks">
+              <label class="check-row"><input id="promotion-individual" type="checkbox" /> Non cumulabile con altri coupon</label>
+              <label class="check-row"><input id="promotion-free-shipping" type="checkbox" /> Spedizione gratuita</label>
+              <label class="check-row"><input id="promotion-exclude-sale" type="checkbox" /> Escludi prodotti già in offerta</label>
+            </div>
+            <div class="action-row">
+              <button class="primary-action" type="submit">Salva coupon</button>
+              <button id="cancel-promotion-button" class="secondary-action" type="button">Annulla</button>
+            </div>
+          </form>
           <div id="promotion-message" class="auth-message">Caricamento coupon WooCommerce...</div>
           <div class="promo-grid" id="promotion-list"></div>
         </section>
