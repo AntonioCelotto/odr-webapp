@@ -39,7 +39,7 @@ Deno.serve(async (request) => {
 
   if (request.method === "GET") {
     const { data: allEntities, error } = await admin.from("network_entities")
-      .select("id,type,name,email,phone,area,parent_id,external_code,active,created_at").order("type").order("name");
+      .select("id,type,name,email,phone,area,parent_id,external_code,commission_rate,active,created_at").order("type").order("name");
     if (error) return json({ error: error.message }, 500);
     let entities = allEntities || [];
     if (profile.role !== "admin") {
@@ -102,6 +102,9 @@ Deno.serve(async (request) => {
       area: clean(body.area, 120) || null,
       parent_id: parentId,
       external_code: clean(body.externalCode, 100) || null,
+      commission_rate: type === "agent"
+        ? Math.max(0, Math.min(1, Number(body.commissionRate) || 0))
+        : null,
       active: body.active !== false,
       import_source: clean(body.importSource, 120) || null,
       updated_at: new Date().toISOString(),
@@ -148,6 +151,9 @@ Deno.serve(async (request) => {
         area: clean(raw.area, 120) || null,
         parent_id: parentId,
         external_code: clean(raw.externalCode, 100) || null,
+        commission_rate: type === "agent"
+          ? Math.max(0, Math.min(1, Number(raw.commissionRate) || 0))
+          : null,
         active: raw.active !== false,
         import_source: clean(body.fileName, 120) || "CSV",
         updated_at: new Date().toISOString(),

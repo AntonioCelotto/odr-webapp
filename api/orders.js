@@ -50,6 +50,16 @@ export default async function handler(request, response) {
         const entity = byEmail.get(email);
         const parent = entity?.parent_id ? byId.get(entity.parent_id) : null;
         const grandparent = parent?.parent_id ? byId.get(parent.parent_id) : null;
+        const agentEntity = entity?.type === 'agent'
+          ? entity
+          : entity?.type === 'center' && parent?.type === 'agent' ? parent : null;
+        const commissionBase = (order.line_items || [])
+          .reduce((sum, line) => sum + (Number(line.total) || 0), 0);
+        const commissionRate = Number(agentEntity?.commission_rate) || 0;
+        const paymentStatus = order.date_paid ? 'paid' : 'unpaid';
+        const agentEarning = paymentStatus === 'paid' && !['cancelled', 'failed', 'refunded'].includes(order.status)
+          ? commissionBase * commissionRate
+          : 0;
         return {
           id: `WC-${order.id}`,
           date: order.date_created?.slice(0, 10) || '',
@@ -58,13 +68,17 @@ export default async function handler(request, response) {
           amount: Number(order.total) || 0,
           coupon: order.coupon_lines?.map((coupon) => coupon.code).join(', ') || '',
           center: entity?.type === 'center' ? entity.name : '',
-          agent: entity?.type === 'agent' ? entity.name : entity?.type === 'center' && parent?.type === 'agent' ? parent.name : '',
+          agent: agentEntity?.name || '',
           distributor: entity?.type === 'distributor'
             ? entity.name
             : entity?.type === 'agent' && parent?.type === 'distributor'
               ? parent.name
               : grandparent?.type === 'distributor' ? grandparent.name : '',
           status: order.status,
+          paymentStatus,
+          commissionBase,
+          commissionRate,
+          agentEarning,
         };
       });
     return json(response, 200, { orders });

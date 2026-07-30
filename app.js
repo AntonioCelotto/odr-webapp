@@ -697,6 +697,7 @@ function renderNetwork() {
         <td data-label="Nome"><strong>${escapeHtml(row.name)}</strong>${row.external_code ? `<br><small>${escapeHtml(row.external_code)}</small>` : ''}</td>
         <td data-label="Zona">${escapeHtml(row.area || '-')}</td>
         <td data-label="Collegato a">${escapeHtml(row.parentName || '-')}</td>
+        <td data-label="Provvigione">${row.type === 'agent' ? `${(Number(row.commission_rate || 0) * 100).toLocaleString('it-IT', { maximumFractionDigits: 2 })}%` : '-'}</td>
         <td data-label="Contatto">${escapeHtml(row.email || row.phone || '-')}</td>
         <td data-label="Account ODR">${escapeHtml(row.accountName || 'Non collegato')}</td>
         <td data-label="Stato"><span class="state ${row.active ? 'ok' : 'off'}">${row.active ? 'Attivo' : 'Spento'}</span></td>
@@ -745,6 +746,7 @@ async function loadNetwork() {
 function refreshNetworkFormOptions(selectedParent = '', selectedAccount = '') {
   const type = byId('network-type').value;
   const parentType = type === 'agent' ? 'distributor' : type === 'center' ? 'agent' : '';
+  byId('network-commission-label').classList.toggle('hidden', type !== 'agent');
   const parents = networkRows.filter((row) => row.type === parentType && row.active);
   byId('network-parent').disabled = !parentType;
   byId('network-parent').required = Boolean(parentType);
@@ -773,6 +775,9 @@ function openNetworkForm(row = null) {
   byId('network-email').value = row?.email || '';
   byId('network-phone').value = row?.phone || '';
   byId('network-external-code').value = row?.external_code || '';
+  byId('network-commission').value = row?.type === 'agent'
+    ? String(Number(row.commission_rate || 0.2) * 100)
+    : '20';
   byId('network-active').checked = row?.active ?? true;
   refreshNetworkFormOptions(row?.parent_id || '', row?.accountId || '');
   byId('network-name').focus();
@@ -801,6 +806,9 @@ async function saveNetworkEntity(event) {
       email: byId('network-email').value,
       phone: byId('network-phone').value,
       externalCode: byId('network-external-code').value,
+      commissionRate: byId('network-type').value === 'agent'
+        ? Number(byId('network-commission').value || 0) / 100
+        : null,
       accountId: byId('network-account').value || null,
       active: byId('network-active').checked,
     },
@@ -834,6 +842,7 @@ async function handleNetworkAction(event) {
 function renderOrders() {
   const query = byId('report-search').value.trim().toLowerCase();
   const status = byId('report-status').value;
+  const payment = byId('report-payment').value;
   const dateFrom = byId('report-date-from').value;
   const dateTo = byId('report-date-to').value;
   filteredReportOrders = reportOrders.filter((order) => {
@@ -843,6 +852,7 @@ function renderOrders() {
     ].filter(Boolean).join(' ').toLowerCase();
     return (!query || haystack.includes(query))
       && (!status || order.status === status)
+      && (!payment || order.paymentStatus === payment)
       && (!dateFrom || order.date >= dateFrom)
       && (!dateTo || order.date <= dateTo);
   });
@@ -858,16 +868,20 @@ function renderOrders() {
         <td data-label="Distributore">${escapeHtml(order.distributor || '-')}</td>
         <td data-label="Centro">${escapeHtml(order.center || '-')}</td>
         <td data-label="Importo"><strong>${money(order.amount)}</strong></td>
+        <td data-label="Pagamento"><span class="state ${order.paymentStatus === 'paid' ? 'ok' : 'off'}">${order.paymentStatus === 'paid' ? 'Pagato' : 'Non pagato'}</span></td>
+        <td data-label="Imponibile provvigione">${order.agent ? money(order.commissionBase || 0) : '-'}</td>
+        <td data-label="Guadagno agente"><strong>${order.agent ? money(order.agentEarning || 0) : '-'}</strong></td>
         <td data-label="Stato"><span class="state ${['cancelled', 'failed', 'refunded'].includes(order.status) ? 'off' : 'ok'}">${escapeHtml(order.status)}</span></td>
       </tr>
     `)
     .join('')
-    : '<tr class="report-empty-row"><td colspan="9">Nessun ordine corrisponde ai filtri selezionati.</td></tr>';
+    : '<tr class="report-empty-row"><td colspan="12">Nessun ordine corrisponde ai filtri selezionati.</td></tr>';
   renderReportSummary();
 }
 
 function renderReportSummary() {
   const total = filteredReportOrders.reduce((sum, order) => sum + order.amount, 0);
+  const totalAgentEarnings = filteredReportOrders.reduce((sum, order) => sum + (order.agentEarning || 0), 0);
   const byCoupon = filteredReportOrders.reduce((acc, order) => {
     const key = order.coupon || 'Senza coupon';
     acc[key] = (acc[key] || 0) + order.amount;
@@ -878,6 +892,7 @@ function renderReportSummary() {
   byId('report-summary').innerHTML = `
     <div><span>Ordini visualizzati</span><strong>${filteredReportOrders.length}</strong></div>
     <div><span>Totale vendite</span><strong>${money(total)}</strong></div>
+    <div><span>Provvigioni agenti</span><strong>${money(totalAgentEarnings)}</strong></div>
     <div><span>Coupon principale</span><strong>${topCoupon ? `${topCoupon[0]} · ${money(topCoupon[1])}` : '-'}</strong></div>
   `;
 }
@@ -1461,6 +1476,7 @@ byId('promotion-form').addEventListener('submit', savePromotion);
 byId('promotion-list').addEventListener('click', handlePromotionAction);
 byId('report-search').addEventListener('input', renderOrders);
 byId('report-status').addEventListener('change', renderOrders);
+byId('report-payment').addEventListener('change', renderOrders);
 byId('report-date-from').addEventListener('change', renderOrders);
 byId('report-date-to').addEventListener('change', renderOrders);
 byId('refresh-report').addEventListener('click', loadWooOrders);

@@ -363,6 +363,9 @@
               <label>Email <input id="network-email" type="email" maxlength="250" /></label>
               <label>Telefono <input id="network-phone" maxlength="60" /></label>
               <label>Codice esterno <input id="network-external-code" maxlength="100" /></label>
+              <label id="network-commission-label">Provvigione agente %
+                <input id="network-commission" type="number" min="0" max="100" step="0.01" value="20" />
+              </label>
               <label>Account ODR <select id="network-account"></select></label>
             </div>
             <label class="check-row"><input id="network-active" type="checkbox" checked /> Elemento attivo</label>
@@ -385,6 +388,7 @@
                   <th>Nome</th>
                   <th>Zona</th>
                   <th>Collegato a</th>
+                  <th>Provvigione</th>
                   <th>Contatto</th>
                   <th>Account ODR</th>
                   <th>Stato</th>
@@ -454,6 +458,11 @@
               <option value="refunded">Rimborsato</option>
               <option value="failed">Fallito</option>
             </select>
+            <select id="report-payment">
+              <option value="">Pagati e non pagati</option>
+              <option value="paid">Pagati</option>
+              <option value="unpaid">Non pagati</option>
+            </select>
             <label>Dal <input id="report-date-from" type="date" /></label>
             <label>Al <input id="report-date-to" type="date" /></label>
             <button id="refresh-report" class="secondary-action" type="button">Aggiorna</button>
@@ -472,6 +481,9 @@
                   <th>Distributore</th>
                   <th>Centro</th>
                   <th>Importo</th>
+                  <th>Pagamento</th>
+                  <th>Imponibile provvigione</th>
+                  <th>Guadagno agente</th>
                   <th>Stato</th>
                 </tr>
               </thead>
