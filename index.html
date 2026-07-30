@@ -199,6 +199,10 @@
               <input id="shop-search" type="search" placeholder="Nome prodotto o codice SKU" />
             </label>
             <div id="shop-categories" class="shop-categories" aria-label="Filtra per categoria"></div>
+            <label class="shop-sale-filter">
+              <input id="shop-sale-only" type="checkbox" />
+              <span>Solo promozioni</span>
+            </label>
           </div>
           <div id="shop-message" class="auth-message">Caricamento del tuo listino...</div>
           <aside id="shop-cart-panel" class="shop-cart-panel hidden" aria-label="Carrello ODR">
@@ -210,12 +214,22 @@
               <button id="shop-cart-close" class="icon-button" type="button" aria-label="Chiudi carrello">Chiudi</button>
             </div>
             <div id="shop-cart-items" class="shop-cart-items"></div>
-            <div class="shop-cart-footer">
+            <div class="shop-coupon">
+              <label for="shop-coupon">Codice promozionale</label>
               <div>
-                <span>Totale prodotti</span>
-                <strong id="shop-cart-total">€ 0,00</strong>
+                <input id="shop-coupon" type="text" autocomplete="off" placeholder="Inserisci il codice" maxlength="100" />
+                <button id="shop-apply-coupon" class="secondary-action" type="button">Applica</button>
               </div>
-              <button id="shop-checkout" class="primary-action" type="button">Procedi all’acquisto</button>
+              <p id="shop-coupon-message">Puoi applicare il codice prima del pagamento.</p>
+            </div>
+            <div class="shop-cart-footer">
+              <div class="shop-cart-totals">
+                <p><span>Subtotale prodotti</span><strong id="shop-cart-subtotal">€ 0,00</strong></p>
+                <p id="shop-discount-row" class="hidden"><span>Sconto</span><strong id="shop-cart-discount">− € 0,00</strong></p>
+                <p class="shop-cart-grand-total"><span>Totale provvisorio</span><strong id="shop-cart-total">€ 0,00</strong></p>
+                <small>IVA e spedizione saranno confermate prima del pagamento.</small>
+              </div>
+              <button id="shop-checkout" class="primary-action" type="button">Concludi ordine e paga</button>
             </div>
           </aside>
           <div id="shop-products" class="product-grid"></div>

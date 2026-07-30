@@ -63,6 +63,9 @@ let shopProducts = [];
 let shopCategory = 'all';
 let shopOpening = false;
 let shopCart = [];
+let shopSaleOnly = false;
+let shopCoupon = '';
+let shopQuote = null;
 
 function byId(id) {
   return document.getElementById(id);
@@ -190,6 +193,9 @@ function renderShopCart() {
 
   if (!shopCart.length) {
     byId('shop-cart-items').innerHTML = '<div class="shop-cart-empty">Il carrello è vuoto. Aggiungi uno o più prodotti.</div>';
+    byId('shop-cart-subtotal').textContent = money(0);
+    byId('shop-cart-discount').textContent = `− ${money(0)}`;
+    byId('shop-discount-row').classList.add('hidden');
     byId('shop-cart-total').textContent = money(0);
     byId('shop-checkout').disabled = true;
     return;
@@ -220,7 +226,12 @@ function renderShopCart() {
       </article>
     `;
   }).join('');
-  byId('shop-cart-total').textContent = money(total);
+  const subtotal = shopQuote?.subtotal ?? total;
+  const discount = shopQuote?.discount ?? 0;
+  byId('shop-cart-subtotal').textContent = money(subtotal);
+  byId('shop-cart-discount').textContent = `− ${money(discount)}`;
+  byId('shop-discount-row').classList.toggle('hidden', discount <= 0);
+  byId('shop-cart-total').textContent = money(shopQuote?.total ?? total);
   byId('shop-checkout').disabled = false;
 }
 
@@ -236,8 +247,10 @@ function addToShopCart(productId, trigger) {
   const existing = shopCart.find((item) => item.productId === productId);
   if (existing) existing.quantity = Math.min(99, existing.quantity + 1);
   else shopCart.push({ productId, quantity: 1 });
+  shopQuote = null;
   saveShopCart();
   renderShopCart();
+  if (shopCoupon) applyShopCoupon({ silent: true });
   if (trigger) {
     const originalText = trigger.textContent;
     trigger.textContent = 'Aggiunto ✓';
@@ -257,8 +270,10 @@ function updateShopCartItem(productId, action) {
   if (action === 'remove' || item.quantity < 1) {
     shopCart = shopCart.filter((row) => row.productId !== productId);
   }
+  shopQuote = null;
   saveShopCart();
   renderShopCart();
+  if (shopCoupon && shopCart.length) applyShopCoupon({ silent: true });
 }
 
 function renderShopProducts() {
@@ -268,7 +283,7 @@ function renderShopProducts() {
       || product.categories.some((category) => category.slug === shopCategory);
     const matchesQuery = !query
       || `${product.name} ${product.sku}`.toLowerCase().includes(query);
-    return matchesCategory && matchesQuery;
+    return matchesCategory && matchesQuery && (!shopSaleOnly || product.onSale);
   });
 
   byId('shop-products').innerHTML = products.map((product) => {
@@ -302,7 +317,7 @@ function renderShopProducts() {
   if (!products.length) byId('shop-message').textContent = 'Nessun prodotto corrisponde ai filtri.';
 }
 
-async function openWooSession(destination, trigger, items = []) {
+async function openWooSession(destination, trigger, items = [], coupon = '') {
   if (shopOpening || !supabase) return;
   shopOpening = true;
   const originalText = trigger?.textContent;
@@ -321,7 +336,7 @@ async function openWooSession(destination, trigger, items = []) {
         Authorization: `Bearer ${token}`,
         'Content-Type': 'application/json',
       },
-      body: JSON.stringify({ redirect: destination, items }),
+      body: JSON.stringify({ redirect: destination, items, coupon }),
     });
     const payload = await response.json();
     if (!response.ok || !payload.url) throw new Error(payload.error || 'Accesso allo shop non riuscito');
@@ -372,13 +387,66 @@ async function loadShop() {
     shopProducts = payload.products || [];
     shopCategory = 'all';
     loadShopCart();
+    if (validatedCode?.woo_coupon && !shopCoupon) {
+      shopCoupon = validatedCode.woo_coupon;
+      byId('shop-coupon').value = shopCoupon;
+    }
     renderShopCategories();
     renderShopProducts();
     renderShopCart();
+    if (shopCoupon && shopCart.length) applyShopCoupon({ silent: true });
     byId('shop-intro').textContent =
       `${shopProducts.length} prodotti disponibili per il profilo ${roleLabels[currentUser.role] || currentUser.role}.`;
   } catch (error) {
     byId('shop-message').textContent = error.message || 'Catalogo temporaneamente non disponibile.';
+  }
+}
+
+async function applyShopCoupon(options = {}) {
+  const code = byId('shop-coupon').value.trim();
+  const message = byId('shop-coupon-message');
+  if (!shopCart.length) {
+    message.textContent = 'Aggiungi almeno un prodotto prima di applicare il codice.';
+    return false;
+  }
+  const button = byId('shop-apply-coupon');
+  button.disabled = true;
+  if (!options.silent) message.textContent = code ? 'Verifica del codice in corso...' : 'Aggiornamento del totale...';
+  try {
+    const { data } = await supabase.auth.getSession();
+    const token = data.session?.access_token;
+    if (!token) throw new Error('Sessione ODR scaduta');
+    const response = await fetch('/api/cart-quote', {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${token}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        items: shopCart.map(({ productId, quantity }) => ({ productId, quantity })),
+        coupon: code,
+      }),
+    });
+    const payload = await response.json();
+    if (!response.ok) throw new Error(payload.error || 'Codice non applicabile');
+    shopCoupon = payload.coupon?.code || '';
+    shopQuote = payload;
+    byId('shop-coupon').value = shopCoupon;
+    message.className = shopCoupon ? 'success-text' : '';
+    message.textContent = shopCoupon
+      ? `Codice ${shopCoupon.toUpperCase()} applicato${payload.coupon?.description ? ` · ${payload.coupon.description}` : ''}.`
+      : 'Totale aggiornato. Nessun codice promozionale applicato.';
+    renderShopCart();
+    return true;
+  } catch (error) {
+    shopCoupon = '';
+    shopQuote = null;
+    message.className = 'error-text';
+    message.textContent = error.message;
+    renderShopCart();
+    return false;
+  } finally {
+    button.disabled = false;
   }
 }
 
@@ -631,6 +699,11 @@ async function loadActivePromoCode() {
     validatedCode = payload.activeCode;
     byId('code-result').className = 'success-box';
     byId('code-result').innerHTML = `<div><strong>${escapeHtml(validatedCode.label)}</strong><span>${escapeHtml(validatedCode.discount_label || 'Convenzione attiva')}</span></div>`;
+    if (!shopCoupon && validatedCode.woo_coupon) {
+      shopCoupon = validatedCode.woo_coupon;
+      byId('shop-coupon').value = shopCoupon;
+      if (shopCart.length) applyShopCoupon({ silent: true });
+    }
   }
 }
 
@@ -1009,6 +1082,10 @@ async function validateCode() {
   }
   const found = data.activeCode;
   validatedCode = found;
+  shopCoupon = found.woo_coupon || '';
+  byId('shop-coupon').value = shopCoupon;
+  shopQuote = null;
+  if (shopCoupon && shopCart.length) applyShopCoupon({ silent: true });
   byId('code-result').className = 'success-box';
   byId('code-result').innerHTML = `
     <div>
@@ -1509,7 +1586,27 @@ byId('shop-checkout').addEventListener('click', (event) => {
     new URL('/carrello/', config.wooBaseUrl).toString(),
     event.currentTarget,
     shopCart.map(({ productId, quantity }) => ({ productId, quantity })),
+    shopCoupon,
   );
+});
+byId('shop-apply-coupon').addEventListener('click', () => applyShopCoupon());
+byId('shop-coupon').addEventListener('keydown', (event) => {
+  if (event.key === 'Enter') {
+    event.preventDefault();
+    applyShopCoupon();
+  }
+});
+byId('shop-coupon').addEventListener('input', (event) => {
+  if (event.currentTarget.value.trim().toLowerCase() === shopCoupon.toLowerCase()) return;
+  shopCoupon = '';
+  shopQuote = null;
+  byId('shop-coupon-message').className = '';
+  byId('shop-coupon-message').textContent = 'Premi Applica per verificare il nuovo codice.';
+  renderShopCart();
+});
+byId('shop-sale-only').addEventListener('change', (event) => {
+  shopSaleOnly = event.currentTarget.checked;
+  renderShopProducts();
 });
 byId('shop-categories').addEventListener('click', (event) => {
   const button = event.target.closest('[data-shop-category]');

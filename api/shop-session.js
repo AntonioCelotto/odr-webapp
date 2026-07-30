@@ -47,6 +47,10 @@ function safeCartItems(value) {
   })).filter((item) => Number.isInteger(item.product_id) && item.product_id > 0);
 }
 
+function safeCoupon(value) {
+  return String(value || '').trim().toLowerCase().replace(/[^a-z0-9_-]/g, '').slice(0, 100);
+}
+
 async function getActiveCoupon(token) {
   const endpoint = new URL('/functions/v1/promo-codes', process.env.SUPABASE_URL);
   endpoint.searchParams.set('view', 'active');
@@ -81,6 +85,7 @@ export default async function handler(request, response) {
     sessionEndpoint.searchParams.set('consumer_key', key);
     sessionEndpoint.searchParams.set('consumer_secret', secret);
     const activeCoupon = await getActiveCoupon(token);
+    const requestedCoupon = safeCoupon(request.body?.coupon);
     const wordpressResponse = await fetch(sessionEndpoint, {
       method: 'POST',
       headers: {
@@ -92,7 +97,7 @@ export default async function handler(request, response) {
         role: profile.role,
         redirect: safeWooDestination(request.body?.redirect, storeUrl),
         items: safeCartItems(request.body?.items),
-        coupon: activeCoupon,
+        coupon: requestedCoupon || activeCoupon,
       }),
     });
     const payload = await wordpressResponse.json().catch(() => ({}));
