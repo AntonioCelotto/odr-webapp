@@ -1676,6 +1676,10 @@ byId('shop-cart-link').addEventListener('click', (event) => {
   setCartPanel(byId('shop-cart-panel').classList.contains('hidden'));
 });
 byId('shop-cart-close').addEventListener('click', () => setCartPanel(false));
+byId('shop-continue-shopping').addEventListener('click', () => {
+  setCartPanel(false);
+  byId('shop-products').scrollIntoView({ behavior: 'smooth', block: 'start' });
+});
 byId('shop-cart-items').addEventListener('click', (event) => {
   const button = event.target.closest('[data-cart-action]');
   const item = event.target.closest('[data-cart-product]');
