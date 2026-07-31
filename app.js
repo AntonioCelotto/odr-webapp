@@ -66,6 +66,7 @@ let shopCart = [];
 let shopSaleOnly = false;
 let shopCoupon = '';
 let shopQuote = null;
+let shopAddressLoaded = false;
 
 function byId(id) {
   return document.getElementById(id);
@@ -159,6 +160,99 @@ function productPrice(product) {
 
 function cartStorageKey() {
   return currentUser?.id ? `odr-cart:${currentUser.id}` : 'odr-cart';
+}
+
+function addressStorageKey() {
+  return currentUser?.id ? `odr-address:${currentUser.id}` : 'odr-address';
+}
+
+const shippingFieldIds = {
+  firstName: 'shipping-first-name',
+  lastName: 'shipping-last-name',
+  company: 'shipping-company',
+  address1: 'shipping-address-1',
+  address2: 'shipping-address-2',
+  postcode: 'shipping-postcode',
+  city: 'shipping-city',
+  state: 'shipping-state',
+  country: 'shipping-country',
+  phone: 'shipping-phone',
+  email: 'shipping-email',
+};
+
+function readShopAddress() {
+  return Object.fromEntries(Object.entries(shippingFieldIds).map(([key, id]) => [key, byId(id).value.trim()]));
+}
+
+function fillShopAddress(address = {}) {
+  Object.entries(shippingFieldIds).forEach(([key, id]) => {
+    if (address[key] !== undefined && address[key] !== null) byId(id).value = address[key];
+  });
+  byId('shipping-email').value = currentUser?.email || address.email || '';
+}
+
+function saveShopAddress() {
+  if (!currentUser) return;
+  localStorage.setItem(addressStorageKey(), JSON.stringify(readShopAddress()));
+  byId('shop-address-status').textContent = 'Dati salvati nell’app';
+}
+
+function storedShopAddress() {
+  try {
+    return JSON.parse(localStorage.getItem(addressStorageKey()) || 'null');
+  } catch {
+    return null;
+  }
+}
+
+function validateShopAddress() {
+  const required = [
+    'shipping-first-name', 'shipping-last-name', 'shipping-address-1',
+    'shipping-postcode', 'shipping-city', 'shipping-state', 'shipping-phone',
+  ];
+  const invalid = required.map(byId).find((field) => !field.value.trim());
+  if (invalid) {
+    invalid.focus();
+    byId('shop-address-status').textContent = 'Completa tutti i campi obbligatori';
+    return false;
+  }
+  if (!/^[A-Za-z]{2}$/.test(byId('shipping-state').value.trim())) {
+    byId('shipping-state').focus();
+    byId('shop-address-status').textContent = 'Inserisci la sigla della provincia (es. TO)';
+    return false;
+  }
+  saveShopAddress();
+  return true;
+}
+
+async function loadShopAddress() {
+  if (!supabase || !currentUser || shopAddressLoaded) return;
+  const stored = storedShopAddress();
+  if (stored) {
+    fillShopAddress(stored);
+    shopAddressLoaded = true;
+    return;
+  }
+  try {
+    const { data } = await supabase.auth.getSession();
+    const response = await fetch('/api/customer-address', {
+      headers: { Authorization: `Bearer ${data.session?.access_token || ''}` },
+    });
+    const payload = await response.json();
+    if (response.ok && payload.address) {
+      fillShopAddress(payload.address);
+      saveShopAddress();
+    }
+  } catch {
+    fillShopAddress({
+      firstName: currentUser.profile?.full_name?.split(/\s+/)[0] || '',
+      lastName: currentUser.profile?.full_name?.split(/\s+/).slice(1).join(' ') || '',
+      phone: currentUser.profile?.phone || '',
+      email: currentUser.email,
+      country: 'IT',
+    });
+  }
+  shopAddressLoaded = true;
 }
 
 function saveShopCart() {
@@ -317,7 +411,7 @@ function renderShopProducts() {
   if (!products.length) byId('shop-message').textContent = 'Nessun prodotto corrisponde ai filtri.';
 }
 
-async function openWooSession(destination, trigger, items = [], coupon = '') {
+async function openWooSession(destination, trigger, items = [], coupon = '', options = {}) {
   if (shopOpening || !supabase) return;
   shopOpening = true;
   const originalText = trigger?.textContent;
@@ -336,7 +430,13 @@ async function openWooSession(destination, trigger, items = [], coupon = '') {
         Authorization: `Bearer ${token}`,
         'Content-Type': 'application/json',
       },
-      body: JSON.stringify({ redirect: destination, items, coupon }),
+      body: JSON.stringify({
+        redirect: destination,
+        items,
+        coupon,
+        address: options.address || null,
+        checkout: Boolean(options.checkout),
+      }),
     });
     const payload = await response.json();
     if (!response.ok || !payload.url) throw new Error(payload.error || 'Accesso allo shop non riuscito');
@@ -394,6 +494,7 @@ async function loadShop() {
     renderShopCategories();
     renderShopProducts();
     renderShopCart();
+    loadShopAddress();
     if (shopCoupon && shopCart.length) applyShopCoupon({ silent: true });
     byId('shop-intro').textContent =
       `${shopProducts.length} prodotti disponibili per il profilo ${roleLabels[currentUser.role] || currentUser.role}.`;
@@ -1383,6 +1484,7 @@ async function submitLogout() {
   await supabase.auth.signOut();
   currentUser = null;
   validatedCode = null;
+  shopAddressLoaded = false;
   byId('app-shell').classList.add('hidden');
   byId('auth-screen').classList.remove('hidden');
   byId('login-password').value = '';
@@ -1582,12 +1684,22 @@ byId('shop-cart-items').addEventListener('click', (event) => {
 });
 byId('shop-checkout').addEventListener('click', (event) => {
   if (!shopCart.length) return;
+  if (!validateShopAddress()) return;
   openWooSession(
-    new URL('/carrello/', config.wooBaseUrl).toString(),
+    new URL('/pagamento/', config.wooBaseUrl).toString(),
     event.currentTarget,
     shopCart.map(({ productId, quantity }) => ({ productId, quantity })),
     shopCoupon,
+    { address: readShopAddress(), checkout: true },
   );
+});
+byId('shop-cart-panel').addEventListener('input', (event) => {
+  if (event.target.closest('.shop-address')) {
+    byId('shop-address-status').textContent = 'Modifiche non ancora salvate';
+  }
+});
+byId('shipping-state').addEventListener('input', (event) => {
+  event.currentTarget.value = event.currentTarget.value.toUpperCase().replace(/[^A-Z]/g, '').slice(0, 2);
 });
 byId('shop-apply-coupon').addEventListener('click', () => applyShopCoupon());
 byId('shop-coupon').addEventListener('keydown', (event) => {

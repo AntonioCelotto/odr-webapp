@@ -222,12 +222,42 @@
               </div>
               <p id="shop-coupon-message">Puoi applicare il codice prima del pagamento.</p>
             </div>
+            <div class="shop-address">
+              <div class="shop-address-heading">
+                <div>
+                  <p class="eyebrow">Consegna</p>
+                  <h4>Indirizzo di spedizione</h4>
+                </div>
+                <span id="shop-address-status">Dati salvati nell’app</span>
+              </div>
+              <div class="shop-address-grid">
+                <label>Nome <input id="shipping-first-name" autocomplete="given-name" required /></label>
+                <label>Cognome <input id="shipping-last-name" autocomplete="family-name" required /></label>
+                <label class="wide">Azienda (facoltativo) <input id="shipping-company" autocomplete="organization" /></label>
+                <label class="wide">Indirizzo <input id="shipping-address-1" autocomplete="address-line1" required /></label>
+                <label class="wide">Interno / scala (facoltativo) <input id="shipping-address-2" autocomplete="address-line2" /></label>
+                <label>CAP <input id="shipping-postcode" inputmode="numeric" autocomplete="postal-code" maxlength="10" required /></label>
+                <label>Città <input id="shipping-city" autocomplete="address-level2" required /></label>
+                <label>Provincia <input id="shipping-state" autocomplete="address-level1" maxlength="2" placeholder="TO" required /></label>
+                <label>Paese
+                  <select id="shipping-country" autocomplete="country">
+                    <option value="IT">Italia</option>
+                  </select>
+                </label>
+                <label>Telefono <input id="shipping-phone" type="tel" autocomplete="tel" required /></label>
+                <label>Email <input id="shipping-email" type="email" autocomplete="email" readonly /></label>
+              </div>
+              <div class="shop-delivery-summary">
+                <p><span>Spedizione DHL</span><strong id="shop-shipping-cost">Da calcolare</strong></p>
+                <p><span>IVA</span><strong id="shop-tax-status">Calcolata da WooCommerce</strong></p>
+              </div>
+            </div>
             <div class="shop-cart-footer">
               <div class="shop-cart-totals">
                 <p><span>Subtotale prodotti</span><strong id="shop-cart-subtotal">€ 0,00</strong></p>
                 <p id="shop-discount-row" class="hidden"><span>Sconto</span><strong id="shop-cart-discount">− € 0,00</strong></p>
                 <p class="shop-cart-grand-total"><span>Totale provvisorio</span><strong id="shop-cart-total">€ 0,00</strong></p>
-                <small>IVA e spedizione saranno confermate prima del pagamento.</small>
+                <small>Il totale definitivo viene confermato da WooCommerce prima del pagamento.</small>
               </div>
               <button id="shop-checkout" class="primary-action" type="button">Concludi ordine e paga</button>
             </div>

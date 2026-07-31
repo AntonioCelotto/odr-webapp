@@ -51,6 +51,24 @@ function safeCoupon(value) {
   return String(value || '').trim().toLowerCase().replace(/[^a-z0-9_-]/g, '').slice(0, 100);
 }
 
+function safeAddress(value) {
+  const address = value && typeof value === 'object' ? value : {};
+  const text = (field, length = 120) => String(address[field] || '').trim().slice(0, length);
+  return {
+    first_name: text('firstName', 60),
+    last_name: text('lastName', 60),
+    company: text('company', 120),
+    address_1: text('address1', 160),
+    address_2: text('address2', 160),
+    postcode: text('postcode', 20),
+    city: text('city', 100),
+    state: text('state', 10).toUpperCase(),
+    country: text('country', 2).toUpperCase() || 'IT',
+    phone: text('phone', 40),
+    email: text('email', 200).toLowerCase(),
+  };
+}
+
 async function getActiveCoupon(token) {
   const endpoint = new URL('/functions/v1/promo-codes', process.env.SUPABASE_URL);
   endpoint.searchParams.set('view', 'active');
@@ -86,6 +104,7 @@ export default async function handler(request, response) {
     sessionEndpoint.searchParams.set('consumer_secret', secret);
     const activeCoupon = await getActiveCoupon(token);
     const requestedCoupon = safeCoupon(request.body?.coupon);
+    const address = safeAddress(request.body?.address);
     const wordpressResponse = await fetch(sessionEndpoint, {
       method: 'POST',
       headers: {
@@ -98,6 +117,8 @@ export default async function handler(request, response) {
         redirect: safeWooDestination(request.body?.redirect, storeUrl),
         items: safeCartItems(request.body?.items),
         coupon: requestedCoupon || activeCoupon,
+        address: { ...address, email: profile.email },
+        checkout: Boolean(request.body?.checkout),
       }),
     });
     const payload = await wordpressResponse.json().catch(() => ({}));

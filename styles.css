@@ -730,6 +730,82 @@ h2 {
   background: white;
 }
 
+.shop-address {
+  display: grid;
+  gap: 16px;
+  margin: 18px 0;
+  padding: 18px;
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  background: white;
+}
+
+.shop-address-heading,
+.shop-delivery-summary p {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+}
+
+.shop-address-heading h4 {
+  margin: 2px 0 0;
+  font-size: 19px;
+}
+
+.shop-address-heading > span {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.shop-address-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.shop-address-grid label {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.shop-address-grid .wide {
+  grid-column: 1 / -1;
+}
+
+.shop-address-grid input,
+.shop-address-grid select {
+  width: 100%;
+  min-width: 0;
+  height: 42px;
+  padding: 0 12px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  color: var(--ink);
+  background: white;
+}
+
+.shop-delivery-summary {
+  display: grid;
+  gap: 7px;
+  padding-top: 14px;
+  border-top: 1px solid var(--line);
+}
+
+.shop-delivery-summary p {
+  margin: 0;
+  font-size: 13px;
+}
+
+.shop-delivery-summary span {
+  color: var(--muted);
+}
+
 .shop-coupon > label {
   font-size: 13px;
   font-weight: 800;
@@ -1831,6 +1907,23 @@ tr:last-child td {
   .shop-coupon > div {
     align-items: stretch;
     flex-direction: column;
+  }
+
+  .shop-address {
+    padding: 14px 12px;
+  }
+
+  .shop-address-heading {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .shop-address-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .shop-address-grid .wide {
+    grid-column: auto;
   }
 
   .shop-cart-footer .primary-action {
