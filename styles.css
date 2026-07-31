@@ -935,6 +935,17 @@ h2 {
   border-top: 1px solid var(--line);
 }
 
+.shop-cart-actions {
+  display: grid;
+  min-width: 235px;
+  gap: 10px;
+}
+
+.shop-cart-actions button {
+  width: 100%;
+  justify-content: center;
+}
+
 .shop-cart-totals {
   display: grid;
   flex: 1;
@@ -1926,9 +1937,9 @@ tr:last-child td {
     grid-column: auto;
   }
 
+  .shop-cart-actions,
   .shop-cart-footer .primary-action {
     width: 100%;
-    justify-content: center;
   }
 
   .main {
