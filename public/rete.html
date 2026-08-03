@@ -103,7 +103,7 @@
         </nav>
         <div class="sidebar-status">
           <span id="supabase-dot" class="dot warn"></span>
-          <span id="supabase-status">Modalita demo</span>
+          <span id="supabase-status">Connessione dati</span>
         </div>
         <nav class="mobile-tabbar" aria-label="Navigazione mobile">
           <a href="/dashboard" data-route="dashboard"><span>⌂</span>Home</a>
@@ -140,13 +140,12 @@
               <h2>Dashboard</h2>
               <p>Controllo rapido di codici, rete commerciale e vendite lette da WooCommerce.</p>
             </div>
-            <a id="shop-link" class="primary-action" href="#" target="_blank" rel="noreferrer">Apri shop</a>
           </div>
           <div class="metrics">
             <div class="metric">
               <span>Vendite WooCommerce</span>
               <strong id="metric-revenue">€ 0,00</strong>
-              <small>demo report import/API</small>
+              <small>ordini WooCommerce aggiornati</small>
             </div>
             <div class="metric">
               <span>Codici attivi</span>
@@ -161,7 +160,7 @@
             <div class="metric">
               <span>Ruolo corrente</span>
               <strong id="metric-role">Amministratore</strong>
-              <small id="metric-email">admin@odr.local</small>
+              <small id="metric-email">-</small>
             </div>
           </div>
         </section>
@@ -200,6 +199,10 @@
               <input id="shop-search" type="search" placeholder="Nome prodotto o codice SKU" />
             </label>
             <div id="shop-categories" class="shop-categories" aria-label="Filtra per categoria"></div>
+            <label class="shop-sale-filter">
+              <input id="shop-sale-only" type="checkbox" />
+              <span>Solo promozioni</span>
+            </label>
           </div>
           <div id="shop-message" class="auth-message">Caricamento del tuo listino...</div>
           <aside id="shop-cart-panel" class="shop-cart-panel hidden" aria-label="Carrello ODR">
@@ -211,12 +214,55 @@
               <button id="shop-cart-close" class="icon-button" type="button" aria-label="Chiudi carrello">Chiudi</button>
             </div>
             <div id="shop-cart-items" class="shop-cart-items"></div>
-            <div class="shop-cart-footer">
+            <div class="shop-coupon">
+              <label for="shop-coupon">Codice promozionale</label>
               <div>
-                <span>Totale prodotti</span>
-                <strong id="shop-cart-total">€ 0,00</strong>
+                <input id="shop-coupon" type="text" autocomplete="off" placeholder="Inserisci il codice" maxlength="100" />
+                <button id="shop-apply-coupon" class="secondary-action" type="button">Applica</button>
               </div>
-              <button id="shop-checkout" class="primary-action" type="button">Procedi all’acquisto</button>
+              <p id="shop-coupon-message">Puoi applicare il codice prima del pagamento.</p>
+            </div>
+            <div class="shop-address">
+              <div class="shop-address-heading">
+                <div>
+                  <p class="eyebrow">Consegna</p>
+                  <h4>Indirizzo di spedizione</h4>
+                </div>
+                <span id="shop-address-status">Dati salvati nell’app</span>
+              </div>
+              <div class="shop-address-grid">
+                <label>Nome <input id="shipping-first-name" autocomplete="given-name" required /></label>
+                <label>Cognome <input id="shipping-last-name" autocomplete="family-name" required /></label>
+                <label class="wide">Azienda (facoltativo) <input id="shipping-company" autocomplete="organization" /></label>
+                <label class="wide">Indirizzo <input id="shipping-address-1" autocomplete="address-line1" required /></label>
+                <label class="wide">Interno / scala (facoltativo) <input id="shipping-address-2" autocomplete="address-line2" /></label>
+                <label>CAP <input id="shipping-postcode" inputmode="numeric" autocomplete="postal-code" maxlength="10" required /></label>
+                <label>Città <input id="shipping-city" autocomplete="address-level2" required /></label>
+                <label>Provincia <input id="shipping-state" autocomplete="address-level1" maxlength="2" placeholder="TO" required /></label>
+                <label>Paese
+                  <select id="shipping-country" autocomplete="country">
+                    <option value="IT">Italia</option>
+                  </select>
+                </label>
+                <label>Telefono <input id="shipping-phone" type="tel" autocomplete="tel" required /></label>
+                <label>Email <input id="shipping-email" type="email" autocomplete="email" readonly /></label>
+              </div>
+              <div class="shop-delivery-summary">
+                <p><span>Spedizione DHL</span><strong id="shop-shipping-cost">Da calcolare</strong></p>
+                <p><span>IVA</span><strong id="shop-tax-status">Calcolata da WooCommerce</strong></p>
+              </div>
+            </div>
+            <div class="shop-cart-footer">
+              <div class="shop-cart-totals">
+                <p><span>Subtotale prodotti</span><strong id="shop-cart-subtotal">€ 0,00</strong></p>
+                <p id="shop-discount-row" class="hidden"><span>Sconto</span><strong id="shop-cart-discount">− € 0,00</strong></p>
+                <p class="shop-cart-grand-total"><span>Totale provvisorio</span><strong id="shop-cart-total">€ 0,00</strong></p>
+                <small>Il totale definitivo viene confermato da WooCommerce prima del pagamento.</small>
+              </div>
+              <div class="shop-cart-actions">
+                <button id="shop-continue-shopping" class="secondary-action" type="button">Continua gli acquisti</button>
+                <button id="shop-checkout" class="primary-action" type="button">Concludi ordine e paga</button>
+              </div>
             </div>
           </aside>
           <div id="shop-products" class="product-grid"></div>
@@ -296,9 +342,39 @@
           <div class="section-heading">
             <div>
               <h2>Promozioni e fidelity</h2>
-              <p>Coupon reali disponibili in WooCommerce e utilizzabili nei codici ODR.</p>
+              <p>Crea e gestisci i coupon WooCommerce utilizzabili nello shop e nei codici ODR.</p>
             </div>
+            <button id="new-promotion-button" class="primary-action" type="button">Nuovo coupon</button>
           </div>
+          <form id="promotion-form" class="admin-form hidden">
+            <input id="promotion-id" type="hidden" />
+            <div class="form-grid">
+              <label>Codice coupon <input id="promotion-code" required maxlength="100" /></label>
+              <label>Tipo di sconto
+                <select id="promotion-type" required>
+                  <option value="percent">Sconto percentuale</option>
+                  <option value="fixed_cart">Sconto fisso sul carrello</option>
+                  <option value="fixed_product">Sconto fisso sul prodotto</option>
+                </select>
+              </label>
+              <label>Valore sconto <input id="promotion-amount" type="number" min="0" step="0.01" required /></label>
+              <label>Scadenza <input id="promotion-expires" type="date" /></label>
+              <label>Limite totale utilizzi <input id="promotion-usage-limit" type="number" min="1" /></label>
+              <label>Limite per utente <input id="promotion-user-limit" type="number" min="1" /></label>
+              <label>Ordine minimo <input id="promotion-minimum" type="number" min="0" step="0.01" /></label>
+              <label>Ordine massimo <input id="promotion-maximum" type="number" min="0" step="0.01" /></label>
+            </div>
+            <label>Descrizione <textarea id="promotion-description" maxlength="500"></textarea></label>
+            <div class="promotion-checks">
+              <label class="check-row"><input id="promotion-individual" type="checkbox" /> Non cumulabile con altri coupon</label>
+              <label class="check-row"><input id="promotion-free-shipping" type="checkbox" /> Spedizione gratuita</label>
+              <label class="check-row"><input id="promotion-exclude-sale" type="checkbox" /> Escludi prodotti già in offerta</label>
+            </div>
+            <div class="action-row">
+              <button class="primary-action" type="submit">Salva coupon</button>
+              <button id="cancel-promotion-button" class="secondary-action" type="button">Annulla</button>
+            </div>
+          </form>
           <div id="promotion-message" class="auth-message">Caricamento coupon WooCommerce...</div>
           <div class="promo-grid" id="promotion-list"></div>
         </section>
@@ -307,17 +383,48 @@
           <div class="section-heading">
             <div>
               <h2>Rete commerciale</h2>
-              <p>Importa distributori e agenti da file Excel esportato in CSV, poi associa vendite e codici per report.</p>
+              <p>Gestisci distributori, agenti e centri e collega gli account ODR alla rete commerciale.</p>
             </div>
-            <label class="secondary-action">
-              Import CSV
-              <input id="network-import" type="file" accept=".csv,.tsv,text/csv" />
-            </label>
+            <div id="network-admin-actions" class="action-row">
+              <button id="new-network-button" class="primary-action" type="button">Nuovo elemento</button>
+              <label class="secondary-action">
+                Import CSV
+                <input id="network-import" type="file" accept=".csv,.tsv,text/csv" />
+              </label>
+            </div>
           </div>
+
+          <form id="network-form" class="admin-form hidden">
+            <input id="network-id" type="hidden" />
+            <div class="form-grid">
+              <label>Tipo
+                <select id="network-type" required>
+                  <option value="distributor">Distributore</option>
+                  <option value="agent">Agente</option>
+                  <option value="center">Centro / punto vendita</option>
+                </select>
+              </label>
+              <label>Nome <input id="network-name" required maxlength="250" /></label>
+              <label>Zona <input id="network-area" maxlength="120" /></label>
+              <label>Collegato a <select id="network-parent"></select></label>
+              <label>Email <input id="network-email" type="email" maxlength="250" /></label>
+              <label>Telefono <input id="network-phone" maxlength="60" /></label>
+              <label>Codice esterno <input id="network-external-code" maxlength="100" /></label>
+              <label id="network-commission-label">Provvigione agente %
+                <input id="network-commission" type="number" min="0" max="100" step="0.01" value="20" />
+              </label>
+              <label>Account ODR <select id="network-account"></select></label>
+            </div>
+            <label class="check-row"><input id="network-active" type="checkbox" checked /> Elemento attivo</label>
+            <div class="action-row">
+              <button class="primary-action" type="submit">Salva</button>
+              <button id="cancel-network-button" class="secondary-action" type="button">Annulla</button>
+            </div>
+          </form>
 
           <div class="toolbar">
             <input id="network-search" placeholder="Cerca nome, zona, email, distributore" />
-            <span id="import-notice"></span>
+            <span id="import-notice">Caricamento rete...</span>
           </div>
 
           <div class="table-wrap">
@@ -328,8 +435,11 @@
                   <th>Nome</th>
                   <th>Zona</th>
                   <th>Collegato a</th>
+                  <th>Provvigione</th>
                   <th>Contatto</th>
+                  <th>Account ODR</th>
                   <th>Stato</th>
+                  <th></th>
                 </tr>
               </thead>
               <tbody id="network-table"></tbody>
@@ -344,7 +454,7 @@
             </div>
             <div class="integration-line">
               <span>Shop base</span>
-              <strong id="wp-base-url">Da configurare</strong>
+              <strong id="wp-base-url">Collegamento in corso</strong>
             </div>
             <div class="integration-line">
               <span>Passaggio codice</span>
@@ -358,7 +468,7 @@
 
           <div class="panel">
             <div class="panel-title">
-              <h2>Flusso MVP</h2>
+              <h2>Flusso di acquisto</h2>
             </div>
             <ol class="flow">
               <li>ODR valida codice o accesso paziente.</li>
@@ -373,7 +483,7 @@
           <div class="section-heading">
             <div>
               <h2>Report vendite</h2>
-              <p>Vista iniziale sugli ordini WooCommerce collegati a coupon, agenti e distributori.</p>
+              <p>Ordini WooCommerce collegati a coupon, agenti, distributori e centri.</p>
             </div>
             <div class="action-row">
               <label class="secondary-action">
@@ -383,6 +493,28 @@
               <button id="export-report" class="secondary-action" type="button">Esporta CSV</button>
             </div>
           </div>
+          <div class="report-filters">
+            <input id="report-search" type="search" placeholder="Cerca ordine, cliente, coupon o rete" />
+            <select id="report-status">
+              <option value="">Tutti gli stati</option>
+              <option value="processing">In lavorazione</option>
+              <option value="completed">Completato</option>
+              <option value="on-hold">In attesa</option>
+              <option value="pending">Pagamento in attesa</option>
+              <option value="cancelled">Annullato</option>
+              <option value="refunded">Rimborsato</option>
+              <option value="failed">Fallito</option>
+            </select>
+            <select id="report-payment">
+              <option value="">Pagati e non pagati</option>
+              <option value="paid">Pagati</option>
+              <option value="unpaid">Non pagati</option>
+            </select>
+            <label>Dal <input id="report-date-from" type="date" /></label>
+            <label>Al <input id="report-date-to" type="date" /></label>
+            <button id="refresh-report" class="secondary-action" type="button">Aggiorna</button>
+          </div>
+          <div id="report-message" class="auth-message">Caricamento ordini WooCommerce...</div>
           <div class="report-summary" id="report-summary"></div>
           <div class="table-wrap">
             <table>
@@ -394,7 +526,11 @@
                   <th>Coupon</th>
                   <th>Agente</th>
                   <th>Distributore</th>
+                  <th>Centro</th>
                   <th>Importo</th>
+                  <th>Pagamento</th>
+                  <th>Imponibile provvigione</th>
+                  <th>Guadagno agente</th>
                   <th>Stato</th>
                 </tr>
               </thead>
@@ -458,18 +594,18 @@
               <h2>Supabase</h2>
             </div>
             <p class="setting-copy">
-              Usa Supabase Auth per gli accessi e Postgres per codici, rete, report importati e log di validazione.
+              Gestisce in modo centralizzato accessi, codici, rete commerciale, report e log di validazione.
             </p>
-            <span id="supabase-pill" class="config-pill warn">Configura env</span>
+            <span id="supabase-pill" class="config-pill warn">Verifica connessione</span>
           </div>
           <div class="panel">
             <div class="panel-title">
               <h2>Excel rete</h2>
             </div>
             <p class="setting-copy">
-              Per il primo MVP importa il file Excel esportato in CSV con colonne: tipo, nome, email, telefono, zona, distributore, agente.
+              Puoi importare un file CSV con le colonne: tipo, nome, email, telefono, zona, distributore e agente.
             </p>
-            <span class="config-pill">Import CSV pronto</span>
+            <span class="config-pill">Importazione CSV disponibile</span>
           </div>
         </section>
       </main>

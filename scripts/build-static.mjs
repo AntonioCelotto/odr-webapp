@@ -1,5 +1,5 @@
 import { build } from 'esbuild';
-import { mkdir, rm, copyFile, readFile, writeFile } from 'node:fs/promises';
+import { cp, mkdir, rm, copyFile, readFile, writeFile } from 'node:fs/promises';
 
 const requiredFiles = ['index.html', 'styles.css', 'app.js', 'odr-logo.svg'];
 const outputDirectories = ['dist', 'public'];
@@ -40,6 +40,7 @@ for (const directory of outputDirectories) {
   for (const file of ['index.html', 'styles.css', 'odr-logo.svg']) {
     await copyFile(file, `${directory}/${file}`);
   }
+  await cp('product-images', `${directory}/product-images`, { recursive: true });
   for (const route of appRouteFiles) {
     await copyFile('index.html', `${directory}/${route}.html`);
   }
