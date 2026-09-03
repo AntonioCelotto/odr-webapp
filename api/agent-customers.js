@@ -10,7 +10,7 @@ function json(res, status, body) {
 const clean = (value, max = 250) => String(value || '').trim().slice(0, max);
 
 async function authenticate(req) {
-  const token = clean(req.headers.authorization).replace(/^Bearer\s+/i, '');
+  const token = String(req.headers.authorization || '').replace(/^Bearer\s+/i, '').trim();
   const base = process.env.SUPABASE_URL;
   const key = process.env.SUPABASE_PUBLISHABLE_KEY;
   if (!token || !base || !key) return null;
