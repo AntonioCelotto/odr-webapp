@@ -2512,3 +2512,24 @@ body .shop-cart-thumb img {
     width: 100%;
   }
 }
+
+
+/* Account role and deletion controls */
+.user-actions .user-role-select {
+  min-height: 34px;
+  padding: 0 30px 0 9px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  color: var(--ink);
+  background: white;
+}
+
+.user-actions .role-change {
+  color: white;
+  background: var(--violet-strong);
+}
+
+.user-actions .delete {
+  color: white;
+  background: #a62d3d;
+}
