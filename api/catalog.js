@@ -52,7 +52,8 @@ async function getWooProducts() {
   endpoint.searchParams.set('order', 'asc');
   const authorization = `Basic ${Buffer.from(`${key}:${secret}`).toString('base64')}`;
 
-  const firstResponse = await fetch(endpoint, { headers: { Authorization: authorization } });
+  const requestOptions = { headers: { Authorization: authorization }, cache: 'no-store' };
+  const firstResponse = await fetch(endpoint, requestOptions);
   if (!firstResponse.ok) throw new Error(`WooCommerce ${firstResponse.status}`);
   const firstPage = await firstResponse.json();
   const pages = Number(firstResponse.headers.get('x-wp-totalpages') || 1);
@@ -62,7 +63,7 @@ async function getWooProducts() {
   for (let page = 2; page <= pages; page += 1) {
     const pageUrl = new URL(endpoint);
     pageUrl.searchParams.set('page', String(page));
-    requests.push(fetch(pageUrl, { headers: { Authorization: authorization } }).then((res) => {
+    requests.push(fetch(pageUrl, requestOptions).then((res) => {
       if (!res.ok) throw new Error(`WooCommerce ${res.status}`);
       return res.json();
     }));
@@ -99,6 +100,11 @@ export default async function handler(request, response) {
         inStock: product.stock_status === 'instock' || product.stock_status === 'onbackorder',
         stockStatus: product.stock_status,
         image: product.images?.[0]?.src || '',
+        imageUpdatedAt: product.images?.[0]?.date_modified_gmt
+          || product.images?.[0]?.date_modified
+          || product.date_modified_gmt
+          || product.date_modified
+          || '',
         categories: (product.categories || []).map(({ id, name, slug }) => ({ id, name, slug })),
         permalink: product.permalink,
         shortDescription: safeText(product.short_description),
