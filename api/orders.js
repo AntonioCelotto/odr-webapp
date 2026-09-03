@@ -57,6 +57,13 @@ export default async function handler(request, response) {
         .filter((entity) => entity.type === 'center' && entity.parent_id === profile.network_entity_id && entity.email)
         .map((entity) => entity.email.toLowerCase())
       : []);
+    const [customerTermsResponse, manualPaymentsResponse] = await Promise.all([
+      fetch(`${process.env.SUPABASE_URL}/rest/v1/agent_app_customers?select=id,payment_terms`, { headers: profile.headers }),
+      fetch(`${process.env.SUPABASE_URL}/rest/v1/order_payment_entries?select=*`, { headers: profile.headers }),
+    ]);
+    const customerTerms = new Map((customerTermsResponse.ok ? await customerTermsResponse.json() : [])
+      .map((item) => [`app-${item.id}`, item.payment_terms?.length ? item.payment_terms : [30]]));
+    const manualPayments = manualPaymentsResponse.ok ? await manualPaymentsResponse.json() : [];
 
     const orders = wooOrders
       .filter((order) => {
@@ -69,6 +76,8 @@ export default async function handler(request, response) {
       .map((order) => {
         const email = order.billing?.email?.toLowerCase() || '';
         const meta = order.meta_data || [];
+        const customerReference = meta.find((item) => item.key === '_odr_customer_reference')?.value || '';
+        const agentProfileId = meta.find((item) => item.key === '_odr_agent_profile_id')?.value || '';
         const orderAgentEntityId = meta.find((item) => item.key === '_odr_agent_entity_id')?.value || '';
         const entity = byEmail.get(email);
         const parent = entity?.parent_id ? byId.get(entity.parent_id) : null;
@@ -79,7 +88,21 @@ export default async function handler(request, response) {
         const commissionBase = (order.line_items || [])
           .reduce((sum, line) => sum + (Number(line.total) || 0), 0);
         const commissionRate = Number(agentEntity?.commission_rate) || 0;
-        const paymentStatus = order.date_paid ? 'paid' : 'unpaid';
+        const terms = customerTerms.get(customerReference) || [30];
+        const recorded = manualPayments.filter((entry) => Number(entry.woo_order_id) === Number(order.id));
+        const totalCents = Math.round((Number(order.total) || 0) * 100);
+        const baseCents = Math.floor(totalCents / terms.length);
+        const installments = terms.map((days, index) => {
+          const due = new Date(order.date_created || Date.now());
+          due.setUTCDate(due.getUTCDate() + Number(days));
+          const saved = recorded.find((entry) => Number(entry.installment_number) === index + 1);
+          return {
+            number: index + 1, days: Number(days), dueDate: due.toISOString().slice(0, 10),
+            amount: ((index === terms.length - 1 ? totalCents - baseCents * index : baseCents) / 100),
+            paid: Boolean(order.date_paid || saved?.paid), paidAt: order.date_paid?.slice(0, 10) || saved?.paid_at || '',
+          };
+        });
+        const paymentStatus = installments.every((item) => item.paid) ? 'paid' : installments.some((item) => item.paid) ? 'partial' : 'unpaid';
         const agentEarning = paymentStatus === 'paid' && !['cancelled', 'failed', 'refunded'].includes(order.status)
           ? commissionBase * commissionRate
           : 0;
@@ -100,6 +123,8 @@ export default async function handler(request, response) {
               : grandparent?.type === 'distributor' ? grandparent.name : '',
           status: order.status,
           paymentStatus,
+          installments,
+          agentProfileId,
           commissionBase,
           commissionRate,
           agentEarning,
