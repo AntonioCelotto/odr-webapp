@@ -50,6 +50,37 @@ export default async function handler(req, res) {
 
     if (req.method === 'GET') {
       const customers = new Map();
+      const appUrl = new URL('/rest/v1/agent_app_customers', base);
+      appUrl.searchParams.set('agent_profile_id', `eq.${profile.id}`);
+      appUrl.searchParams.set('active', 'eq.true');
+      appUrl.searchParams.set('select', '*');
+      appUrl.searchParams.set('order', 'name.asc');
+      const appResult = await fetch(appUrl, { headers: adminHeaders });
+      if (!appResult.ok) throw new Error('Archivio clienti app non disponibile');
+      for (const item of await appResult.json()) {
+        customers.set(`app-${item.id}`, {
+          id: `app-${item.id}`,
+          name: item.name,
+          company: item.company || '',
+          email: item.email,
+          phone: item.phone || '',
+          area: item.city || '',
+          source: 'app',
+          address: {
+            firstName: item.name.split(/\s+/)[0] || item.name,
+            lastName: item.name.split(/\s+/).slice(1).join(' '),
+            company: item.company || '',
+            address1: item.address_1 || '',
+            address2: item.address_2 || '',
+            postcode: item.postcode || '',
+            city: item.city || '',
+            state: item.state || '',
+            country: item.country || 'IT',
+            phone: item.phone || '',
+            email: item.email,
+          },
+        });
+      }
       for (let page = 1; page <= 5; page += 1) {
         const url = new URL('/wp-json/wc/v3/orders', process.env.WOOCOMMERCE_STORE_URL);
         url.searchParams.set('per_page', '100');
@@ -98,54 +129,36 @@ export default async function handler(req, res) {
     const email = clean(body.email, 200).toLowerCase();
     const name = clean(body.name);
     if (!name || !email || !/^\S+@\S+\.\S+$/.test(email)) return json(res, 400, { error: 'Nome ed email validi sono obbligatori' });
-    const assignedAgent = parentId;
-
-    const duplicateUrl = new URL('/rest/v1/network_entities', base);
-    duplicateUrl.searchParams.set('type', 'eq.center');
+    const duplicateUrl = new URL('/rest/v1/agent_app_customers', base);
+    duplicateUrl.searchParams.set('agent_profile_id', `eq.${profile.id}`);
     duplicateUrl.searchParams.set('email', `eq.${email}`);
     duplicateUrl.searchParams.set('select', 'id');
     const duplicate = await fetch(duplicateUrl, { headers: adminHeaders });
     if ((await duplicate.json()).length) return json(res, 409, { error: 'Questo cliente è già presente' });
 
     const parts = name.split(/\s+/);
-    const customerUrl = new URL('/wp-json/wc/v3/customers', process.env.WOOCOMMERCE_STORE_URL);
-    const customerResult = await fetch(customerUrl, {
+    const firstName = parts.shift() || name;
+    const lastName = parts.join(' ');
+    const create = await fetch(new URL('/rest/v1/agent_app_customers', base), {
       method: 'POST',
-      headers: { ...wooHeaders(), 'Content-Type': 'application/json' },
+      headers: { ...adminHeaders, Prefer: 'return=representation' },
       body: JSON.stringify({
+        agent_profile_id: profile.id,
+        name,
+        company: clean(body.company) || null,
         email,
-        first_name: parts.shift() || name,
-        last_name: parts.join(' '),
-        billing: {
-          first_name: name.split(/\s+/)[0] || name,
-          last_name: name.split(/\s+/).slice(1).join(' '),
-          company: clean(body.company), email, phone: clean(body.phone, 60),
-          address_1: clean(body.address1, 160), postcode: clean(body.postcode, 20),
-          city: clean(body.city, 100), state: clean(body.state, 10).toUpperCase(), country: 'IT',
-        },
-        shipping: {
-          first_name: name.split(/\s+/)[0] || name,
-          last_name: name.split(/\s+/).slice(1).join(' '),
-          company: clean(body.company), address_1: clean(body.address1, 160),
-          postcode: clean(body.postcode, 20), city: clean(body.city, 100),
-          state: clean(body.state, 10).toUpperCase(), country: 'IT',
-        },
+        phone: clean(body.phone, 60) || null,
+        address_1: clean(body.address1, 160) || null,
+        postcode: clean(body.postcode, 20) || null,
+        city: clean(body.city, 100) || null,
+        state: clean(body.state, 10).toUpperCase() || null,
+        country: 'IT',
       }),
     });
-    const woo = await customerResult.json().catch(() => ({}));
-    if (!customerResult.ok) throw new Error(woo.message || 'Creazione cliente WooCommerce non riuscita');
-
-    const create = assignedAgent ? await fetch(new URL('/rest/v1/network_entities', base), {
-      method: 'POST', headers: { ...adminHeaders, Prefer: 'return=representation' },
-      body: JSON.stringify({
-        type: 'center', name, email, phone: clean(body.phone, 60) || null,
-        area: clean(body.city, 100) || null, parent_id: assignedAgent,
-        external_code: `WC-${woo.id}`, active: true, import_source: 'App agente',
-      }),
-    }) : null;
-    if (create?.ok) await create.json();
+    const [saved] = create.ok ? await create.json() : [];
+    if (!saved) throw new Error('Salvataggio cliente nell’app non riuscito');
     return json(res, 201, { customer: {
-      id: `wc-${woo.id}`, name, email, phone: clean(body.phone, 60), area: clean(body.city, 100),
+      id: `app-${saved.id}`, name, email, phone: clean(body.phone, 60), area: clean(body.city, 100), source: 'app',
       address: {
         firstName, lastName, company: clean(body.company), address1: clean(body.address1, 160),
         address2: '', postcode: clean(body.postcode, 20), city: clean(body.city, 100),
