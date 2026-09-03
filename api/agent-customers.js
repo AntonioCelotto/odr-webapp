@@ -43,29 +43,49 @@ export default async function handler(req, res) {
   try {
     const profile = await authenticate(req);
     if (!profile) return json(res, 403, { error: 'Funzione riservata agli agenti' });
-    const parentId = await agentEntity(profile);
+    const parentId = profile.network_entity_id || null;
     const base = process.env.SUPABASE_URL;
     const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
     const adminHeaders = { apikey: serviceKey, Authorization: `Bearer ${serviceKey}`, 'Content-Type': 'application/json' };
 
     if (req.method === 'GET') {
-      const url = new URL('/rest/v1/network_entities', base);
-      url.searchParams.set('type', 'eq.center');
-      url.searchParams.set('active', 'eq.true');
-      if (parentId) url.searchParams.set('parent_id', `eq.${parentId}`);
-      url.searchParams.set('select', 'id,name,email,phone,area,external_code,created_at');
-      url.searchParams.set('order', 'name.asc');
-      const result = await fetch(url, { headers: adminHeaders });
-      if (!result.ok) throw new Error('Elenco clienti non disponibile');
-      return json(res, 200, { customers: await result.json() });
+      const customers = new Map();
+      for (let page = 1; page <= 5; page += 1) {
+        const url = new URL('/wp-json/wc/v3/orders', process.env.WOOCOMMERCE_STORE_URL);
+        url.searchParams.set('per_page', '100');
+        url.searchParams.set('page', String(page));
+        url.searchParams.set('orderby', 'date');
+        url.searchParams.set('order', 'desc');
+        const result = await fetch(url, { headers: wooHeaders() });
+        if (!result.ok) {
+          if (result.status === 400 && page > 1) break;
+          throw new Error('Clienti WooCommerce non disponibili');
+        }
+        const orders = await result.json();
+        for (const order of orders) {
+          const billing = order.billing || {};
+          const email = String(billing.email || '').toLowerCase();
+          const key = Number(order.customer_id) > 0 ? `wc-${order.customer_id}` : email;
+          if (!key || customers.has(key)) continue;
+          customers.set(key, {
+            id: Number(order.customer_id) > 0 ? `wc-${order.customer_id}` : `order-${order.id}`,
+            name: `${billing.first_name || ''} ${billing.last_name || ''}`.trim() || billing.company || email || 'Cliente',
+            company: billing.company || '',
+            email,
+            phone: billing.phone || '',
+            area: billing.city || '',
+          });
+        }
+        if (orders.length < 100) break;
+      }
+      return json(res, 200, { customers: [...customers.values()] });
     }
 
     const body = req.body || {};
     const email = clean(body.email, 200).toLowerCase();
     const name = clean(body.name);
     if (!name || !email || !/^\S+@\S+\.\S+$/.test(email)) return json(res, 400, { error: 'Nome ed email validi sono obbligatori' });
-    if (!parentId && profile.role === 'admin' && !clean(body.agentId, 80)) return json(res, 400, { error: 'Seleziona un agente' });
-    const assignedAgent = parentId || clean(body.agentId, 80);
+    const assignedAgent = parentId;
 
     const duplicateUrl = new URL('/rest/v1/network_entities', base);
     duplicateUrl.searchParams.set('type', 'eq.center');
@@ -102,17 +122,18 @@ export default async function handler(req, res) {
     const woo = await customerResult.json().catch(() => ({}));
     if (!customerResult.ok) throw new Error(woo.message || 'Creazione cliente WooCommerce non riuscita');
 
-    const create = await fetch(new URL('/rest/v1/network_entities', base), {
+    const create = assignedAgent ? await fetch(new URL('/rest/v1/network_entities', base), {
       method: 'POST', headers: { ...adminHeaders, Prefer: 'return=representation' },
       body: JSON.stringify({
         type: 'center', name, email, phone: clean(body.phone, 60) || null,
         area: clean(body.city, 100) || null, parent_id: assignedAgent,
         external_code: `WC-${woo.id}`, active: true, import_source: 'App agente',
       }),
-    });
-    const [entity] = create.ok ? await create.json() : [];
-    if (!entity) throw new Error('Collegamento cliente alla rete non riuscito');
-    return json(res, 201, { customer: entity });
+    }) : null;
+    const [entity] = create?.ok ? await create.json() : [];
+    return json(res, 201, { customer: entity || {
+      id: `wc-${woo.id}`, name, email, phone: clean(body.phone, 60), area: clean(body.city, 100)
+    } });
   } catch (error) {
     console.error('agent_customers_error', error instanceof Error ? error.message : error);
     return json(res, 502, { error: error instanceof Error ? error.message : 'Operazione non riuscita' });
