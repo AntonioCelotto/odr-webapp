@@ -42,9 +42,19 @@ export default async function handler(request, response) {
     const byEmail = new Map(network
       .filter((entity) => entity.email)
       .map((entity) => [entity.email.toLowerCase(), entity]));
+    const agentCustomerEmails = new Set(profile.role === 'agent' && profile.network_entity_id
+      ? network
+        .filter((entity) => entity.type === 'center' && entity.parent_id === profile.network_entity_id && entity.email)
+        .map((entity) => entity.email.toLowerCase())
+      : []);
 
     const orders = (await wooResponse.json())
-      .filter((order) => profile.role === 'admin' || order.billing?.email?.toLowerCase() === profile.email?.toLowerCase())
+      .filter((order) => {
+        const email = order.billing?.email?.toLowerCase() || '';
+        return profile.role === 'admin'
+          || email === profile.email?.toLowerCase()
+          || (profile.role === 'agent' && agentCustomerEmails.has(email));
+      })
       .map((order) => {
         const email = order.billing?.email?.toLowerCase() || '';
         const entity = byEmail.get(email);
