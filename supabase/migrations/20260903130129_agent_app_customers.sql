@@ -25,3 +25,17 @@ create unique index if not exists agent_app_customers_agent_email_idx
 alter table public.agent_app_customers enable row level security;
 
 revoke all on table public.agent_app_customers from anon, authenticated;
+
+grant select, insert on table public.agent_app_customers to authenticated;
+
+create policy "Agents read their own app customers"
+on public.agent_app_customers
+for select
+to authenticated
+using ((select auth.uid()) = agent_profile_id);
+
+create policy "Agents create their own app customers"
+on public.agent_app_customers
+for insert
+to authenticated
+with check ((select auth.uid()) = agent_profile_id);
