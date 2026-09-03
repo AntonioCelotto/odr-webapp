@@ -1971,7 +1971,7 @@ h2 {
 
 .report-summary {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 12px;
   margin-bottom: 12px;
 }
@@ -1979,8 +1979,9 @@ h2 {
 .report-summary div {
   padding: 14px;
   border: 1px solid var(--line);
-  border-radius: 8px;
-  background: #fbfaff;
+  border-radius: 18px;
+  background: linear-gradient(145deg, #fff, #faf8ff);
+  box-shadow: 0 8px 24px rgba(69, 45, 58, 0.05);
 }
 
 .report-summary span,
@@ -1999,15 +2000,29 @@ h2 {
 
 .report-filters {
   display: grid;
-  grid-template-columns: minmax(200px, 1.5fr) minmax(150px, 1fr) auto auto auto;
+  grid-template-columns: minmax(240px, 1.5fr) minmax(170px, 1fr) minmax(180px, 1fr) minmax(130px, auto) minmax(130px, auto) auto;
+  align-items: end;
   gap: 10px;
-  margin-bottom: 12px;
+  margin-bottom: 16px;
 }
 
 .report-filters input,
 .report-filters select {
   width: 100%;
   min-width: 0;
+  min-height: 50px;
+  padding: 0 15px;
+  color: var(--ink);
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  background: #fff;
+  outline: none;
+}
+
+.report-filters input:focus,
+.report-filters select:focus {
+  border-color: var(--violet);
+  box-shadow: 0 0 0 3px rgba(142, 129, 170, 0.13);
 }
 
 .report-filters label {
@@ -2016,6 +2031,35 @@ h2 {
   color: var(--muted);
   font-size: 12px;
   font-weight: 700;
+}
+
+#refresh-report {
+  min-height: 50px;
+  padding-inline: 20px;
+}
+
+#reports .auth-message,
+#reports .table-wrap {
+  border-radius: 18px;
+}
+
+#reports .table-wrap {
+  border: 1px solid var(--line);
+  overflow: auto;
+}
+
+#reports .table-wrap table {
+  border: 0;
+}
+
+@media (max-width: 1200px) and (min-width: 621px) {
+  .report-filters {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .report-summary {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
 }
 
 .order-details {
