@@ -49,7 +49,7 @@ Deno.serve(async (request) => {
   if (request.method === "GET") {
     const { data: users, error } = await admin
       .from("profiles")
-      .select("id,email,full_name,phone,role,requested_role,approval_status,wordpress_user_id,created_at")
+      .select("id,email,full_name,phone,role,requested_role,requested_parent_entity_id,approval_status,wordpress_user_id,created_at")
       .order("created_at", { ascending: false });
     if (error) return json({ error: error.message }, 500);
 
@@ -60,33 +60,105 @@ Deno.serve(async (request) => {
     const { data: adminMembers, error: adminError } = await admin
       .from("admin_members")
       .select("profile_id,level");
+    const parentIds = [...new Set((users || [])
+      .map((user) => user.requested_parent_entity_id)
+      .filter(Boolean))];
+    const { data: requestedParents, error: parentsError } = parentIds.length
+      ? await admin.from("network_entities").select("id,name").in("id", parentIds)
+      : { data: [], error: null };
     return wordpressError
       ? json({ error: wordpressError.message }, 500)
       : adminError
       ? json({ error: adminError.message }, 500)
-      : json({ users, wordpressAccounts, adminMembers, canManageAdmins });
+      : parentsError
+      ? json({ error: parentsError.message }, 500)
+      : json({ users, wordpressAccounts, adminMembers, requestedParents, canManageAdmins });
   }
 
   if (request.method !== "POST") {
     return json({ error: "Metodo non supportato." }, 405);
   }
 
-  const { userId, action } = await request.json();
-  const allowedActions = ["approve", "reject", "promote_admin", "remove_admin"];
+  const { userId, action, role: requestedNewRole } = await request.json();
+  const allowedActions = ["approve", "reject", "promote_admin", "remove_admin", "change_role", "delete_user"];
   if (typeof userId !== "string" || !allowedActions.includes(action)) {
     return json({ error: "Dati non validi." }, 400);
   }
-  if (["promote_admin", "remove_admin"].includes(action) && !canManageAdmins) {
-    return json({ error: "Solo il titolare può gestire gli amministratori." }, 403);
+  if (["promote_admin", "remove_admin", "change_role", "delete_user"].includes(action) && !canManageAdmins) {
+    return json({ error: "Solo il titolare può cambiare ruoli o eliminare account." }, 403);
   }
 
   const { data: profile, error: profileError } = await admin
     .from("profiles")
-    .select("requested_role,email,role")
+    .select("requested_role,requested_parent_entity_id,email,full_name,phone,role")
     .eq("id", userId)
     .single();
   if (profileError || !profile) {
     return json({ error: "Profilo non trovato." }, 404);
+  }
+
+  const { data: targetMembership } = await admin
+    .from("admin_members")
+    .select("level")
+    .eq("profile_id", userId)
+    .maybeSingle();
+  if (targetMembership?.level === "owner" && ["change_role", "delete_user", "remove_admin"].includes(action)) {
+    return json({ error: "Il titolare principale non può essere modificato o eliminato." }, 400);
+  }
+
+  if (action === "delete_user") {
+    await admin
+      .from("wordpress_accounts")
+      .update({ connected_profile_id: null, updated_at: new Date().toISOString() })
+      .eq("connected_profile_id", userId);
+    const { error: deleteError } = await admin.auth.admin.deleteUser(userId);
+    return deleteError
+      ? json({ error: deleteError.message }, 500)
+      : json({ success: true });
+  }
+
+  if (action === "change_role") {
+    const allowedRoles = ["patient", "center", "agent", "distributor"];
+    if (!allowedRoles.includes(requestedNewRole)) {
+      return json({ error: "Ruolo non valido." }, 400);
+    }
+    let networkEntityId = null;
+    if (["center", "agent", "distributor"].includes(requestedNewRole)) {
+      const { data: networkEntity } = await admin
+        .from("network_entities")
+        .select("id")
+        .eq("type", requestedNewRole)
+        .ilike("email", profile.email)
+        .maybeSingle();
+      networkEntityId = networkEntity?.id || null;
+    }
+    const { error: roleError } = await admin
+      .from("profiles")
+      .update({
+        role: requestedNewRole,
+        requested_role: requestedNewRole,
+        approval_status: "approved",
+        network_entity_id: networkEntityId,
+        updated_at: new Date().toISOString(),
+      })
+      .eq("id", userId);
+    if (roleError) return json({ error: roleError.message }, 500);
+
+    await admin.from("admin_members").delete().eq("profile_id", userId);
+    await admin
+      .from("wordpress_accounts")
+      .update({ mapped_role: requestedNewRole, updated_at: new Date().toISOString() })
+      .eq("connected_profile_id", userId);
+    await admin
+      .from("wordpress_accounts")
+      .update({ mapped_role: requestedNewRole, updated_at: new Date().toISOString() })
+      .ilike("email", profile.email);
+    const { error: authRoleError } = await admin.auth.admin.updateUserById(userId, {
+      app_metadata: { role: requestedNewRole },
+    });
+    return authRoleError
+      ? json({ error: authRoleError.message }, 500)
+      : json({ success: true });
   }
 
   if (action === "promote_admin") {
@@ -118,15 +190,6 @@ Deno.serve(async (request) => {
   }
 
   if (action === "remove_admin") {
-    const { data: targetMembership } = await admin
-      .from("admin_members")
-      .select("level")
-      .eq("profile_id", userId)
-      .maybeSingle();
-    if (targetMembership?.level === "owner") {
-      return json({ error: "Il titolare principale non può essere rimosso." }, 400);
-    }
-
     const fallbackRole = profile.requested_role === "admin"
       ? "patient"
       : profile.requested_role;
@@ -157,12 +220,32 @@ Deno.serve(async (request) => {
     : "patient";
   let networkEntityId = null;
   if (approved && ["distributor", "agent", "center"].includes(role)) {
-    const { data: networkEntity } = await admin
+    let { data: networkEntity } = await admin
       .from("network_entities")
       .select("id")
       .eq("type", role)
       .ilike("email", profile.email)
       .maybeSingle();
+    if (!networkEntity && role === "center" && profile.requested_parent_entity_id) {
+      const { data: parent } = await admin.from("network_entities")
+        .select("id,type,is_primary_center")
+        .eq("id", profile.requested_parent_entity_id)
+        .eq("active", true)
+        .maybeSingle();
+      if (parent?.type === "center" && parent.is_primary_center) {
+        const created = await admin.from("network_entities").insert({
+          type: "center",
+          name: profile.full_name || profile.email,
+          email: profile.email,
+          phone: profile.phone || null,
+          parent_id: parent.id,
+          active: true,
+          import_source: "Registrazione con codice convenzione",
+        }).select("id").single();
+        if (created.error) return json({ error: created.error.message }, 500);
+        networkEntity = created.data;
+      }
+    }
     networkEntityId = networkEntity?.id || null;
   }
   const { error: updateError } = await admin
