@@ -978,6 +978,36 @@ h2 {
   border-top: 1px solid var(--line);
 }
 
+.customer-extra-toggle {
+  width: 100%; margin: 18px 0 8px; padding: 14px 18px; border: 1px solid var(--line);
+  border-radius: 16px; background: #f7f4fa; color: var(--ink); font: inherit; font-weight: 700;
+  text-align: left; cursor: pointer;
+}
+
+.customer-extra-toggle span { display: inline-grid; place-items: center; width: 30px; height: 30px; margin-right: 8px; border-radius: 50%; background: var(--violet-strong); color: #fff; }
+.customer-extra { margin-top: 14px; padding: 20px; border: 1px solid var(--line); border-radius: 20px; background: #fff; }
+.customer-extra h3 { margin: 8px 0 14px; }
+.customer-extra h3:not(:first-child) { margin-top: 24px; }
+.customer-extra h3 small { font: inherit; font-size: .75em; color: var(--muted); }
+.payment-terms { display: flex; flex-wrap: wrap; gap: 10px; }
+.payment-terms label { display: flex !important; flex-direction: row !important; align-items: center; gap: 7px; padding: 10px 14px; border: 1px solid var(--line); border-radius: 999px; background: #faf8fc; }
+.payment-terms input { width: auto !important; min-height: auto !important; }
+.customer-notes { display: grid; gap: 7px; margin-top: 18px; font-weight: 700; }
+.customer-notes textarea { resize: vertical; padding: 12px; border: 1px solid var(--line); border-radius: 16px; font: inherit; }
+
+.installment-list { display: grid; gap: 8px; margin-top: 6px; }
+.installment-row { display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 10px 12px; border: 1px solid var(--line); border-radius: 14px; background: #fff; }
+.installment-row.paid { background: #eef8f3; }
+.payment-action { display: flex !important; align-items: center; gap: 8px; }
+.payment-action input { min-height: 38px; padding: 6px 8px; border: 1px solid var(--line); border-radius: 10px; }
+.payment-plus { min-height: 38px; padding: 7px 12px; white-space: nowrap; }
+
+@media (max-width: 620px) {
+  .customer-extra { padding: 14px; }
+  .installment-row, .payment-action { align-items: stretch; flex-direction: column; }
+  .payment-plus { width: 100%; }
+}
+
 .agent-customer-card,
 .agent-selected-customer {
   display: flex;
