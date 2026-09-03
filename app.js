@@ -60,7 +60,7 @@ let validatedCode = null;
 let currentUser = null;
 let authBusy = false;
 let shopProducts = [];
-let shopCategory = 'promo';
+let shopCategory = 'all';
 let shopOpening = false;
 let shopCart = [];
 let shopCoupon = '';
@@ -379,6 +379,14 @@ function updateShopCartItem(productId, action) {
 
 function renderShopProducts() {
   const query = byId('shop-search').value.trim().toLowerCase();
+  const categoryGroup = (product) => {
+    const categories = product.categories.filter((category) => (
+      !`${category.slug} ${category.name}`.toLowerCase().includes('promo')
+    ));
+    return categories
+      .map((category) => `${category.name} ${category.slug}`.toLowerCase())
+      .sort((a, b) => a.localeCompare(b, 'it'))[0] || 'zzzz';
+  };
   const products = shopProducts.filter((product) => {
     const isPromotion = product.onSale || product.categories.some((category) => (
       `${category.slug} ${category.name}`.toLowerCase().includes('promo')
@@ -389,6 +397,9 @@ function renderShopProducts() {
     const matchesQuery = !query
       || `${product.name} ${product.sku}`.toLowerCase().includes(query);
     return matchesCategory && matchesQuery;
+  }).sort((a, b) => {
+    const groupDifference = categoryGroup(a).localeCompare(categoryGroup(b), 'it');
+    return groupDifference || a.name.localeCompare(b.name, 'it');
   });
 
   byId('shop-products').innerHTML = products.map((product) => {
@@ -497,7 +508,7 @@ function renderShopCategories() {
     });
 
   byId('shop-categories').innerHTML = [
-    '<option value="promo">PROMO</option>',
+    '<option value="promo">TUTTE LE PROMO</option>',
     ...orderedCategories.map(([slug, name]) => (
       `<option value="${escapeHtml(slug)}">${escapeHtml(name).toUpperCase()}</option>`
     )),
@@ -523,7 +534,7 @@ async function loadShop() {
     const payload = await response.json();
     if (!response.ok) throw new Error(payload.error || 'Catalogo non disponibile');
     shopProducts = payload.products || [];
-    shopCategory = 'promo';
+    shopCategory = 'all';
     loadShopCart();
     if (validatedCode?.woo_coupon && !shopCoupon) {
       shopCoupon = validatedCode.woo_coupon;
