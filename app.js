@@ -291,6 +291,10 @@ function cartProduct(productId) {
 }
 
 function renderShopCart() {
+  if (currentUser?.role === 'agent' && selectedAgentCustomer?.address) {
+    fillShopAddress(selectedAgentCustomer.address);
+    byId('shop-address-status').textContent = `Dati di ${selectedAgentCustomer.name}`;
+  }
   shopCart = shopCart.filter((item) => cartProduct(item.productId)?.inStock);
   saveShopCart();
   const count = shopCart.reduce((sum, item) => sum + item.quantity, 0);
@@ -1433,7 +1437,7 @@ async function saveAgentCustomer(event) {
   const { data } = await supabase.auth.getSession();
   const button = event.currentTarget.querySelector('[type="submit"]');
   button.disabled = true;
-  byId('agent-customer-message').textContent = 'Creazione cliente in WooCommerce...';
+    byId('agent-customer-message').textContent = 'Salvataggio cliente nell’app...';
   try {
     const response = await fetch('/api/agent-customers', {
       method: 'POST',
@@ -1454,7 +1458,7 @@ async function saveAgentCustomer(event) {
     event.currentTarget.reset();
     event.currentTarget.classList.add('hidden');
     await loadAgentCustomers();
-    byId('agent-customer-message').textContent = 'Cliente creato e collegato a WooCommerce.';
+    byId('agent-customer-message').textContent = 'Cliente salvato correttamente nell’app.';
   } catch (error) {
     byId('agent-customer-message').textContent = error.message;
   } finally {
