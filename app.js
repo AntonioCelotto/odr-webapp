@@ -1371,8 +1371,20 @@ function renderAdminUsers(users, wordpressAccounts = [], adminMembers = [], canM
         ? membership?.level === 'owner'
           ? '<span class="state ok">Titolare</span>'
           : user.role === 'admin'
-            ? `<button class="reject" type="button" data-user-action="remove_admin" data-user-id="${user.id}">Rimuovi admin</button>`
-            : `<button class="approve" type="button" data-user-action="promote_admin" data-user-id="${user.id}">Rendi amministratore</button>`
+            ? `
+              <button class="reject" type="button" data-user-action="remove_admin" data-user-id="${user.id}">Rimuovi admin</button>
+              <button class="delete" type="button" data-user-action="delete_user" data-user-id="${user.id}" data-user-label="${escapeHtml(user.full_name || user.email)}">Elimina account</button>
+            `
+            : `
+              <select class="user-role-select" data-user-role="${user.id}" aria-label="Nuovo ruolo per ${escapeHtml(user.full_name || user.email)}">
+                ${['patient', 'center', 'agent', 'distributor'].map((role) => (
+    `<option value="${role}"${user.role === role ? ' selected' : ''}>${escapeHtml(roleLabels[role])}</option>`
+  )).join('')}
+              </select>
+              <button class="role-change" type="button" data-user-action="change_role" data-user-id="${user.id}">Cambia ruolo</button>
+              <button class="approve" type="button" data-user-action="promote_admin" data-user-id="${user.id}">Rendi amministratore</button>
+              <button class="delete" type="button" data-user-action="delete_user" data-user-id="${user.id}" data-user-label="${escapeHtml(user.full_name || user.email)}">Elimina account</button>
+            `
         : '';
       return `
       <tr>
@@ -1439,13 +1451,22 @@ async function loadAdminUsers() {
 async function handleAdminUserAction(event) {
   const button = event.target.closest('[data-user-action]');
   if (!button || currentUser?.role !== 'admin') return;
+  const action = button.dataset.userAction;
+  if (action === 'delete_user') {
+    const confirmed = window.confirm(
+      `Vuoi eliminare l’account app di ${button.dataset.userLabel}? L’account WordPress e gli ordini resteranno conservati.`,
+    );
+    if (!confirmed) return;
+  }
+  const roleSelect = byId('admin-users-table').querySelector(`[data-user-role="${button.dataset.userId}"]`);
   button.disabled = true;
   byId('admin-users-message').textContent = 'Aggiornamento del profilo...';
   const { data, error } = await supabase.functions.invoke('admin-users', {
     method: 'POST',
     body: {
       userId: button.dataset.userId,
-      action: button.dataset.userAction,
+      action,
+      role: action === 'change_role' ? roleSelect?.value : undefined,
     },
   });
   if (error || data?.error) {
