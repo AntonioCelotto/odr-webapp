@@ -60,10 +60,9 @@ let validatedCode = null;
 let currentUser = null;
 let authBusy = false;
 let shopProducts = [];
-let shopCategory = 'all';
+let shopCategory = 'promo';
 let shopOpening = false;
 let shopCart = [];
-let shopSaleOnly = false;
 let shopCoupon = '';
 let shopQuote = null;
 let shopAddressLoaded = false;
@@ -381,11 +380,15 @@ function updateShopCartItem(productId, action) {
 function renderShopProducts() {
   const query = byId('shop-search').value.trim().toLowerCase();
   const products = shopProducts.filter((product) => {
+    const isPromotion = product.onSale || product.categories.some((category) => (
+      `${category.slug} ${category.name}`.toLowerCase().includes('promo')
+    ));
     const matchesCategory = shopCategory === 'all'
+      || (shopCategory === 'promo' && isPromotion)
       || product.categories.some((category) => category.slug === shopCategory);
     const matchesQuery = !query
       || `${product.name} ${product.sku}`.toLowerCase().includes(query);
-    return matchesCategory && matchesQuery && (!shopSaleOnly || product.onSale);
+    return matchesCategory && matchesQuery;
   });
 
   byId('shop-products').innerHTML = products.map((product) => {
@@ -470,12 +473,37 @@ function renderShopCategories() {
   shopProducts.forEach((product) => product.categories.forEach((category) => {
     categories.set(category.slug, category.name);
   }));
+
+  const categoryKey = ([slug, name]) => `${slug} ${name}`
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^a-z0-9]/g, '');
+  const categoryRank = (category) => {
+    const key = categoryKey(category);
+    if (key.includes('facebody')) return 2;
+    if (key.includes('face')) return 0;
+    if (key.includes('body')) return 1;
+    if (key.includes('hair')) return 3;
+    if (key.includes('lash')) return 4;
+    if (key.includes('fir')) return 5;
+    return 6;
+  };
+  const orderedCategories = [...categories.entries()]
+    .filter((category) => !categoryKey(category).includes('promo'))
+    .sort((a, b) => {
+      const rankDifference = categoryRank(a) - categoryRank(b);
+      return rankDifference || a[1].localeCompare(b[1], 'it');
+    });
+
   byId('shop-categories').innerHTML = [
-    '<button class="active" type="button" data-shop-category="all">Tutti</button>',
-    ...[...categories.entries()]
-      .sort((a, b) => a[1].localeCompare(b[1], 'it'))
-      .map(([slug, name]) => `<button type="button" data-shop-category="${escapeHtml(slug)}">${escapeHtml(name)}</button>`),
+    '<option value="promo">PROMO</option>',
+    ...orderedCategories.map(([slug, name]) => (
+      `<option value="${escapeHtml(slug)}">${escapeHtml(name).toUpperCase()}</option>`
+    )),
+    '<option value="all">TUTTI I PRODOTTI</option>',
   ].join('');
+  byId('shop-categories').value = shopCategory;
 }
 
 async function loadShop() {
@@ -495,7 +523,7 @@ async function loadShop() {
     const payload = await response.json();
     if (!response.ok) throw new Error(payload.error || 'Catalogo non disponibile');
     shopProducts = payload.products || [];
-    shopCategory = 'all';
+    shopCategory = 'promo';
     loadShopCart();
     if (validatedCode?.woo_coupon && !shopCoupon) {
       shopCoupon = validatedCode.woo_coupon;
@@ -1730,17 +1758,8 @@ byId('shop-coupon').addEventListener('input', (event) => {
   byId('shop-coupon-message').textContent = 'Premi Applica per verificare il nuovo codice.';
   renderShopCart();
 });
-byId('shop-sale-only').addEventListener('change', (event) => {
-  shopSaleOnly = event.currentTarget.checked;
-  renderShopProducts();
-});
-byId('shop-categories').addEventListener('click', (event) => {
-  const button = event.target.closest('[data-shop-category]');
-  if (!button) return;
-  shopCategory = button.dataset.shopCategory;
-  byId('shop-categories').querySelectorAll('button').forEach((item) => {
-    item.classList.toggle('active', item === button);
-  });
+byId('shop-categories').addEventListener('change', (event) => {
+  shopCategory = event.currentTarget.value;
   renderShopProducts();
 });
 
