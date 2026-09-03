@@ -36,7 +36,36 @@ export default async function handler(req, res) {
     const authorization = `Basic ${Buffer.from(`${key}:${secret}`).toString('base64')}`;
     let wooCustomerId = Number(customerId.replace(/^wc-/, '')) || 0;
     let customer;
-    if (customerId.startsWith('order-')) {
+    if (customerId.startsWith('app-')) {
+      const appCustomerId = customerId.replace(/^app-/, '');
+      const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+      const appUrl = new URL('/rest/v1/agent_app_customers', process.env.SUPABASE_URL);
+      appUrl.searchParams.set('id', `eq.${appCustomerId}`);
+      appUrl.searchParams.set('agent_profile_id', `eq.${profile.id}`);
+      appUrl.searchParams.set('active', 'eq.true');
+      appUrl.searchParams.set('select', '*');
+      const appResponse = await fetch(appUrl, {
+        headers: { apikey: serviceKey, Authorization: `Bearer ${serviceKey}` },
+      });
+      const [saved] = appResponse.ok ? await appResponse.json() : [];
+      if (!saved) throw new Error('Cliente dell’app non disponibile');
+      const names = String(saved.name || '').split(/\s+/);
+      const address = {
+        first_name: names.shift() || saved.name,
+        last_name: names.join(' '),
+        company: saved.company || '',
+        address_1: saved.address_1 || '',
+        address_2: saved.address_2 || '',
+        postcode: saved.postcode || '',
+        city: saved.city || '',
+        state: saved.state || '',
+        country: saved.country || 'IT',
+      };
+      customer = {
+        billing: { ...address, email: saved.email, phone: saved.phone || '' },
+        shipping: address,
+      };
+    } else if (customerId.startsWith('order-')) {
       const sourceId = Number(customerId.replace(/^order-/, ''));
       const sourceResponse = await fetch(new URL(`/wp-json/wc/v3/orders/${sourceId}`, process.env.WOOCOMMERCE_STORE_URL), { headers: { Authorization: authorization } });
       const source = await sourceResponse.json();
