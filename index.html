@@ -355,12 +355,16 @@
           </div>
           <div id="agent-customer-message" class="auth-message">Caricamento clienti...</div>
           <form id="agent-customer-form" class="admin-form hidden">
+            <div class="agent-customer-form-heading">
+              <span>＋</span>
+              <div><strong>Nuovo cliente</strong><small>Inserisci i dati del centro per creare il profilo anche su WooCommerce.</small></div>
+            </div>
             <div class="form-grid">
               <label>Nome centro / cliente <input id="agent-customer-name" required maxlength="250" /></label>
               <label>Ragione sociale <input id="agent-customer-company" maxlength="250" /></label>
               <label>Email <input id="agent-customer-email" type="email" required maxlength="200" /></label>
               <label>Telefono <input id="agent-customer-phone" maxlength="60" /></label>
-              <label class="wide">Indirizzo <input id="agent-customer-address" maxlength="160" /></label>
+              <label class="wide agent-customer-wide">Indirizzo <input id="agent-customer-address" maxlength="160" /></label>
               <label>CAP <input id="agent-customer-postcode" maxlength="20" /></label>
               <label>Città <input id="agent-customer-city" maxlength="100" /></label>
               <label>Provincia <input id="agent-customer-state" maxlength="2" /></label>
