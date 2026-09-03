@@ -17,7 +17,7 @@ async function authenticate(req) {
   const user = await auth.json();
   const result = await fetch(`${base}/rest/v1/profiles?id=eq.${user.id}&select=id,role,approval_status,network_entity_id,full_name`, { headers });
   const [profile] = result.ok ? await result.json() : [];
-  return profile?.role === 'agent' && profile.approval_status === 'approved' ? profile : null;
+  return profile?.role === 'agent' && profile.approval_status === 'approved' ? { ...profile, headers } : null;
 }
 
 export default async function handler(req, res) {
@@ -38,15 +38,12 @@ export default async function handler(req, res) {
     let customer;
     if (customerId.startsWith('app-')) {
       const appCustomerId = customerId.replace(/^app-/, '');
-      const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
       const appUrl = new URL('/rest/v1/agent_app_customers', process.env.SUPABASE_URL);
       appUrl.searchParams.set('id', `eq.${appCustomerId}`);
       appUrl.searchParams.set('agent_profile_id', `eq.${profile.id}`);
       appUrl.searchParams.set('active', 'eq.true');
       appUrl.searchParams.set('select', '*');
-      const appResponse = await fetch(appUrl, {
-        headers: { apikey: serviceKey, Authorization: `Bearer ${serviceKey}` },
-      });
+      const appResponse = await fetch(appUrl, { headers: profile.headers });
       const [saved] = appResponse.ok ? await appResponse.json() : [];
       if (!saved) throw new Error('Cliente dell’app non disponibile');
       const names = String(saved.name || '').split(/\s+/);
