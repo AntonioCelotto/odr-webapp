@@ -15,7 +15,7 @@ async function authenticate(req) {
   const auth = token && await fetch(`${base}/auth/v1/user`, { headers });
   if (!auth?.ok) return null;
   const user = await auth.json();
-  const result = await fetch(`${base}/rest/v1/profiles?id=eq.${user.id}&select=role,approval_status,network_entity_id,full_name`, { headers });
+  const result = await fetch(`${base}/rest/v1/profiles?id=eq.${user.id}&select=id,role,approval_status,network_entity_id,full_name`, { headers });
   const [profile] = result.ok ? await result.json() : [];
   return profile?.role === 'agent' && profile.approval_status === 'approved' ? profile : null;
 }
@@ -24,36 +24,30 @@ export default async function handler(req, res) {
   if (req.method !== 'POST') return json(res, 405, { error: 'Metodo non consentito' });
   try {
     const profile = await authenticate(req);
-    if (!profile?.network_entity_id) return json(res, 403, { error: 'Agente non autorizzato o non collegato alla rete' });
+    if (!profile) return json(res, 403, { error: 'Agente non autorizzato' });
     const customerId = String(req.body?.customerId || '');
     const items = Array.isArray(req.body?.items) ? req.body.items.slice(0, 50)
       .map((item) => ({ product_id: Number(item.productId), quantity: Math.max(1, Math.min(99, Number(item.quantity) || 1)) }))
       .filter((item) => Number.isInteger(item.product_id) && item.product_id > 0) : [];
     if (!customerId || !items.length) return json(res, 400, { error: 'Seleziona cliente e prodotti' });
 
-    const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
-    const base = process.env.SUPABASE_URL;
-    const adminHeaders = { apikey: serviceKey, Authorization: `Bearer ${serviceKey}` };
-    const centerUrl = new URL('/rest/v1/network_entities', base);
-    centerUrl.searchParams.set('id', `eq.${customerId}`);
-    centerUrl.searchParams.set('type', 'eq.center');
-    centerUrl.searchParams.set('parent_id', `eq.${profile.network_entity_id}`);
-    centerUrl.searchParams.set('active', 'eq.true');
-    centerUrl.searchParams.set('select', 'id,name,email,external_code');
-    const centerResponse = await fetch(centerUrl, { headers: adminHeaders });
-    const [center] = centerResponse.ok ? await centerResponse.json() : [];
-    if (!center) return json(res, 403, { error: 'Cliente non associato a questo agente' });
-    const wooCustomerId = Number(String(center.external_code || '').replace(/^WC-/, ''));
-    if (!wooCustomerId) return json(res, 400, { error: 'Cliente non ancora collegato a WooCommerce' });
-
     const key = process.env.WOOCOMMERCE_CONSUMER_KEY;
     const secret = process.env.WOOCOMMERCE_CONSUMER_SECRET;
     const authorization = `Basic ${Buffer.from(`${key}:${secret}`).toString('base64')}`;
-    const customerUrl = new URL(`/wp-json/wc/v3/customers/${wooCustomerId}`, process.env.WOOCOMMERCE_STORE_URL);
-    const customerResponse = await fetch(customerUrl, { headers: { Authorization: authorization } });
-    const customer = await customerResponse.json();
-    if (!customerResponse.ok || String(customer.email).toLowerCase() !== String(center.email).toLowerCase()) {
-      throw new Error('Cliente WooCommerce non valido');
+    let wooCustomerId = Number(customerId.replace(/^wc-/, '')) || 0;
+    let customer;
+    if (customerId.startsWith('order-')) {
+      const sourceId = Number(customerId.replace(/^order-/, ''));
+      const sourceResponse = await fetch(new URL(`/wp-json/wc/v3/orders/${sourceId}`, process.env.WOOCOMMERCE_STORE_URL), { headers: { Authorization: authorization } });
+      const source = await sourceResponse.json();
+      if (!sourceResponse.ok) throw new Error('Dati del cliente non disponibili');
+      customer = { billing: source.billing || {}, shipping: source.shipping || {} };
+      wooCustomerId = Number(source.customer_id) || 0;
+    } else {
+      const customerUrl = new URL(`/wp-json/wc/v3/customers/${wooCustomerId}`, process.env.WOOCOMMERCE_STORE_URL);
+      const customerResponse = await fetch(customerUrl, { headers: { Authorization: authorization } });
+      customer = await customerResponse.json();
+      if (!customerResponse.ok) throw new Error('Cliente WooCommerce non valido');
     }
 
     const orderUrl = new URL('/wp-json/wc/v3/orders', process.env.WOOCOMMERCE_STORE_URL);
@@ -65,9 +59,10 @@ export default async function handler(req, res) {
         coupon_lines: req.body?.coupon ? [{ code: String(req.body.coupon).trim().toLowerCase() }] : [],
         created_via: 'odr-agent-app',
         meta_data: [
-          { key: '_odr_agent_entity_id', value: profile.network_entity_id },
+          { key: '_odr_agent_profile_id', value: profile.id },
+          { key: '_odr_agent_entity_id', value: profile.network_entity_id || '' },
           { key: '_odr_agent_name', value: profile.full_name || '' },
-          { key: '_odr_center_entity_id', value: center.id },
+          { key: '_odr_customer_reference', value: customerId },
         ],
       }),
     });
