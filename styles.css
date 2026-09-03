@@ -2475,3 +2475,40 @@ body .shop-cart-thumb img {
     grid-template-columns: 1fr;
   }
 }
+
+
+/* Promotion-first category dropdown */
+.shop-category-filter {
+  display: flex;
+  flex: 0 1 300px;
+  min-width: min(100%, 250px);
+  align-items: stretch;
+  flex-direction: column;
+  gap: 6px;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.shop-category-filter select {
+  height: 44px;
+  padding: 0 40px 0 14px;
+  border: 1px solid #bfc2ae;
+  border-radius: 14px;
+  color: var(--ink);
+  background: rgba(255, 253, 249, 0.96);
+  cursor: pointer;
+  outline: none;
+}
+
+.shop-category-filter select:focus {
+  border-color: var(--rose);
+  box-shadow: 0 0 0 3px rgba(207, 123, 121, 0.12);
+}
+
+@media (max-width: 760px) {
+  .shop-category-filter {
+    flex-basis: 100%;
+    width: 100%;
+  }
+}
