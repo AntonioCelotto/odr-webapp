@@ -995,6 +995,41 @@ h2 {
   box-shadow: 0 0 0 2px rgba(88, 115, 92, 0.12);
 }
 
+.agent-customer-info {
+  min-width: 0;
+}
+
+.agent-customer-actions {
+  display: flex;
+  gap: 8px;
+  flex: 0 0 auto;
+}
+
+.danger-action {
+  min-height: 40px;
+  padding: 0 14px;
+  border: 0;
+  border-radius: 10px;
+  color: #fff;
+  background: #a62d3d;
+  cursor: pointer;
+}
+
+.agent-customer-orders {
+  display: grid;
+  gap: 3px;
+  margin-top: 10px;
+}
+
+.agent-customer-orders b {
+  color: var(--ink);
+  font-size: 12px;
+}
+
+.agent-customer-orders span {
+  font-size: 12px;
+}
+
 .agent-customer-card strong,
 .agent-customer-card span,
 .agent-customer-card small,
@@ -1048,8 +1083,14 @@ h2 {
   }
 
   .agent-customer-card .primary-action,
+  .agent-customer-card .danger-action,
   .agent-selected-customer button {
     justify-content: center;
+    width: 100%;
+  }
+
+  .agent-customer-actions {
+    display: grid;
     width: 100%;
   }
 }
