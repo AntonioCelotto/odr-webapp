@@ -833,6 +833,7 @@ async function loadWooOrders() {
   }
   reportOrders = payload.orders || [];
   renderOrders();
+  renderNetwork();
   updateMetrics();
   byId('report-message').textContent = `${reportOrders.length} ordini WooCommerce caricati.`;
 }
@@ -930,13 +931,19 @@ function renderNetwork() {
   });
 
   byId('network-table').innerHTML = rows
-    .map((row) => `
+    .map((row) => {
+      const agentOrders = row.type === 'agent' ? reportOrders.filter((order) => order.agentEntityId === row.id) : [];
+      const agentRevenue = agentOrders
+        .filter((order) => order.paymentStatus === 'paid' && !['cancelled', 'failed', 'refunded'].includes(order.status))
+        .reduce((sum, order) => sum + order.amount, 0);
+      return `
       <tr>
         <td data-label="Tipo">${escapeHtml(roleLabels[row.type] || row.type)}</td>
         <td data-label="Nome"><strong>${escapeHtml(row.name)}</strong>${row.external_code ? `<br><small>${escapeHtml(row.external_code)}</small>` : ''}</td>
         <td data-label="Zona">${escapeHtml(row.area || '-')}</td>
         <td data-label="Collegato a">${escapeHtml(row.parentName || '-')}</td>
         <td data-label="Provvigione">${row.type === 'agent' ? `${(Number(row.commission_rate || 0) * 100).toLocaleString('it-IT', { maximumFractionDigits: 2 })}%` : '-'}</td>
+        <td data-label="Fatturato">${row.type === 'agent' ? `<strong>${money(agentRevenue)}</strong><br><small>${agentOrders.length} ordini</small>` : '-'}</td>
         <td data-label="Contatto">${escapeHtml(row.email || row.phone || '-')}</td>
         <td data-label="Account ODR">${escapeHtml(row.accountName || 'Non collegato')}</td>
         <td data-label="Stato"><span class="state ${row.active ? 'ok' : 'off'}">${row.active ? 'Attivo' : 'Spento'}</span></td>
@@ -945,7 +952,7 @@ function renderNetwork() {
           <button type="button" data-network-toggle="${row.id}" data-network-active="${row.active ? 'false' : 'true'}">${row.active ? 'Disattiva' : 'Attiva'}</button>
         </div>` : '-'}</td>
       </tr>
-    `)
+    `; })
     .join('');
 }
 
@@ -1404,8 +1411,17 @@ function renderAgentCustomers() {
   }
   list.innerHTML = visibleCustomers.length ? visibleCustomers.map((customer) => `
     <article class="agent-customer-card${selectedAgentCustomer?.id === customer.id ? ' selected' : ''}">
-      <div><strong>${escapeHtml(customer.name)}</strong><span>${escapeHtml(customer.email || '-')}</span><small>${escapeHtml(customer.phone || customer.area || '')}</small></div>
-      <button class="primary-action" type="button" data-agent-customer="${customer.id}">Nuovo ordine</button>
+      <div class="agent-customer-info">
+        <strong>${escapeHtml(customer.name)}</strong><span>${escapeHtml(customer.email || '-')}</span><small>${escapeHtml(customer.phone || customer.area || '')}</small>
+        <div class="agent-customer-orders">
+          <b>${customer.orders?.length || 0} ordini</b>
+          ${(customer.orders || []).map((order) => `<span>${escapeHtml(order.id)} · ${escapeHtml(order.date)} · ${money(order.total)} · ${order.paid ? 'Pagato' : 'Non pagato'}</span>`).join('')}
+        </div>
+      </div>
+      <div class="agent-customer-actions">
+        <button class="primary-action" type="button" data-agent-customer="${customer.id}">Nuovo ordine</button>
+        ${customer.source === 'app' ? `<button class="danger-action" type="button" data-delete-agent-customer="${customer.id}">Elimina cliente</button>` : ''}
+      </div>
     </article>
   `).join('') : `<div class="empty-box">${agentCustomers.length ? 'Nessun cliente trovato con questa ricerca.' : 'Nessun cliente collegato. Premi “Aggiungi cliente” per iniziare.'}</div>`;
 }
@@ -1471,7 +1487,37 @@ async function saveAgentCustomer(event) {
   }
 }
 
+async function deleteAgentCustomer(button) {
+  const customer = agentCustomers.find((item) => item.id === button.dataset.deleteAgentCustomer);
+  if (!customer || !window.confirm(`Vuoi eliminare ${customer.name}? Gli ordini già effettuati resteranno conservati.`)) return;
+  button.disabled = true;
+  const { data } = await supabase.auth.getSession();
+  try {
+    const response = await fetch('/api/agent-customers', {
+      method: 'DELETE',
+      headers: { Authorization: `Bearer ${data.session?.access_token || ''}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ customerId: customer.id }),
+    });
+    const payload = await response.json();
+    if (!response.ok) throw new Error(payload.error || 'Eliminazione non riuscita');
+    if (selectedAgentCustomer?.id === customer.id) {
+      selectedAgentCustomer = null;
+      localStorage.removeItem('odr-agent-customer');
+    }
+    await loadAgentCustomers();
+    byId('agent-customer-message').textContent = 'Cliente eliminato. Gli ordini restano conservati.';
+  } catch (error) {
+    byId('agent-customer-message').textContent = error.message;
+    button.disabled = false;
+  }
+}
+
 function handleAgentCustomerClick(event) {
+  const deleteButton = event.target.closest('[data-delete-agent-customer]');
+  if (deleteButton) {
+    deleteAgentCustomer(deleteButton);
+    return;
+  }
   const button = event.target.closest('[data-agent-customer]');
   if (!button) return;
   selectedAgentCustomer = agentCustomers.find((item) => item.id === button.dataset.agentCustomer) || null;
