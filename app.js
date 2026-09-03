@@ -1385,6 +1385,11 @@ function renderCurrentProfile(user) {
 function renderAgentCustomers() {
   const list = byId('agent-customer-list');
   const selected = byId('agent-selected-customer');
+  const query = String(byId('agent-customer-search')?.value || '').trim().toLowerCase();
+  const visibleCustomers = query
+    ? agentCustomers.filter((customer) => [customer.name, customer.company, customer.email, customer.phone, customer.area]
+      .some((value) => String(value || '').toLowerCase().includes(query)))
+    : agentCustomers;
   if (selectedAgentCustomer) {
     selected.classList.remove('hidden');
     selected.innerHTML = `<strong>Ordine per: ${escapeHtml(selectedAgentCustomer.name)}</strong><span>${escapeHtml(selectedAgentCustomer.email || '')}</span><button id="clear-agent-customer" type="button">Cambia cliente</button>`;
@@ -1397,12 +1402,12 @@ function renderAgentCustomers() {
     selected.classList.add('hidden');
     selected.innerHTML = '';
   }
-  list.innerHTML = agentCustomers.length ? agentCustomers.map((customer) => `
+  list.innerHTML = visibleCustomers.length ? visibleCustomers.map((customer) => `
     <article class="agent-customer-card${selectedAgentCustomer?.id === customer.id ? ' selected' : ''}">
       <div><strong>${escapeHtml(customer.name)}</strong><span>${escapeHtml(customer.email || '-')}</span><small>${escapeHtml(customer.phone || customer.area || '')}</small></div>
       <button class="primary-action" type="button" data-agent-customer="${customer.id}">Nuovo ordine</button>
     </article>
-  `).join('') : '<div class="empty-box">Nessun cliente collegato. Premi “Aggiungi cliente” per iniziare.</div>';
+  `).join('') : `<div class="empty-box">${agentCustomers.length ? 'Nessun cliente trovato con questa ricerca.' : 'Nessun cliente collegato. Premi “Aggiungi cliente” per iniziare.'}</div>`;
 }
 
 async function loadAgentCustomers() {
@@ -1849,6 +1854,7 @@ byId('new-agent-customer').addEventListener('click', () => byId('agent-customer-
 byId('cancel-agent-customer').addEventListener('click', () => byId('agent-customer-form').classList.add('hidden'));
 byId('agent-customer-form').addEventListener('submit', saveAgentCustomer);
 byId('agent-customer-list').addEventListener('click', handleAgentCustomerClick);
+byId('agent-customer-search').addEventListener('input', renderAgentCustomers);
 byId('permissions-table').addEventListener('change', updatePermission);
 byId('validate-code').addEventListener('click', validateCode);
 byId('new-code-button').addEventListener('click', () => openCodeForm());
