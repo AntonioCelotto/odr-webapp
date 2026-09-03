@@ -26,6 +26,8 @@ let codeValidations = [];
 
 let networkRows = [];
 let networkAccounts = [];
+let agentCustomers = [];
+let selectedAgentCustomer = null;
 let canManageNetwork = false;
 
 let reportOrders = [];
@@ -49,6 +51,7 @@ const appRoutes = {
   access: { path: '/codici', title: 'Codici e convenzioni' },
   promotions: { path: '/promozioni', title: 'Promozioni' },
   network: { path: '/rete', title: 'Rete commerciale' },
+  'agent-customers': { path: '/clienti', title: 'Gestione clienti' },
   wordpress: { path: '/wordpress', title: 'WordPress e WooCommerce' },
   reports: { path: '/report', title: 'Report vendite' },
   'admin-users': { path: '/utenti', title: 'Gestione utenti' },
@@ -447,7 +450,12 @@ async function openWooSession(destination, trigger, items = [], coupon = '', opt
     const { data } = await supabase.auth.getSession();
     const token = data.session?.access_token;
     if (!token) throw new Error('Sessione ODR scaduta');
-    const response = await fetch('/api/shop-session', {
+    if (currentUser?.role === 'agent' && options.checkout && !selectedAgentCustomer) {
+      showRoute('agent-customers', { push: true });
+      throw new Error('Seleziona prima il cliente per cui stai effettuando l’ordine');
+    }
+    const agentCheckout = currentUser?.role === 'agent' && options.checkout;
+    const response = await fetch(agentCheckout ? '/api/agent-order' : '/api/shop-session', {
       method: 'POST',
       headers: {
         Authorization: `Bearer ${token}`,
@@ -459,15 +467,17 @@ async function openWooSession(destination, trigger, items = [], coupon = '', opt
         coupon,
         address: options.address || null,
         checkout: Boolean(options.checkout),
+        customerId: selectedAgentCustomer?.id || null,
       }),
     });
     const payload = await response.json();
-    if (!response.ok || !payload.url) throw new Error(payload.error || 'Accesso allo shop non riuscito');
+    const targetUrl = agentCheckout ? payload.paymentUrl : payload.url;
+    if (!response.ok || !targetUrl) throw new Error(payload.error || 'Accesso allo shop non riuscito');
     if (items.length) {
       shopCart = [];
       saveShopCart();
     }
-    window.location.assign(payload.url);
+    window.location.assign(targetUrl);
   } catch (error) {
     byId('shop-message').classList.remove('hidden');
     byId('shop-message').textContent = `${error.message}. Riprova tra qualche secondo.`;
@@ -503,8 +513,8 @@ function renderShopCategories() {
   const orderedCategories = [...categories.entries()]
     .filter((category) => !categoryKey(category).includes('promo'))
     .sort((a, b) => {
-      const rankDifference = categoryRank(a) - categoryRank(b);
-      return rankDifference || a[1].localeCompare(b[1], 'it');
+    const rankDifference = categoryRank(a) - categoryRank(b);
+    return rankDifference || a[1].localeCompare(b[1], 'it');
     });
 
   byId('shop-categories').innerHTML = [
@@ -1170,6 +1180,9 @@ function applyModuleVisibility(rows) {
     });
   });
   byId('setup')?.classList.toggle('module-denied', role !== 'admin');
+  const agentCustomerAllowed = role === 'agent';
+  byId('agent-customers')?.classList.toggle('module-denied', !agentCustomerAllowed);
+  byId('agent-customers-nav')?.classList.toggle('hidden', !agentCustomerAllowed);
   document.querySelectorAll('[data-route="setup"]').forEach((link) => {
     link.classList.toggle('hidden', role !== 'admin');
   });
@@ -1318,6 +1331,14 @@ function enterApp(user) {
   byId('account-email').value = user.email;
   byId('code-input').value = user.code || '';
   renderCurrentProfile(user);
+  try {
+    selectedAgentCustomer = user.role === 'agent'
+      ? JSON.parse(localStorage.getItem('odr-agent-customer') || 'null')
+      : null;
+  } catch {
+    selectedAgentCustomer = null;
+    localStorage.removeItem('odr-agent-customer');
+  }
   const isAdmin = user.role === 'admin';
   byId('admin-code-manager').classList.toggle('hidden', !isAdmin);
   byId('new-promotion-button').classList.toggle('hidden', !isAdmin);
@@ -1339,6 +1360,7 @@ function enterApp(user) {
   loadPermissions();
   loadShop();
   loadWooOrders();
+  if (user.role === 'agent') loadAgentCustomers();
   loadNetwork();
   updateMetrics();
 }
@@ -1352,6 +1374,95 @@ function renderCurrentProfile(user) {
   const linked = Boolean(user.profile?.wordpress_user_id);
   byId('profile-link-status').className = `config-pill${linked ? ' ok' : ''}`;
   byId('profile-link-status').textContent = linked ? 'Collegato a WordPress' : 'Solo ODR';
+}
+
+function renderAgentCustomers() {
+  const list = byId('agent-customer-list');
+  const selected = byId('agent-selected-customer');
+  if (selectedAgentCustomer) {
+    selected.classList.remove('hidden');
+    selected.innerHTML = `<strong>Ordine per: ${escapeHtml(selectedAgentCustomer.name)}</strong><span>${escapeHtml(selectedAgentCustomer.email || '')}</span><button id="clear-agent-customer" type="button">Cambia cliente</button>`;
+    byId('clear-agent-customer').addEventListener('click', () => {
+      selectedAgentCustomer = null;
+      localStorage.removeItem('odr-agent-customer');
+      renderAgentCustomers();
+    });
+  } else {
+    selected.classList.add('hidden');
+    selected.innerHTML = '';
+  }
+  list.innerHTML = agentCustomers.length ? agentCustomers.map((customer) => `
+    <article class="agent-customer-card${selectedAgentCustomer?.id === customer.id ? ' selected' : ''}">
+      <div><strong>${escapeHtml(customer.name)}</strong><span>${escapeHtml(customer.email || '-')}</span><small>${escapeHtml(customer.phone || customer.area || '')}</small></div>
+      <button class="primary-action" type="button" data-agent-customer="${customer.id}">Nuovo ordine</button>
+    </article>
+  `).join('') : '<div class="empty-box">Nessun cliente collegato. Premi “Aggiungi cliente” per iniziare.</div>';
+}
+
+async function loadAgentCustomers() {
+  if (!supabase || !['agent', 'admin'].includes(currentUser?.role)) return;
+  byId('agent-customer-message').textContent = 'Caricamento clienti...';
+  const { data } = await supabase.auth.getSession();
+  try {
+    const response = await fetch('/api/agent-customers', { headers: { Authorization: `Bearer ${data.session?.access_token || ''}` } });
+    const payload = await response.json();
+    if (!response.ok) throw new Error(payload.error || 'Clienti non disponibili');
+    agentCustomers = payload.customers || [];
+    if (selectedAgentCustomer && !agentCustomers.some((item) => item.id === selectedAgentCustomer.id)) {
+      selectedAgentCustomer = null;
+      localStorage.removeItem('odr-agent-customer');
+    }
+    renderAgentCustomers();
+    byId('agent-customer-message').textContent = `${agentCustomers.length} clienti disponibili.`;
+  } catch (error) {
+    byId('agent-customer-message').textContent = error.message;
+  }
+}
+
+async function saveAgentCustomer(event) {
+  event.preventDefault();
+  const { data } = await supabase.auth.getSession();
+  const button = event.currentTarget.querySelector('[type="submit"]');
+  button.disabled = true;
+  byId('agent-customer-message').textContent = 'Creazione cliente in WooCommerce...';
+  try {
+    const response = await fetch('/api/agent-customers', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${data.session?.access_token || ''}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        name: byId('agent-customer-name').value,
+        company: byId('agent-customer-company').value,
+        email: byId('agent-customer-email').value,
+        phone: byId('agent-customer-phone').value,
+        address1: byId('agent-customer-address').value,
+        postcode: byId('agent-customer-postcode').value,
+        city: byId('agent-customer-city').value,
+        state: byId('agent-customer-state').value,
+      }),
+    });
+    const payload = await response.json();
+    if (!response.ok) throw new Error(payload.error || 'Creazione non riuscita');
+    event.currentTarget.reset();
+    event.currentTarget.classList.add('hidden');
+    await loadAgentCustomers();
+    byId('agent-customer-message').textContent = 'Cliente creato e collegato a WooCommerce.';
+  } catch (error) {
+    byId('agent-customer-message').textContent = error.message;
+  } finally {
+    button.disabled = false;
+  }
+}
+
+function handleAgentCustomerClick(event) {
+  const button = event.target.closest('[data-agent-customer]');
+  if (!button) return;
+  selectedAgentCustomer = agentCustomers.find((item) => item.id === button.dataset.agentCustomer) || null;
+  if (!selectedAgentCustomer) return;
+  localStorage.setItem('odr-agent-customer', JSON.stringify(selectedAgentCustomer));
+  renderAgentCustomers();
+  showRoute('shop', { push: true });
+  byId('shop-message').classList.remove('hidden');
+  byId('shop-message').textContent = `Stai creando un ordine per ${selectedAgentCustomer.name}.`;
 }
 
 function renderAdminUsers(users, wordpressAccounts = [], adminMembers = [], canManageAdmins = false) {
@@ -1719,6 +1830,10 @@ byId('register-form').addEventListener('submit', submitRegistration);
 byId('logout-button').addEventListener('click', submitLogout);
 byId('refresh-users').addEventListener('click', loadAdminUsers);
 byId('admin-users-table').addEventListener('click', handleAdminUserAction);
+byId('new-agent-customer').addEventListener('click', () => byId('agent-customer-form').classList.remove('hidden'));
+byId('cancel-agent-customer').addEventListener('click', () => byId('agent-customer-form').classList.add('hidden'));
+byId('agent-customer-form').addEventListener('submit', saveAgentCustomer);
+byId('agent-customer-list').addEventListener('click', handleAgentCustomerClick);
 byId('permissions-table').addEventListener('change', updatePermission);
 byId('validate-code').addEventListener('click', validateCode);
 byId('new-code-button').addEventListener('click', () => openCodeForm());
