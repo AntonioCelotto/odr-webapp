@@ -937,6 +937,7 @@ function renderNetwork() {
       const agentRevenue = agentOrders
         .filter((order) => order.paymentStatus === 'paid' && !['cancelled', 'failed', 'refunded'].includes(order.status))
         .reduce((sum, order) => sum + order.amount, 0);
+      const agentEarnings = agentOrders.reduce((sum, order) => sum + (order.agentEarning || 0), 0);
       return `
       <tr>
         <td data-label="Tipo">${escapeHtml(roleLabels[row.type] || row.type)}</td>
@@ -945,6 +946,7 @@ function renderNetwork() {
         <td data-label="Collegato a">${escapeHtml(row.parentName || '-')}</td>
         <td data-label="Provvigione">${row.type === 'agent' ? `${(Number(row.commission_rate || 0) * 100).toLocaleString('it-IT', { maximumFractionDigits: 2 })}%` : '-'}</td>
         <td data-label="Fatturato">${row.type === 'agent' ? `<strong>${money(agentRevenue)}</strong><br><small>${agentOrders.length} ordini</small>` : '-'}</td>
+        <td data-label="Guadagno agente">${row.type === 'agent' ? `<strong>${money(agentEarnings)}</strong>` : '-'}</td>
         <td data-label="Contatto">${escapeHtml(row.email || row.phone || '-')}</td>
         <td data-label="Account ODR">${escapeHtml(row.accountName || 'Non collegato')}</td>
         <td data-label="Stato"><span class="state ${row.active ? 'ok' : 'off'}">${row.active ? 'Attivo' : 'Spento'}</span></td>
@@ -1197,7 +1199,7 @@ function applyModuleVisibility(rows) {
   };
 
   Object.entries(sectionIds).forEach(([module, sectionId]) => {
-    const hiddenForAgent = role === 'agent' && (module === 'promotions' || module === 'network');
+    const hiddenForAgent = role === 'agent' && module === 'promotions';
     const allowed = !hiddenForAgent && rows.some((row) => row.role === role && row.module === module && row.can_view);
     byId(sectionId)?.classList.toggle('module-denied', !allowed);
     document.querySelectorAll(`[data-route="${sectionId}"]`).forEach((link) => {
