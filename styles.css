@@ -2601,6 +2601,9 @@ body .shop-cart-thumb img {
   }
 
   #admin-users td:last-child {
+    width: 100%;
+    max-width: 100%;
+    white-space: normal;
     border-bottom: 0;
   }
 
@@ -2627,7 +2630,9 @@ body .shop-cart-thumb img {
   #admin-users .user-actions button {
     width: 100%;
     min-width: 0;
-    white-space: normal;
+    white-space: nowrap;
+    overflow-wrap: normal;
+    word-break: normal;
   }
 
   #admin-users .user-actions .delete {
