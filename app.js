@@ -39,7 +39,7 @@ const moduleLabels = {
   promotions: 'Promozioni',
   network: 'Rete commerciale',
   wordpress: 'WordPress / shop',
-  reports: 'Report vendite',
+  reports: 'Ordini',
   users: 'Gestione utenti',
   permissions: 'Ruoli e permessi',
 };
@@ -53,7 +53,7 @@ const appRoutes = {
   network: { path: '/rete', title: 'Rete commerciale' },
   'agent-customers': { path: '/clienti', title: 'Gestione clienti' },
   wordpress: { path: '/wordpress', title: 'WordPress e WooCommerce' },
-  reports: { path: '/report', title: 'Report vendite' },
+  reports: { path: '/ordini', title: 'Ordini' },
   'admin-users': { path: '/utenti', title: 'Gestione utenti' },
   permissions: { path: '/permessi', title: 'Ruoli e permessi' },
   setup: { path: '/impostazioni', title: 'Impostazioni' },
@@ -89,6 +89,7 @@ function escapeHtml(value) {
 
 function routeFromPath(pathname) {
   const normalized = pathname.replace(/\/+$/, '') || '/';
+  if (normalized === '/report') return 'reports';
   return Object.entries(appRoutes).find(([, route]) => route.path === normalized)?.[0] || 'dashboard';
 }
 
@@ -1118,10 +1119,21 @@ function renderOrders() {
         <td data-label="Imponibile provvigione">${order.agent ? money(order.commissionBase || 0) : '-'}</td>
         <td data-label="Guadagno agente"><strong>${order.agent ? money(order.agentEarning || 0) : '-'}</strong></td>
         <td data-label="Stato"><span class="state ${['cancelled', 'failed', 'refunded'].includes(order.status) ? 'off' : 'ok'}">${escapeHtml(order.status)}</span></td>
+        <td data-label="Dettagli">
+          <details class="order-details">
+            <summary>Apri ordine</summary>
+            <div>
+              <strong>Prodotti</strong>
+              ${(order.items || []).map((item) => `<span>${escapeHtml(item.name)} × ${item.quantity} · ${money(item.total)}</span>`).join('') || '<span>Nessun prodotto disponibile</span>'}
+              <strong>Spedizione</strong><span>${escapeHtml(order.shippingAddress || '-')}</span>
+              <strong>Pagamento</strong><span>${escapeHtml(order.paymentMethod || (order.paymentStatus === 'paid' ? 'Pagato' : 'Non pagato'))}</span>
+            </div>
+          </details>
+        </td>
       </tr>
     `)
     .join('')
-    : '<tr class="report-empty-row"><td colspan="12">Nessun ordine corrisponde ai filtri selezionati.</td></tr>';
+    : '<tr class="report-empty-row"><td colspan="13">Nessun ordine corrisponde ai filtri selezionati.</td></tr>';
   renderReportSummary();
 }
 
@@ -1420,6 +1432,7 @@ function renderAgentCustomers() {
       </div>
       <div class="agent-customer-actions">
         <button class="primary-action" type="button" data-agent-customer="${customer.id}">Nuovo ordine</button>
+        <button class="secondary-action" type="button" data-customer-orders="${escapeHtml(customer.email || customer.name)}">Vedi ordini</button>
         ${customer.source === 'app' ? `<button class="danger-action" type="button" data-delete-agent-customer="${customer.id}">Elimina cliente</button>` : ''}
       </div>
     </article>
@@ -1513,6 +1526,13 @@ async function deleteAgentCustomer(button) {
 }
 
 function handleAgentCustomerClick(event) {
+  const ordersButton = event.target.closest('[data-customer-orders]');
+  if (ordersButton) {
+    byId('report-search').value = ordersButton.dataset.customerOrders;
+    renderOrders();
+    showRoute('reports', { push: true });
+    return;
+  }
   const deleteButton = event.target.closest('[data-delete-agent-customer]');
   if (deleteButton) {
     deleteAgentCustomer(deleteButton);
