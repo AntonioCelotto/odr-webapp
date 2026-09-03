@@ -74,6 +74,19 @@ export default async function handler(req, res) {
             email,
             phone: billing.phone || '',
             area: billing.city || '',
+            address: {
+              firstName: billing.first_name || '',
+              lastName: billing.last_name || '',
+              company: billing.company || '',
+              address1: billing.address_1 || '',
+              address2: billing.address_2 || '',
+              postcode: billing.postcode || '',
+              city: billing.city || '',
+              state: billing.state || '',
+              country: billing.country || 'IT',
+              phone: billing.phone || '',
+              email,
+            },
           });
         }
         if (orders.length < 100) break;
@@ -130,9 +143,15 @@ export default async function handler(req, res) {
         external_code: `WC-${woo.id}`, active: true, import_source: 'App agente',
       }),
     }) : null;
-    const [entity] = create?.ok ? await create.json() : [];
-    return json(res, 201, { customer: entity || {
-      id: `wc-${woo.id}`, name, email, phone: clean(body.phone, 60), area: clean(body.city, 100)
+    if (create?.ok) await create.json();
+    return json(res, 201, { customer: {
+      id: `wc-${woo.id}`, name, email, phone: clean(body.phone, 60), area: clean(body.city, 100),
+      address: {
+        firstName, lastName, company: clean(body.company), address1: clean(body.address1, 160),
+        address2: '', postcode: clean(body.postcode, 20), city: clean(body.city, 100),
+        state: clean(body.state, 10).toUpperCase(), country: 'IT',
+        phone: clean(body.phone, 60), email,
+      }
     } });
   } catch (error) {
     console.error('agent_customers_error', error instanceof Error ? error.message : error);
