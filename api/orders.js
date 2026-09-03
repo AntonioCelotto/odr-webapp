@@ -14,7 +14,7 @@ async function getProfile(token) {
   const authResponse = await fetch(`${base}/auth/v1/user`, { headers });
   if (!authResponse.ok) return null;
   const user = await authResponse.json();
-  const profileResponse = await fetch(`${base}/rest/v1/profiles?id=eq.${user.id}&select=role,approval_status,network_entity_id`, { headers });
+  const profileResponse = await fetch(`${base}/rest/v1/profiles?id=eq.${user.id}&select=id,role,approval_status,network_entity_id`, { headers });
   const [profile] = profileResponse.ok ? await profileResponse.json() : [];
   return profile?.approval_status === 'approved' ? { ...profile, email: user.email, headers } : null;
 }
@@ -51,9 +51,10 @@ export default async function handler(request, response) {
     const orders = (await wooResponse.json())
       .filter((order) => {
         const email = order.billing?.email?.toLowerCase() || '';
+        const agentProfileId = (order.meta_data || []).find((meta) => meta.key === '_odr_agent_profile_id')?.value;
         return profile.role === 'admin'
           || email === profile.email?.toLowerCase()
-          || (profile.role === 'agent' && agentCustomerEmails.has(email));
+          || (profile.role === 'agent' && (agentCustomerEmails.has(email) || agentProfileId === profile.id));
       })
       .map((order) => {
         const email = order.billing?.email?.toLowerCase() || '';
