@@ -39,13 +39,28 @@ async function agentEntity(profile) {
 }
 
 export default async function handler(req, res) {
-  if (!['GET', 'POST'].includes(req.method)) return json(res, 405, { error: 'Metodo non consentito' });
+  if (!['GET', 'POST', 'DELETE'].includes(req.method)) return json(res, 405, { error: 'Metodo non consentito' });
   try {
     const profile = await authenticate(req);
     if (!profile) return json(res, 403, { error: 'Funzione riservata agli agenti' });
     const parentId = profile.network_entity_id || null;
     const base = process.env.SUPABASE_URL;
     const customerHeaders = { ...profile.headers, 'Content-Type': 'application/json' };
+
+    if (req.method === 'DELETE') {
+      const customerId = clean(req.body?.customerId, 80).replace(/^app-/, '');
+      if (!customerId) return json(res, 400, { error: 'Cliente non valido' });
+      const deleteUrl = new URL('/rest/v1/agent_app_customers', base);
+      deleteUrl.searchParams.set('id', `eq.${customerId}`);
+      deleteUrl.searchParams.set('agent_profile_id', `eq.${profile.id}`);
+      const deleted = await fetch(deleteUrl, {
+        method: 'DELETE',
+        headers: { ...customerHeaders, Prefer: 'return=representation' },
+      });
+      const rows = deleted.ok ? await deleted.json() : [];
+      if (!deleted.ok || !rows.length) return json(res, 404, { error: 'Cliente non trovato o non eliminabile' });
+      return json(res, 200, { deleted: true });
+    }
 
     if (req.method === 'GET') {
       const customers = new Map();
@@ -65,6 +80,7 @@ export default async function handler(req, res) {
           phone: item.phone || '',
           area: item.city || '',
           source: 'app',
+          orders: [],
           address: {
             firstName: item.name.split(/\s+/)[0] || item.name,
             lastName: item.name.split(/\s+/).slice(1).join(' '),
@@ -96,14 +112,31 @@ export default async function handler(req, res) {
           const billing = order.billing || {};
           const email = String(billing.email || '').toLowerCase();
           const key = Number(order.customer_id) > 0 ? `wc-${order.customer_id}` : email;
-          if (!key || customers.has(key)) continue;
-          customers.set(key, {
+          const referencedAgent = (order.meta_data || []).find((meta) => meta.key === '_odr_agent_profile_id')?.value;
+          const referencedCustomer = (order.meta_data || []).find((meta) => meta.key === '_odr_customer_reference')?.value;
+          const referencedTarget = referencedAgent === profile.id && referencedCustomer
+            ? [...customers.values()].find((customer) => customer.id === referencedCustomer)
+            : null;
+          if (referencedTarget) {
+            referencedTarget.orders.push({
+              id: `WC-${order.id}`,
+              date: order.date_created?.slice(0, 10) || '',
+              total: Number(order.total) || 0,
+              status: order.status || '',
+              paid: Boolean(order.date_paid),
+            });
+            continue;
+          }
+          if (!key) continue;
+          if (!customers.has(key)) customers.set(key, {
             id: Number(order.customer_id) > 0 ? `wc-${order.customer_id}` : `order-${order.id}`,
             name: `${billing.first_name || ''} ${billing.last_name || ''}`.trim() || billing.company || email || 'Cliente',
             company: billing.company || '',
             email,
             phone: billing.phone || '',
             area: billing.city || '',
+            source: 'woocommerce',
+            orders: [],
             address: {
               firstName: billing.first_name || '',
               lastName: billing.last_name || '',
@@ -118,6 +151,20 @@ export default async function handler(req, res) {
               email,
             },
           });
+          const agentProfileId = (order.meta_data || []).find((meta) => meta.key === '_odr_agent_profile_id')?.value;
+          const customerReference = (order.meta_data || []).find((meta) => meta.key === '_odr_customer_reference')?.value;
+          if (agentProfileId === profile.id) {
+            const target = [...customers.values()].find((customer) => customer.id === customerReference)
+              || [...customers.values()].find((customer) => customer.id === (Number(order.customer_id) > 0 ? `wc-${order.customer_id}` : `order-${order.id}`))
+              || [...customers.values()].find((customer) => customer.email && customer.email.toLowerCase() === email);
+            if (target) target.orders.push({
+              id: `WC-${order.id}`,
+              date: order.date_created?.slice(0, 10) || '',
+              total: Number(order.total) || 0,
+              status: order.status || '',
+              paid: Boolean(order.date_paid),
+            });
+          }
         }
         if (orders.length < 100) break;
       }
