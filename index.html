@@ -369,8 +369,35 @@
               <label>Città <input id="agent-customer-city" maxlength="100" /></label>
               <label>Provincia <input id="agent-customer-state" maxlength="2" /></label>
             </div>
+            <button id="toggle-agent-customer-extra" class="customer-extra-toggle" type="button"><span>＋</span> Aggiungi dati fiscali, spedizione e pagamenti</button>
+            <div id="agent-customer-extra" class="customer-extra hidden">
+              <h3>Dati fiscali</h3>
+              <div class="form-grid">
+                <label>Codice fiscale <input id="agent-customer-tax-code" maxlength="32" /></label>
+                <label>Partita IVA <input id="agent-customer-vat" maxlength="32" /></label>
+                <label>PEC <input id="agent-customer-pec" type="email" maxlength="200" /></label>
+                <label>Codice SDI <input id="agent-customer-sdi" maxlength="20" /></label>
+              </div>
+              <h3>Indirizzo di spedizione <small>(se diverso)</small></h3>
+              <div class="form-grid">
+                <label>Destinatario <input id="agent-customer-shipping-name" maxlength="250" /></label>
+                <label>Azienda <input id="agent-customer-shipping-company" maxlength="250" /></label>
+                <label class="wide agent-customer-wide">Indirizzo <input id="agent-customer-shipping-address" maxlength="160" /></label>
+                <label>CAP <input id="agent-customer-shipping-postcode" maxlength="20" /></label>
+                <label>Città <input id="agent-customer-shipping-city" maxlength="100" /></label>
+                <label>Provincia <input id="agent-customer-shipping-state" maxlength="2" /></label>
+              </div>
+              <h3>Condizioni di pagamento</h3>
+              <div class="payment-terms">
+                <label><input type="checkbox" name="agent-payment-term" value="30" checked /> 30 giorni</label>
+                <label><input type="checkbox" name="agent-payment-term" value="60" /> 60 giorni</label>
+                <label><input type="checkbox" name="agent-payment-term" value="90" /> 90 giorni</label>
+                <label><input type="checkbox" name="agent-payment-term" value="120" /> 120 giorni</label>
+              </div>
+              <label class="customer-notes">Altre informazioni <textarea id="agent-customer-notes" rows="3" maxlength="1000"></textarea></label>
+            </div>
             <div class="action-row">
-              <button class="primary-action" type="submit">Salva cliente</button>
+              <button class="primary-action" type="submit">Salva cliente</button><input id="agent-customer-edit-id" type="hidden" />
               <button id="cancel-agent-customer" class="secondary-action" type="button">Annulla</button>
             </div>
           </form>
@@ -554,6 +581,7 @@
             <select id="report-payment">
               <option value="">Pagati e non pagati</option>
               <option value="paid">Pagati</option>
+              <option value="partial">Parzialmente pagati</option>
               <option value="unpaid">Non pagati</option>
             </select>
             <label>Dal <input id="report-date-from" type="date" /></label>
