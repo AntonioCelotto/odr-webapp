@@ -197,7 +197,9 @@ function fillShopAddress(address = {}) {
   Object.entries(shippingFieldIds).forEach(([key, id]) => {
     if (address[key] !== undefined && address[key] !== null) byId(id).value = address[key];
   });
-  byId('shipping-email').value = currentUser?.email || address.email || '';
+  byId('shipping-email').value = currentUser?.role === 'agent' && selectedAgentCustomer
+    ? (address.email || selectedAgentCustomer.email || '')
+    : (currentUser?.email || address.email || '');
 }
 
 function saveShopAddress() {
@@ -1408,9 +1410,16 @@ async function loadAgentCustomers() {
     const payload = await response.json();
     if (!response.ok) throw new Error(payload.error || 'Clienti non disponibili');
     agentCustomers = payload.customers || [];
-    if (selectedAgentCustomer && !agentCustomers.some((item) => item.id === selectedAgentCustomer.id)) {
-      selectedAgentCustomer = null;
-      localStorage.removeItem('odr-agent-customer');
+    if (selectedAgentCustomer) {
+      const refreshedCustomer = agentCustomers.find((item) => item.id === selectedAgentCustomer.id);
+      if (refreshedCustomer) {
+        selectedAgentCustomer = refreshedCustomer;
+        localStorage.setItem('odr-agent-customer', JSON.stringify(refreshedCustomer));
+        fillShopAddress(refreshedCustomer.address || {});
+      } else {
+        selectedAgentCustomer = null;
+        localStorage.removeItem('odr-agent-customer');
+      }
     }
     renderAgentCustomers();
     byId('agent-customer-message').textContent = `${agentCustomers.length} clienti disponibili.`;
@@ -1459,6 +1468,8 @@ function handleAgentCustomerClick(event) {
   selectedAgentCustomer = agentCustomers.find((item) => item.id === button.dataset.agentCustomer) || null;
   if (!selectedAgentCustomer) return;
   localStorage.setItem('odr-agent-customer', JSON.stringify(selectedAgentCustomer));
+  fillShopAddress(selectedAgentCustomer.address || {});
+  byId('shop-address-status').textContent = `Dati di ${selectedAgentCustomer.name}`;
   renderAgentCustomers();
   showRoute('shop', { push: true });
   byId('shop-message').classList.remove('hidden');
