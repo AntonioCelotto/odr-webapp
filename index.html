@@ -47,10 +47,12 @@
           <label>
             Email
             <input id="register-email" type="email" autocomplete="email" required />
+            <small>Se hai già un account WordPress, usa esattamente la stessa email.</small>
           </label>
           <label>
-            Password
+            Password dell’app ODR
             <input id="register-password" type="password" minlength="8" autocomplete="new-password" required />
+            <small>È indipendente dalla password WordPress e servirà per entrare nell’app.</small>
           </label>
           <label>
             Telefono
@@ -64,6 +66,7 @@
               <option value="agent">Agente</option>
               <option value="distributor">Distributore</option>
             </select>
+            <small>Se l’email è già presente su WordPress, verrà utilizzato il ruolo associato.</small>
           </label>
           <label>
             Codice fornito dall'ospedale (facoltativo)
