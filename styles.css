@@ -869,6 +869,31 @@ h2 {
   margin-top: 16px;
 }
 
+.agent-customer-search {
+  display: grid;
+  gap: 7px;
+  margin-top: 16px;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.agent-customer-search input {
+  width: 100%;
+  min-height: 46px;
+  padding: 0 14px;
+  color: var(--ink);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: #fff;
+  outline: none;
+}
+
+.agent-customer-search input:focus {
+  border-color: var(--violet);
+  box-shadow: 0 0 0 3px rgba(142, 129, 170, 0.13);
+}
+
 #agent-customer-form {
   margin-top: 16px;
   padding: clamp(16px, 2.5vw, 26px);
