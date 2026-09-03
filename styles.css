@@ -869,6 +869,90 @@ h2 {
   margin-top: 16px;
 }
 
+#agent-customer-form {
+  margin-top: 16px;
+  padding: clamp(16px, 2.5vw, 26px);
+  border: 1px solid rgba(77, 54, 82, 0.14);
+  border-radius: 20px;
+  background: linear-gradient(145deg, #fff, #faf7fb);
+  box-shadow: 0 16px 42px rgba(69, 45, 58, 0.08);
+}
+
+.agent-customer-form-heading {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 20px;
+}
+
+.agent-customer-form-heading > span {
+  display: grid;
+  width: 42px;
+  height: 42px;
+  place-items: center;
+  flex: 0 0 auto;
+  border-radius: 12px;
+  color: #fff;
+  background: var(--violet-strong);
+  font-size: 25px;
+}
+
+.agent-customer-form-heading strong,
+.agent-customer-form-heading small {
+  display: block;
+}
+
+.agent-customer-form-heading strong {
+  color: var(--ink);
+  font-family: Georgia, "Times New Roman", serif;
+  font-size: 22px;
+}
+
+.agent-customer-form-heading small {
+  margin-top: 3px;
+  color: var(--muted);
+}
+
+#agent-customer-form .form-grid {
+  gap: 14px;
+}
+
+#agent-customer-form label {
+  display: grid;
+  gap: 7px;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 800;
+}
+
+#agent-customer-form input {
+  width: 100%;
+  min-width: 0;
+  min-height: 46px;
+  padding: 0 13px;
+  color: var(--ink);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: #fff;
+  outline: none;
+}
+
+#agent-customer-form input:focus {
+  border-color: var(--violet);
+  box-shadow: 0 0 0 3px rgba(142, 129, 170, 0.13);
+}
+
+#agent-customer-form .agent-customer-wide {
+  grid-column: 1 / -1;
+}
+
+#agent-customer-form .action-row {
+  justify-content: flex-end;
+  margin-top: 20px;
+  padding-top: 16px;
+  border-top: 1px solid var(--line);
+}
+
 .agent-customer-card,
 .agent-selected-customer {
   display: flex;
@@ -918,6 +1002,20 @@ h2 {
 }
 
 @media (max-width: 620px) {
+  #agent-customer-form .agent-customer-wide {
+    grid-column: auto;
+  }
+
+  #agent-customer-form .action-row {
+    display: grid;
+    grid-template-columns: 1fr;
+  }
+
+  #agent-customer-form .action-row button {
+    justify-content: center;
+    width: 100%;
+  }
+
   .agent-customer-card,
   .agent-selected-customer {
     align-items: stretch;
