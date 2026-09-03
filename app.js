@@ -1388,16 +1388,16 @@ function renderAdminUsers(users, wordpressAccounts = [], adminMembers = [], canM
         : '';
       return `
       <tr>
-        <td>
+        <td data-label="Utente">
           <strong>${escapeHtml(user.full_name || user.email)}</strong><br />
           <small>${escapeHtml(user.email)}${user.phone ? ` · ${escapeHtml(user.phone)}` : ''}</small>
         </td>
-        <td>
+        <td data-label="Ruolo">
           ${escapeHtml(roleLabels[approvalRole] || approvalRole)}
           ${wordpressAccount ? '<br /><small>Account WordPress riconosciuto</small>' : ''}
         </td>
-        <td><span class="state ${user.approval_status === 'approved' ? 'ok' : 'off'}">${escapeHtml(user.approval_status)}</span></td>
-        <td>
+        <td data-label="Stato"><span class="state ${user.approval_status === 'approved' ? 'ok' : 'off'}">${escapeHtml(user.approval_status)}</span></td>
+        <td data-label="Azioni">
           <div class="user-actions">
             ${pendingActions}
             ${adminActions}
@@ -1412,13 +1412,13 @@ function renderAdminUsers(users, wordpressAccounts = [], adminMembers = [], canM
     .filter((account) => !account.connected_profile_id)
     .map((account) => `
       <tr>
-        <td>
+        <td data-label="Utente">
           <strong>${escapeHtml(account.full_name || account.email)}</strong><br />
           <small>${escapeHtml(account.email)} · WordPress #${account.wordpress_user_id}</small>
         </td>
-        <td>${escapeHtml(roleLabels[account.mapped_role] || account.mapped_role)}</td>
-        <td><span class="state off">Da attivare</span></td>
-        <td>Attende registrazione ODR</td>
+        <td data-label="Ruolo">${escapeHtml(roleLabels[account.mapped_role] || account.mapped_role)}</td>
+        <td data-label="Stato"><span class="state off">Da attivare</span></td>
+        <td data-label="Azioni">Attende registrazione ODR</td>
       </tr>
     `)
     .join('');
