@@ -1117,7 +1117,7 @@ function renderOrders() {
         <td data-label="Distributore">${escapeHtml(order.distributor || '-')}</td>
         <td data-label="Centro">${escapeHtml(order.center || '-')}</td>
         <td data-label="Importo"><strong>${money(order.amount)}</strong></td>
-        <td data-label="Pagamento"><span class="state ${order.paymentStatus === 'paid' ? 'ok' : 'off'}">${order.paymentStatus === 'paid' ? 'Pagato' : 'Non pagato'}</span></td>
+        <td data-label="Pagamento"><span class="state ${order.paymentStatus === 'paid' ? 'ok' : order.paymentStatus === 'partial' ? 'pending' : 'off'}">${order.paymentStatus === 'paid' ? 'Pagato' : order.paymentStatus === 'partial' ? 'Parziale' : 'Non pagato'}</span></td>
         <td data-label="Imponibile provvigione">${order.agent ? money(order.commissionBase || 0) : '-'}</td>
         <td data-label="Guadagno agente"><strong>${order.agent ? money(order.agentEarning || 0) : '-'}</strong></td>
         <td data-label="Stato"><span class="state ${['cancelled', 'failed', 'refunded'].includes(order.status) ? 'off' : 'ok'}">${escapeHtml(order.status)}</span></td>
@@ -1129,6 +1129,11 @@ function renderOrders() {
               ${(order.items || []).map((item) => `<span>${escapeHtml(item.name)} × ${item.quantity} · ${money(item.total)}</span>`).join('') || '<span>Nessun prodotto disponibile</span>'}
               <strong>Spedizione</strong><span>${escapeHtml(order.shippingAddress || '-')}</span>
               <strong>Pagamento</strong><span>${escapeHtml(order.paymentMethod || (order.paymentStatus === 'paid' ? 'Pagato' : 'Non pagato'))}</span>
+              <strong>Scadenze pagamenti</strong>
+              <div class="installment-list">${(order.installments || []).map((item) => `<div class="installment-row ${item.paid ? 'paid' : ''}">
+                <span><b>Rata ${item.number}</b> · ${money(item.amount)} · ${escapeHtml(item.dueDate)}</span>
+                ${item.paid ? `<span class="state ok">Pagata${item.paidAt ? ` il ${escapeHtml(item.paidAt)}` : ''}</span>` : currentUser?.role === 'agent' ? `<span class="payment-action"><input type="date" value="${new Date().toISOString().slice(0, 10)}" data-payment-date="${order.id}-${item.number}" /><button class="primary-action payment-plus" type="button" data-order-payment="${order.id.replace('WC-', '')}" data-order-key="${order.id}-${item.number}" data-installment="${item.number}" data-due-date="${item.dueDate}" data-amount="${item.amount}">＋ Pagato</button></span>` : '<span class="state off">Da pagare</span>'}
+              </div>`).join('')}</div>
             </div>
           </details>
         </td>
@@ -1434,6 +1439,7 @@ function renderAgentCustomers() {
       </div>
       <div class="agent-customer-actions">
         <button class="primary-action" type="button" data-agent-customer="${customer.id}">Nuovo ordine</button>
+        ${customer.source === 'app' ? `<button class="secondary-action" type="button" data-edit-agent-customer="${customer.id}">Gestisci cliente</button>` : ''}
         <button class="secondary-action" type="button" data-customer-orders="${escapeHtml(customer.email || customer.name)}">Vedi ordini</button>
         ${customer.source === 'app' ? `<button class="danger-action" type="button" data-delete-agent-customer="${customer.id}">Elimina cliente</button>` : ''}
       </div>
@@ -1475,11 +1481,12 @@ async function saveAgentCustomer(event) {
   button.disabled = true;
     byId('agent-customer-message').textContent = 'Salvataggio cliente nell’app...';
   try {
+    const editId = byId('agent-customer-edit-id').value;
     const response = await fetch('/api/agent-customers', {
-      method: 'POST',
+      method: editId ? 'PUT' : 'POST',
       headers: { Authorization: `Bearer ${data.session?.access_token || ''}`, 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        name: byId('agent-customer-name').value,
+        customerId: editId || undefined, name: byId('agent-customer-name').value,
         company: byId('agent-customer-company').value,
         email: byId('agent-customer-email').value,
         phone: byId('agent-customer-phone').value,
@@ -1487,6 +1494,13 @@ async function saveAgentCustomer(event) {
         postcode: byId('agent-customer-postcode').value,
         city: byId('agent-customer-city').value,
         state: byId('agent-customer-state').value,
+        taxCode: byId('agent-customer-tax-code').value, vatNumber: byId('agent-customer-vat').value,
+        pec: byId('agent-customer-pec').value, sdiCode: byId('agent-customer-sdi').value,
+        shippingName: byId('agent-customer-shipping-name').value, shippingCompany: byId('agent-customer-shipping-company').value,
+        shippingAddress1: byId('agent-customer-shipping-address').value, shippingPostcode: byId('agent-customer-shipping-postcode').value,
+        shippingCity: byId('agent-customer-shipping-city').value, shippingState: byId('agent-customer-shipping-state').value,
+        paymentTerms: [...document.querySelectorAll('[name="agent-payment-term"]:checked')].map((input) => Number(input.value)),
+        notes: byId('agent-customer-notes').value,
       }),
     });
     const payload = await response.json();
@@ -1494,7 +1508,8 @@ async function saveAgentCustomer(event) {
     event.currentTarget.reset();
     event.currentTarget.classList.add('hidden');
     await loadAgentCustomers();
-    byId('agent-customer-message').textContent = 'Cliente salvato correttamente nell’app.';
+    byId('agent-customer-edit-id').value = '';
+    byId('agent-customer-message').textContent = editId ? 'Cliente aggiornato correttamente.' : 'Cliente salvato correttamente nell’app.';
   } catch (error) {
     byId('agent-customer-message').textContent = error.message;
   } finally {
@@ -1528,6 +1543,26 @@ async function deleteAgentCustomer(button) {
 }
 
 function handleAgentCustomerClick(event) {
+  const editButton = event.target.closest('[data-edit-agent-customer]');
+  if (editButton) {
+    const customer = agentCustomers.find((item) => item.id === editButton.dataset.editAgentCustomer);
+    if (!customer) return;
+    const fields = {
+      'agent-customer-name': customer.name, 'agent-customer-company': customer.company, 'agent-customer-email': customer.email, 'agent-customer-phone': customer.phone,
+      'agent-customer-address': customer.address?.address1, 'agent-customer-postcode': customer.address?.postcode, 'agent-customer-city': customer.address?.city, 'agent-customer-state': customer.address?.state,
+      'agent-customer-tax-code': customer.taxCode, 'agent-customer-vat': customer.vatNumber, 'agent-customer-pec': customer.pec, 'agent-customer-sdi': customer.sdiCode,
+      'agent-customer-shipping-name': customer.shipping?.name, 'agent-customer-shipping-company': customer.shipping?.company, 'agent-customer-shipping-address': customer.shipping?.address1,
+      'agent-customer-shipping-postcode': customer.shipping?.postcode, 'agent-customer-shipping-city': customer.shipping?.city, 'agent-customer-shipping-state': customer.shipping?.state,
+      'agent-customer-notes': customer.notes,
+    };
+    Object.entries(fields).forEach(([id, value]) => { byId(id).value = value || ''; });
+    document.querySelectorAll('[name="agent-payment-term"]').forEach((input) => { input.checked = (customer.paymentTerms || [30]).includes(Number(input.value)); });
+    byId('agent-customer-edit-id').value = customer.id;
+    byId('agent-customer-extra').classList.remove('hidden');
+    byId('agent-customer-form').classList.remove('hidden');
+    byId('agent-customer-form').scrollIntoView({ behavior: 'smooth' });
+    return;
+  }
   const ordersButton = event.target.closest('[data-customer-orders]');
   if (ordersButton) {
     byId('report-search').value = ordersButton.dataset.customerOrders;
@@ -1551,6 +1586,20 @@ function handleAgentCustomerClick(event) {
   showRoute('shop', { push: true });
   byId('shop-message').classList.remove('hidden');
   byId('shop-message').textContent = `Stai creando un ordine per ${selectedAgentCustomer.name}.`;
+}
+
+async function registerOrderPayment(button) {
+  const paidAt = document.querySelector(`[data-payment-date="${button.dataset.orderKey}"]`)?.value;
+  if (!paidAt) { window.alert('Seleziona la data del pagamento'); return; }
+  button.disabled = true;
+  const { data } = await supabase.auth.getSession();
+  const response = await fetch('/api/order-payments', {
+    method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${data.session?.access_token || ''}` },
+    body: JSON.stringify({ wooOrderId: button.dataset.orderPayment, installmentNumber: button.dataset.installment, dueDate: button.dataset.dueDate, amount: button.dataset.amount, paidAt }),
+  });
+  const payload = await response.json();
+  if (!response.ok) { button.disabled = false; window.alert(payload.error || 'Pagamento non registrato'); return; }
+  await loadWooOrders();
 }
 
 function renderAdminUsers(users, wordpressAccounts = [], adminMembers = [], canManageAdmins = false) {
@@ -1918,8 +1967,12 @@ byId('register-form').addEventListener('submit', submitRegistration);
 byId('logout-button').addEventListener('click', submitLogout);
 byId('refresh-users').addEventListener('click', loadAdminUsers);
 byId('admin-users-table').addEventListener('click', handleAdminUserAction);
-byId('new-agent-customer').addEventListener('click', () => byId('agent-customer-form').classList.remove('hidden'));
-byId('cancel-agent-customer').addEventListener('click', () => byId('agent-customer-form').classList.add('hidden'));
+byId('new-agent-customer').addEventListener('click', () => {
+  byId('agent-customer-form').reset(); byId('agent-customer-edit-id').value = '';
+  byId('agent-customer-extra').classList.add('hidden'); byId('agent-customer-form').classList.remove('hidden');
+});
+byId('cancel-agent-customer').addEventListener('click', () => { byId('agent-customer-form').classList.add('hidden'); byId('agent-customer-edit-id').value = ''; });
+byId('toggle-agent-customer-extra').addEventListener('click', () => byId('agent-customer-extra').classList.toggle('hidden'));
 byId('agent-customer-form').addEventListener('submit', saveAgentCustomer);
 byId('agent-customer-list').addEventListener('click', handleAgentCustomerClick);
 byId('agent-customer-search').addEventListener('input', renderAgentCustomers);
@@ -1954,6 +2007,10 @@ byId('report-payment').addEventListener('change', renderOrders);
 byId('report-date-from').addEventListener('change', renderOrders);
 byId('report-date-to').addEventListener('change', renderOrders);
 byId('refresh-report').addEventListener('click', loadWooOrders);
+byId('orders-table').addEventListener('click', (event) => {
+  const button = event.target.closest('[data-order-payment]');
+  if (button) registerOrderPayment(button);
+});
 byId('shop-search').addEventListener('input', renderShopProducts);
 byId('shop-products').addEventListener('click', (event) => {
   const cartButton = event.target.closest('[data-cart-add]');
