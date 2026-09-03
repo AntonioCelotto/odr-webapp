@@ -10,6 +10,8 @@ const appRouteFiles = [
   'codici',
   'promozioni',
   'rete',
+  'clienti',
+  'ordini',
   'wordpress',
   'report',
   'utenti',
