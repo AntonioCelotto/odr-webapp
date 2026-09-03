@@ -1162,7 +1162,8 @@ function applyModuleVisibility(rows) {
   };
 
   Object.entries(sectionIds).forEach(([module, sectionId]) => {
-    const allowed = rows.some((row) => row.role === role && row.module === module && row.can_view);
+    const hiddenForAgent = role === 'agent' && (module === 'promotions' || module === 'network');
+    const allowed = !hiddenForAgent && rows.some((row) => row.role === role && row.module === module && row.can_view);
     byId(sectionId)?.classList.toggle('module-denied', !allowed);
     document.querySelectorAll(`[data-route="${sectionId}"]`).forEach((link) => {
       link.classList.toggle('hidden', !allowed);
@@ -1705,6 +1706,14 @@ async function restoreSession() {
 
 byId('show-login').addEventListener('click', () => setAuthMode('login'));
 byId('show-register').addEventListener('click', () => setAuthMode('register'));
+byId('toggle-login-password').addEventListener('click', () => {
+  const input = byId('login-password');
+  const button = byId('toggle-login-password');
+  const reveal = input.type === 'password';
+  input.type = reveal ? 'text' : 'password';
+  button.setAttribute('aria-label', reveal ? 'Nascondi password' : 'Mostra password');
+  button.setAttribute('aria-pressed', String(reveal));
+});
 byId('login-form').addEventListener('submit', submitLogin);
 byId('register-form').addEventListener('submit', submitRegistration);
 byId('logout-button').addEventListener('click', submitLogout);
