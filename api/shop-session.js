@@ -83,6 +83,64 @@ async function getActiveCoupon(token) {
   return String(payload.activeCode?.woo_coupon || '').trim().slice(0, 100);
 }
 
+
+async function saveWordPressLink(profile, wordpressUserId) {
+  const supabaseUrl = process.env.SUPABASE_URL;
+  const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+  if (!supabaseUrl || !serviceRoleKey || !wordpressUserId) return false;
+
+  const headers = {
+    apikey: serviceRoleKey,
+    Authorization: `Bearer ${serviceRoleKey}`,
+    'Content-Type': 'application/json',
+  };
+  const accountEndpoint = new URL('/rest/v1/wordpress_accounts', supabaseUrl);
+  accountEndpoint.searchParams.set('wordpress_user_id', `eq.${Number(wordpressUserId)}`);
+  accountEndpoint.searchParams.set('select', 'wordpress_user_id');
+  const accountResponse = await fetch(accountEndpoint, { headers, cache: 'no-store' });
+  if (!accountResponse.ok) throw new Error('Verifica account WordPress non riuscita');
+  const [existingAccount] = await accountResponse.json();
+
+  if (existingAccount) {
+    const updateAccount = await fetch(accountEndpoint, {
+      method: 'PATCH',
+      headers: { ...headers, Prefer: 'return=minimal' },
+      body: JSON.stringify({
+        connected_profile_id: profile.id,
+        updated_at: new Date().toISOString(),
+      }),
+    });
+    if (!updateAccount.ok) throw new Error('Collegamento account WordPress non riuscito');
+  } else {
+    const createAccount = await fetch(new URL('/rest/v1/wordpress_accounts', supabaseUrl), {
+      method: 'POST',
+      headers: { ...headers, Prefer: 'return=minimal' },
+      body: JSON.stringify({
+        wordpress_user_id: Number(wordpressUserId),
+        email: profile.email,
+        full_name: profile.full_name || profile.email,
+        wordpress_roles: [],
+        mapped_role: profile.role,
+        connected_profile_id: profile.id,
+      }),
+    });
+    if (!createAccount.ok) throw new Error('Creazione collegamento WordPress non riuscita');
+  }
+
+  const profileEndpoint = new URL('/rest/v1/profiles', supabaseUrl);
+  profileEndpoint.searchParams.set('id', `eq.${profile.id}`);
+  const profileResponse = await fetch(profileEndpoint, {
+    method: 'PATCH',
+    headers: { ...headers, Prefer: 'return=minimal' },
+    body: JSON.stringify({
+      wordpress_user_id: Number(wordpressUserId),
+      updated_at: new Date().toISOString(),
+    }),
+  });
+  if (!profileResponse.ok) throw new Error('Salvataggio profilo WordPress non riuscito');
+  return true;
+}
+
 export default async function handler(request, response) {
   if (request.method !== 'POST') return json(response, 405, { error: 'Metodo non consentito' });
 
@@ -127,18 +185,7 @@ export default async function handler(request, response) {
     }
 
     if (!profile.wordpress_user_id && payload.wordpress_user_id) {
-      fetch(
-        `${process.env.SUPABASE_URL}/rest/v1/profiles?id=eq.${encodeURIComponent(profile.id)}`,
-        {
-          method: 'PATCH',
-          headers: {
-            ...profile.headers,
-            'Content-Type': 'application/json',
-            Prefer: 'return=minimal',
-          },
-          body: JSON.stringify({ wordpress_user_id: payload.wordpress_user_id }),
-        },
-      ).catch(() => {});
+      await saveWordPressLink(profile, payload.wordpress_user_id);
     }
 
     return json(response, 200, {
