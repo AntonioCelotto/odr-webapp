@@ -45,8 +45,7 @@ export default async function handler(req, res) {
     if (!profile) return json(res, 403, { error: 'Funzione riservata agli agenti' });
     const parentId = profile.network_entity_id || null;
     const base = process.env.SUPABASE_URL;
-    const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
-    const adminHeaders = { apikey: serviceKey, Authorization: `Bearer ${serviceKey}`, 'Content-Type': 'application/json' };
+    const customerHeaders = { ...profile.headers, 'Content-Type': 'application/json' };
 
     if (req.method === 'GET') {
       const customers = new Map();
@@ -55,7 +54,7 @@ export default async function handler(req, res) {
       appUrl.searchParams.set('active', 'eq.true');
       appUrl.searchParams.set('select', '*');
       appUrl.searchParams.set('order', 'name.asc');
-      const appResult = await fetch(appUrl, { headers: adminHeaders });
+      const appResult = await fetch(appUrl, { headers: customerHeaders });
       if (!appResult.ok) throw new Error('Archivio clienti app non disponibile');
       for (const item of await appResult.json()) {
         customers.set(`app-${item.id}`, {
@@ -133,7 +132,7 @@ export default async function handler(req, res) {
     duplicateUrl.searchParams.set('agent_profile_id', `eq.${profile.id}`);
     duplicateUrl.searchParams.set('email', `eq.${email}`);
     duplicateUrl.searchParams.set('select', 'id');
-    const duplicate = await fetch(duplicateUrl, { headers: adminHeaders });
+    const duplicate = await fetch(duplicateUrl, { headers: customerHeaders });
     if ((await duplicate.json()).length) return json(res, 409, { error: 'Questo cliente è già presente' });
 
     const parts = name.split(/\s+/);
@@ -141,7 +140,7 @@ export default async function handler(req, res) {
     const lastName = parts.join(' ');
     const create = await fetch(new URL('/rest/v1/agent_app_customers', base), {
       method: 'POST',
-      headers: { ...adminHeaders, Prefer: 'return=representation' },
+      headers: { ...customerHeaders, Prefer: 'return=representation' },
       body: JSON.stringify({
         agent_profile_id: profile.id,
         name,
