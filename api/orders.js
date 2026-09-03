@@ -25,13 +25,23 @@ export default async function handler(request, response) {
   try {
     const profile = token ? await getProfile(token) : null;
     if (!profile) return json(response, 403, { error: 'Accesso richiesto' });
-    const url = new URL('/wp-json/wc/v3/orders', process.env.WOOCOMMERCE_STORE_URL);
-    url.searchParams.set('per_page', '100');
-    url.searchParams.set('orderby', 'date');
-    url.searchParams.set('order', 'desc');
     const authorization = `Basic ${Buffer.from(`${process.env.WOOCOMMERCE_CONSUMER_KEY}:${process.env.WOOCOMMERCE_CONSUMER_SECRET}`).toString('base64')}`;
-    const wooResponse = await fetch(url, { headers: { Authorization: authorization } });
-    if (!wooResponse.ok) throw new Error(`WooCommerce ${wooResponse.status}`);
+    const wooOrders = [];
+    for (let page = 1; page <= 5; page += 1) {
+      const url = new URL('/wp-json/wc/v3/orders', process.env.WOOCOMMERCE_STORE_URL);
+      url.searchParams.set('per_page', '100');
+      url.searchParams.set('page', String(page));
+      url.searchParams.set('orderby', 'date');
+      url.searchParams.set('order', 'desc');
+      const wooResponse = await fetch(url, { headers: { Authorization: authorization } });
+      if (!wooResponse.ok) {
+        if (wooResponse.status === 400 && page > 1) break;
+        throw new Error(`WooCommerce ${wooResponse.status}`);
+      }
+      const pageOrders = await wooResponse.json();
+      wooOrders.push(...pageOrders);
+      if (pageOrders.length < 100) break;
+    }
     const networkResponse = await fetch(
       `${process.env.SUPABASE_URL}/functions/v1/network-management`,
       { headers: profile.headers },
@@ -48,7 +58,7 @@ export default async function handler(request, response) {
         .map((entity) => entity.email.toLowerCase())
       : []);
 
-    const orders = (await wooResponse.json())
+    const orders = wooOrders
       .filter((order) => {
         const email = order.billing?.email?.toLowerCase() || '';
         const agentProfileId = (order.meta_data || []).find((meta) => meta.key === '_odr_agent_profile_id')?.value;
@@ -58,12 +68,14 @@ export default async function handler(request, response) {
       })
       .map((order) => {
         const email = order.billing?.email?.toLowerCase() || '';
+        const meta = order.meta_data || [];
+        const orderAgentEntityId = meta.find((item) => item.key === '_odr_agent_entity_id')?.value || '';
         const entity = byEmail.get(email);
         const parent = entity?.parent_id ? byId.get(entity.parent_id) : null;
         const grandparent = parent?.parent_id ? byId.get(parent.parent_id) : null;
         const agentEntity = entity?.type === 'agent'
           ? entity
-          : entity?.type === 'center' && parent?.type === 'agent' ? parent : null;
+          : entity?.type === 'center' && parent?.type === 'agent' ? parent : byId.get(orderAgentEntityId) || null;
         const commissionBase = (order.line_items || [])
           .reduce((sum, line) => sum + (Number(line.total) || 0), 0);
         const commissionRate = Number(agentEntity?.commission_rate) || 0;
@@ -80,6 +92,7 @@ export default async function handler(request, response) {
           coupon: order.coupon_lines?.map((coupon) => coupon.code).join(', ') || '',
           center: entity?.type === 'center' ? entity.name : '',
           agent: agentEntity?.name || '',
+          agentEntityId: agentEntity?.id || orderAgentEntityId,
           distributor: entity?.type === 'distributor'
             ? entity.name
             : entity?.type === 'agent' && parent?.type === 'distributor'
