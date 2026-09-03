@@ -59,8 +59,14 @@ export default async function handler(req, res) {
         country: saved.country || 'IT',
       };
       customer = {
+        payment_terms: (saved.payment_terms || [30]).join(','),
         billing: { ...address, email: saved.email, phone: saved.phone || '' },
-        shipping: address,
+        shipping: saved.shipping_address_1 ? {
+          first_name: String(saved.shipping_name || saved.name || '').split(/\s+/)[0] || '',
+          last_name: String(saved.shipping_name || saved.name || '').split(/\s+/).slice(1).join(' '),
+          company: saved.shipping_company || '', address_1: saved.shipping_address_1 || '', address_2: saved.shipping_address_2 || '',
+          postcode: saved.shipping_postcode || '', city: saved.shipping_city || '', state: saved.shipping_state || '', country: saved.shipping_country || 'IT',
+        } : address,
       };
     } else if (customerId.startsWith('order-')) {
       const sourceId = Number(customerId.replace(/^order-/, ''));
@@ -89,6 +95,7 @@ export default async function handler(req, res) {
           { key: '_odr_agent_entity_id', value: profile.network_entity_id || '' },
           { key: '_odr_agent_name', value: profile.full_name || '' },
           { key: '_odr_customer_reference', value: customerId },
+          { key: '_odr_payment_terms', value: customerId.startsWith('app-') ? (customer?.payment_terms || req.body?.paymentTerms || '') : '' },
         ],
       }),
     });
