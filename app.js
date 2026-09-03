@@ -1260,7 +1260,7 @@ function setAuthMode(mode) {
   byId('register-form').classList.toggle('hidden', loginActive);
   showAuthMessage(
     loginActive
-      ? 'Inserisci email e password per accedere.'
+      ? ''
       : 'Il paziente viene attivato subito; gli altri profili richiedono approvazione.',
   );
 }
@@ -1546,7 +1546,7 @@ async function submitRegistration(event) {
     setAuthMode('login');
     byId('login-email').value = email;
     showAuthMessage(
-      `Profilo creato per ${email}. Controlla la posta e conferma l’email; se hai richiesto un profilo professionale, dopo la conferma dovrà essere approvato dall’amministratore.`,
+      `Profilo creato per ${email}. Se hai richiesto un profilo professionale, dovrà essere approvato dall’amministratore prima dell’accesso.`,
       'success',
     );
     setAuthBusy(false);
