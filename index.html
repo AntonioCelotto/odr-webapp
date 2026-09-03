@@ -101,6 +101,7 @@
           <a href="/shop" data-route="shop">Shop</a>
           <a href="/profilo" data-route="profile">Profilo</a>
           <a href="/codici" data-route="access">Codici</a>
+          <a id="agent-customers-nav" class="hidden" href="/clienti" data-route="agent-customers">Gestione clienti</a>
           <a href="/promozioni" data-route="promotions">Promozioni</a>
           <a href="/rete" data-route="network">Rete</a>
           <a href="/report" data-route="reports">Report</a>
@@ -342,6 +343,35 @@
             <h3 class="code-history-title">Ultime validazioni</h3>
             <div id="code-validation-history" class="code-validation-history"></div>
           </div>
+        </section>
+
+        <section id="agent-customers" class="workspace route-screen module-denied">
+          <div class="section-heading">
+            <div>
+              <p class="eyebrow">Ordini per conto dei centri</p>
+              <h2>Gestione clienti</h2>
+            </div>
+            <button id="new-agent-customer" class="primary-action" type="button">Aggiungi cliente</button>
+          </div>
+          <div id="agent-customer-message" class="auth-message">Caricamento clienti...</div>
+          <form id="agent-customer-form" class="admin-form hidden">
+            <div class="form-grid">
+              <label>Nome centro / cliente <input id="agent-customer-name" required maxlength="250" /></label>
+              <label>Ragione sociale <input id="agent-customer-company" maxlength="250" /></label>
+              <label>Email <input id="agent-customer-email" type="email" required maxlength="200" /></label>
+              <label>Telefono <input id="agent-customer-phone" maxlength="60" /></label>
+              <label class="wide">Indirizzo <input id="agent-customer-address" maxlength="160" /></label>
+              <label>CAP <input id="agent-customer-postcode" maxlength="20" /></label>
+              <label>Città <input id="agent-customer-city" maxlength="100" /></label>
+              <label>Provincia <input id="agent-customer-state" maxlength="2" /></label>
+            </div>
+            <div class="action-row">
+              <button class="primary-action" type="submit">Salva cliente</button>
+              <button id="cancel-agent-customer" class="secondary-action" type="button">Annulla</button>
+            </div>
+          </form>
+          <div id="agent-selected-customer" class="agent-selected-customer hidden"></div>
+          <div id="agent-customer-list" class="agent-customer-grid"></div>
         </section>
 
         <section id="promotions" class="workspace route-screen">
