@@ -159,29 +159,10 @@ function productPrice(product) {
 }
 
 function productCatalogImage(product) {
-  const label = `${product?.name || ''} ${product?.sku || ''}`.toLowerCase();
-  const has = (...tokens) => tokens.every((token) => label.includes(token));
-  const asset = (name) => `/product-images/${name}.webp`;
-
-  if (has('eye', 'contour') || has('contorno', 'occhi')) return asset('ioxi-care-eye-contour');
-  if (has('body', 'ion') || has('corpo', 'ionizzato')) return asset('ioxi-care-body-ion-20');
-  if ((has('body', 'revive') || has('corpo', 'rivitalizzante')) && label.includes('2.1')) return asset('ioxi-care-body-revive-21');
-  if (has('body', 'revive') || has('corpo', 'rivitalizzante')) return asset('ioxi-care-body-revive');
-  if ((has('face', 'revive') || has('viso', 'rivitalizzante')) && label.includes('1.3')) return asset('ioxi-care-face-revive-13');
-  if (has('face', 'revive') || has('viso', 'rivitalizzante')) return asset('ioxi-care-face-revive');
-  if ((has('face', 'booster') || has('siero', 'viso')) && label.includes('1.2')) return asset('ioxi-care-face-serum-12');
-  if (has('face', 'booster') || has('siero', 'viso')) return asset('ioxi-care-face-serum');
-  if ((has('extra', 'gentle', 'cleanser') || has('latte', 'detergente')) && label.includes('1.0')) return asset('ioxi-clean-10');
-  if (has('extra', 'gentle', 'cleanser') || has('latte', 'detergente')) return asset('ioxi-clean');
-  if (label.includes('hairloss') && label.includes('3.1')) return asset('ioxi-hairloss-31');
-  if (label.includes('hairloss')) return asset('ioxi-hairloss-intensive');
-  if ((has('ion', 'shampoo') || has('shampoo', 'ionizzato')) && label.includes('3.0')) return asset('ioxi-hair-shampoo-30');
-  if (has('ion', 'shampoo') || has('shampoo', 'ionizzato')) return asset('ioxi-hair-shampoo');
-  if ((has('revive', 'spa', 'cream') || has('crema', 'idratante', 'capelli')) && label.includes('3.2')) return asset('ioxi-hair-revive-32');
-  if (has('revive', 'spa', 'cream') || has('crema', 'idratante', 'capelli')) return asset('ioxi-hair-revive');
-  if (label.includes('ioxi lips') || has('balsamo', 'labbra')) return asset('ioxi-lips');
-  if (label.includes('ioxi lash') || has('lash', 'brow')) return asset('ioxi-lash');
-  return product?.image || '';
+  if (!product?.image) return '';
+  const image = new URL(product.image, config.wooBaseUrl);
+  if (product.imageUpdatedAt) image.searchParams.set('odr_v', product.imageUpdatedAt);
+  return image.toString();
 }
 
 function cartStorageKey() {
@@ -507,8 +488,9 @@ async function loadShop() {
   if (!token) return;
 
   try {
-    const response = await fetch('/api/catalog', {
+    const response = await fetch(`/api/catalog?refresh=${Date.now()}`, {
       headers: { Authorization: `Bearer ${token}` },
+      cache: 'no-store',
     });
     const payload = await response.json();
     if (!response.ok) throw new Error(payload.error || 'Catalogo non disponibile');
