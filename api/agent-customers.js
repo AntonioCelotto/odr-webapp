@@ -39,7 +39,7 @@ async function agentEntity(profile) {
 }
 
 export default async function handler(req, res) {
-  if (!['GET', 'POST', 'DELETE'].includes(req.method)) return json(res, 405, { error: 'Metodo non consentito' });
+  if (!['GET', 'POST', 'PUT', 'DELETE'].includes(req.method)) return json(res, 405, { error: 'Metodo non consentito' });
   try {
     const profile = await authenticate(req);
     if (!profile) return json(res, 403, { error: 'Funzione riservata agli agenti' });
@@ -80,6 +80,8 @@ export default async function handler(req, res) {
           phone: item.phone || '',
           area: item.city || '',
           source: 'app',
+          taxCode: item.tax_code || '', vatNumber: item.vat_number || '', pec: item.pec || '', sdiCode: item.sdi_code || '',
+          paymentTerms: item.payment_terms?.length ? item.payment_terms : [30], notes: item.notes || '',
           orders: [],
           address: {
             firstName: item.name.split(/\s+/)[0] || item.name,
@@ -93,6 +95,11 @@ export default async function handler(req, res) {
             country: item.country || 'IT',
             phone: item.phone || '',
             email: item.email,
+          },
+          shipping: {
+            name: item.shipping_name || '', company: item.shipping_company || '', address1: item.shipping_address_1 || '',
+            address2: item.shipping_address_2 || '', postcode: item.shipping_postcode || '', city: item.shipping_city || '',
+            state: item.shipping_state || '', country: item.shipping_country || 'IT',
           },
         });
       }
@@ -114,6 +121,7 @@ export default async function handler(req, res) {
           const key = Number(order.customer_id) > 0 ? `wc-${order.customer_id}` : email;
           const referencedAgent = (order.meta_data || []).find((meta) => meta.key === '_odr_agent_profile_id')?.value;
           const referencedCustomer = (order.meta_data || []).find((meta) => meta.key === '_odr_customer_reference')?.value;
+          if (profile.role === 'agent' && referencedAgent !== profile.id) continue;
           const referencedTarget = referencedAgent === profile.id && referencedCustomer
             ? [...customers.values()].find((customer) => customer.id === referencedCustomer)
             : null;
@@ -175,18 +183,27 @@ export default async function handler(req, res) {
     const email = clean(body.email, 200).toLowerCase();
     const name = clean(body.name);
     if (!name || !email || !/^\S+@\S+\.\S+$/.test(email)) return json(res, 400, { error: 'Nome ed email validi sono obbligatori' });
+    const editingId = clean(body.customerId, 80).replace(/^app-/, '');
     const duplicateUrl = new URL('/rest/v1/agent_app_customers', base);
     duplicateUrl.searchParams.set('agent_profile_id', `eq.${profile.id}`);
     duplicateUrl.searchParams.set('email', `eq.${email}`);
     duplicateUrl.searchParams.set('select', 'id');
     const duplicate = await fetch(duplicateUrl, { headers: customerHeaders });
-    if ((await duplicate.json()).length) return json(res, 409, { error: 'Questo cliente è già presente' });
+    const duplicates = await duplicate.json();
+    if (duplicates.some((row) => row.id !== editingId)) return json(res, 409, { error: 'Questo cliente è già presente' });
 
     const parts = name.split(/\s+/);
     const firstName = parts.shift() || name;
     const lastName = parts.join(' ');
-    const create = await fetch(new URL('/rest/v1/agent_app_customers', base), {
-      method: 'POST',
+    const saveUrl = new URL('/rest/v1/agent_app_customers', base);
+    if (req.method === 'PUT') {
+      if (!editingId) return json(res, 400, { error: 'Cliente non valido' });
+      saveUrl.searchParams.set('id', `eq.${editingId}`);
+      saveUrl.searchParams.set('agent_profile_id', `eq.${profile.id}`);
+    }
+    const terms = Array.isArray(body.paymentTerms) ? body.paymentTerms.map(Number).filter((n) => [30, 60, 90, 120].includes(n)) : [];
+    const create = await fetch(saveUrl, {
+      method: req.method === 'PUT' ? 'PATCH' : 'POST',
       headers: { ...customerHeaders, Prefer: 'return=representation' },
       body: JSON.stringify({
         agent_profile_id: profile.id,
@@ -199,11 +216,19 @@ export default async function handler(req, res) {
         city: clean(body.city, 100) || null,
         state: clean(body.state, 10).toUpperCase() || null,
         country: 'IT',
+        tax_code: clean(body.taxCode, 32) || null, vat_number: clean(body.vatNumber, 32) || null,
+        pec: clean(body.pec, 200) || null, sdi_code: clean(body.sdiCode, 20) || null,
+        shipping_name: clean(body.shippingName) || null, shipping_company: clean(body.shippingCompany) || null,
+        shipping_address_1: clean(body.shippingAddress1, 160) || null, shipping_postcode: clean(body.shippingPostcode, 20) || null,
+        shipping_city: clean(body.shippingCity, 100) || null,
+        shipping_state: clean(body.shippingState, 10).toUpperCase() || null, shipping_country: 'IT',
+        payment_terms: terms.length ? terms : [30], notes: clean(body.notes, 1000) || null,
+        updated_at: new Date().toISOString(),
       }),
     });
     const [saved] = create.ok ? await create.json() : [];
     if (!saved) throw new Error('Salvataggio cliente nell’app non riuscito');
-    return json(res, 201, { customer: {
+    return json(res, req.method === 'PUT' ? 200 : 201, { customer: {
       id: `app-${saved.id}`, name, email, phone: clean(body.phone, 60), area: clean(body.city, 100), source: 'app',
       address: {
         firstName, lastName, company: clean(body.company), address1: clean(body.address1, 160),
