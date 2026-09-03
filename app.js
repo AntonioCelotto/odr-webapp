@@ -1357,8 +1357,14 @@ function renderAdminUsers(users, wordpressAccounts = [], adminMembers = [], canM
   const registeredRows = users
     .map((user) => {
       const membership = adminMembers.find((member) => member.profile_id === user.id);
+      const wordpressAccount = wordpressAccounts.find((account) => (
+        account.email.toLowerCase() === user.email.toLowerCase()
+      ));
+      const approvalRole = wordpressAccount?.mapped_role || user.requested_role;
       const pendingActions = user.approval_status === 'pending' ? `
-        <button class="approve" type="button" data-user-action="approve" data-user-id="${user.id}">Approva</button>
+        <button class="approve" type="button" data-user-action="approve" data-user-id="${user.id}">
+          Approva come ${escapeHtml(roleLabels[approvalRole] || approvalRole)}
+        </button>
         <button class="reject" type="button" data-user-action="reject" data-user-id="${user.id}">Rifiuta</button>
       ` : '';
       const adminActions = canManageAdmins && user.approval_status === 'approved'
@@ -1374,7 +1380,10 @@ function renderAdminUsers(users, wordpressAccounts = [], adminMembers = [], canM
           <strong>${escapeHtml(user.full_name || user.email)}</strong><br />
           <small>${escapeHtml(user.email)}${user.phone ? ` · ${escapeHtml(user.phone)}` : ''}</small>
         </td>
-        <td>${escapeHtml(roleLabels[user.requested_role] || user.requested_role)}</td>
+        <td>
+          ${escapeHtml(roleLabels[approvalRole] || approvalRole)}
+          ${wordpressAccount ? '<br /><small>Account WordPress riconosciuto</small>' : ''}
+        </td>
         <td><span class="state ${user.approval_status === 'approved' ? 'ok' : 'off'}">${escapeHtml(user.approval_status)}</span></td>
         <td>
           <div class="user-actions">
@@ -1459,7 +1468,10 @@ async function submitLogin(event) {
   });
 
   if (error) {
-    showAuthMessage('Email o password non corrette, oppure account non ancora confermato.', 'error');
+    const message = error.code === 'email_not_confirmed'
+      ? 'Devi prima confermare l’email ricevuta dopo la registrazione.'
+      : 'Email o password dell’app non corrette. La password WordPress non viene usata per accedere all’app.';
+    showAuthMessage(message, 'error');
     setAuthBusy(false);
     return;
   }
@@ -1512,7 +1524,7 @@ async function submitRegistration(event) {
     setAuthMode('login');
     byId('login-email').value = email;
     showAuthMessage(
-      `Profilo creato per ${email}. Ora puoi accedere con la password scelta.`,
+      `Profilo creato per ${email}. Controlla la posta e conferma l’email; se hai richiesto un profilo professionale, dopo la conferma dovrà essere approvato dall’amministratore.`,
       'success',
     );
     setAuthBusy(false);
