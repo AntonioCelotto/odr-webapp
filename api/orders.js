@@ -103,6 +103,18 @@ export default async function handler(request, response) {
           commissionBase,
           commissionRate,
           agentEarning,
+          items: (order.line_items || []).map((line) => ({
+            name: line.name || 'Prodotto',
+            quantity: Number(line.quantity) || 0,
+            total: Number(line.total) || 0,
+          })),
+          shippingAddress: [
+            order.shipping?.address_1 || order.billing?.address_1,
+            order.shipping?.postcode || order.billing?.postcode,
+            order.shipping?.city || order.billing?.city,
+            order.shipping?.state || order.billing?.state,
+          ].filter(Boolean).join(', '),
+          paymentMethod: order.payment_method_title || '',
         };
       });
     return json(response, 200, { orders });
