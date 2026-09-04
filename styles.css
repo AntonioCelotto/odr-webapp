@@ -2158,6 +2158,24 @@ h2 {
   border: 0;
 }
 
+#reports .orders-table {
+  min-width: 1120px;
+}
+
+#reports .orders-table th:first-child,
+#reports .orders-table td:first-child {
+  width: 118px;
+  min-width: 118px;
+  white-space: nowrap;
+}
+
+#reports .orders-table th:nth-child(2),
+#reports .orders-table td:nth-child(2) {
+  width: 112px;
+  min-width: 112px;
+  white-space: nowrap;
+}
+
 @media (max-width: 1200px) and (min-width: 621px) {
   .report-filters {
     grid-template-columns: repeat(2, minmax(0, 1fr));
