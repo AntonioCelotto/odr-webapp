@@ -188,6 +188,15 @@
             <div><span>Stato</span><strong id="profile-status">-</strong></div>
             <div><span>ID WordPress</span><strong id="profile-wordpress-id">Non collegato</strong></div>
           </div>
+          <form id="change-password-form" class="change-password-card">
+            <div class="change-password-heading"><span class="change-password-icon">•••</span><div><h3>Cambia password</h3><p>Aggiorna la password utilizzata per accedere all’app ODR.</p></div></div>
+            <div class="change-password-grid">
+              <label>Password attuale <span class="password-field"><input id="current-password" type="password" autocomplete="current-password" required /><button class="password-toggle" type="button" data-password-toggle="current-password" aria-label="Mostra password">◉</button></span></label>
+              <label>Nuova password <span class="password-field"><input id="new-password" type="password" minlength="8" autocomplete="new-password" required /><button class="password-toggle" type="button" data-password-toggle="new-password" aria-label="Mostra password">◉</button></span></label>
+              <label>Conferma nuova password <span class="password-field"><input id="confirm-new-password" type="password" minlength="8" autocomplete="new-password" required /><button class="password-toggle" type="button" data-password-toggle="confirm-new-password" aria-label="Mostra password">◉</button></span></label>
+            </div>
+            <div class="change-password-actions"><button class="primary-action" type="submit">Aggiorna password</button><span id="change-password-message"></span></div>
+          </form>
         </section>
 
         <section id="shop" class="workspace shop-workspace route-screen">
