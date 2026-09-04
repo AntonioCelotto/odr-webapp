@@ -74,6 +74,65 @@ body .shop-cart-thumb img {
   }
 }
 
+.shop-cart-top-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.shop-cart-top-actions .secondary-action {
+  white-space: nowrap;
+}
+
+.product-actions-with-quantity {
+  align-items: center;
+}
+
+.product-quantity {
+  display: inline-flex;
+  align-items: center;
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: #fff;
+}
+
+.product-quantity button {
+  width: 38px;
+  height: 38px;
+  border: 0;
+  background: var(--violet-soft);
+  color: var(--ink);
+  font-size: 1.25rem;
+  cursor: pointer;
+}
+
+.product-quantity button:disabled {
+  opacity: .4;
+  cursor: default;
+}
+
+.product-quantity span {
+  min-width: 34px;
+  text-align: center;
+  font-weight: 800;
+}
+
+@media (max-width: 620px) {
+  .shop-cart-heading {
+    align-items: flex-start;
+  }
+
+  .shop-cart-top-actions {
+    width: 100%;
+    flex-wrap: wrap;
+  }
+
+  .shop-cart-top-actions .secondary-action {
+    flex: 1;
+  }
+}
+
 /* ODR 2026 visual system — approved warm editorial direction */
 :root {
   --ink: #2f2032;
