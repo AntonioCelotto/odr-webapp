@@ -1115,7 +1115,7 @@ function renderOrders() {
     ? filteredReportOrders
     .map((order) => `
       <tr>
-        <td data-label="Ordine">${escapeHtml(order.id)}</td>
+        <td data-label="Cod. ordine">${escapeHtml(order.id)}</td>
         <td data-label="Data">${escapeHtml(order.date)}</td>
         <td data-label="Cliente"><strong>${escapeHtml(order.customer)}</strong>${order.customerEmail ? `<br><small>${escapeHtml(order.customerEmail)}</small>` : ''}</td>
         <td data-label="Coupon">${escapeHtml(order.coupon || '-')}</td>
@@ -1123,10 +1123,7 @@ function renderOrders() {
         <td data-label="Distributore">${escapeHtml(order.distributor || '-')}</td>
         <td data-label="Centro">${escapeHtml(order.center || '-')}</td>
         <td data-label="Importo"><strong>${money(order.amount)}</strong></td>
-        <td data-label="Pagamento"><span class="state ${order.paymentStatus === 'paid' ? 'ok' : order.paymentStatus === 'partial' ? 'pending' : 'off'}">${order.paymentStatus === 'paid' ? 'Pagato' : order.paymentStatus === 'partial' ? 'Parziale' : 'Non pagato'}</span></td>
-        <td data-label="Imponibile provvigione">${order.agent ? money(order.commissionBase || 0) : '-'}</td>
-        <td data-label="Guadagno agente"><strong>${order.agent ? money(order.agentEarning || 0) : '-'}</strong></td>
-        <td data-label="Stato"><span class="state ${['cancelled', 'failed', 'refunded'].includes(order.status) ? 'off' : 'ok'}">${escapeHtml(order.status)}</span></td>
+        <td data-label="Stato WP"><span class="state ${orderStatusClass(order.status)}">${escapeHtml(orderStatusLabel(order.status))}</span></td>
         <td data-label="Dettagli">
           <details class="order-details">
             <summary>Apri ordine</summary>
@@ -1146,8 +1143,29 @@ function renderOrders() {
       </tr>
     `)
     .join('')
-    : '<tr class="report-empty-row"><td colspan="13">Nessun ordine corrisponde ai filtri selezionati.</td></tr>';
+    : '<tr class="report-empty-row"><td colspan="10">Nessun ordine corrisponde ai filtri selezionati.</td></tr>';
   renderReportSummary();
+}
+
+function orderStatusLabel(status) {
+  const labels = {
+    pending: 'In attesa di pagamento',
+    processing: 'In lavorazione',
+    'on-hold': 'In sospeso',
+    completed: 'Completato',
+    cancelled: 'Annullato',
+    refunded: 'Rimborsato',
+    failed: 'Fallito',
+    trash: 'Cestinato',
+  };
+  return labels[String(status || '').toLowerCase()] || status || 'Non disponibile';
+}
+
+function orderStatusClass(status) {
+  const normalized = String(status || '').toLowerCase();
+  if (['cancelled', 'failed', 'refunded', 'trash'].includes(normalized)) return 'off';
+  if (['pending', 'on-hold'].includes(normalized)) return 'pending';
+  return 'ok';
 }
 
 function renderReportSummary() {
