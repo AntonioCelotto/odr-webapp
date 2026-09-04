@@ -1421,6 +1421,33 @@ function renderCurrentProfile(user) {
   byId('profile-link-status').textContent = linked ? 'Collegato a WordPress' : 'Solo ODR';
 }
 
+function togglePasswordField(button) {
+  const input = byId(button.dataset.passwordToggle);
+  if (!input) return;
+  const reveal = input.type === 'password';
+  input.type = reveal ? 'text' : 'password';
+  button.setAttribute('aria-label', reveal ? 'Nascondi password' : 'Mostra password');
+  button.setAttribute('aria-pressed', String(reveal));
+}
+
+async function changePassword(event) {
+  event.preventDefault();
+  const form = event.currentTarget;
+  const button = form.querySelector('[type="submit"]');
+  const message = byId('change-password-message');
+  const currentPassword = byId('current-password').value;
+  const password = byId('new-password').value;
+  const confirmation = byId('confirm-new-password').value;
+  if (password.length < 8) { message.className = 'error-text'; message.textContent = 'La nuova password deve contenere almeno 8 caratteri.'; return; }
+  if (password !== confirmation) { message.className = 'error-text'; message.textContent = 'Le due nuove password non coincidono.'; return; }
+  if (password === currentPassword) { message.className = 'error-text'; message.textContent = 'Scegli una password diversa da quella attuale.'; return; }
+  button.disabled = true; message.className = ''; message.textContent = 'Aggiornamento in corso...';
+  const { error } = await supabase.auth.updateUser({ password, currentPassword });
+  button.disabled = false;
+  if (error) { message.className = 'error-text'; message.textContent = error.message || 'Password non aggiornata.'; return; }
+  form.reset(); message.className = 'success-text'; message.textContent = 'Password aggiornata correttamente.';
+}
+
 function renderAgentCustomers() {
   const list = byId('agent-customer-list');
   const selected = byId('agent-selected-customer');
@@ -1975,6 +2002,11 @@ byId('toggle-login-password').addEventListener('click', () => {
   button.setAttribute('aria-label', reveal ? 'Nascondi password' : 'Mostra password');
   button.setAttribute('aria-pressed', String(reveal));
 });
+byId('change-password-form').addEventListener('click', (event) => {
+  const toggle = event.target.closest('[data-password-toggle]');
+  if (toggle) togglePasswordField(toggle);
+});
+byId('change-password-form').addEventListener('submit', changePassword);
 byId('login-form').addEventListener('submit', submitLogin);
 byId('register-form').addEventListener('submit', submitRegistration);
 byId('logout-button').addEventListener('click', submitLogout);
