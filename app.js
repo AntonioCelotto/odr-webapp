@@ -385,6 +385,7 @@ function updateShopCartItem(productId, action) {
   saveShopCart();
   renderShopCart();
   if (shopCoupon && shopCart.length) applyShopCoupon({ silent: true });
+  renderShopProducts();
 }
 
 function renderShopProducts() {
@@ -422,6 +423,7 @@ function renderShopProducts() {
     const regular = product.onSale && product.regularPrice
       ? `<del>${money(Number(product.regularPrice))}</del>`
       : '';
+    const cartQuantity = shopCart.find((item) => item.productId === product.id)?.quantity || 0;
     return `
       <article class="product-card">
         <div class="product-image">${image}<span>${escapeHtml(category)}</span></div>
@@ -429,10 +431,14 @@ function renderShopProducts() {
           <small>${escapeHtml(product.sku || 'Prodotto ODR')}</small>
           <h3>${escapeHtml(product.name)}</h3>
           <div class="${priceClass}">${regular}<strong>${productPrice(product)}</strong></div>
-          <div class="product-actions">
+          <div class="product-actions product-actions-with-quantity">
             <span class="stock ${product.inStock ? 'ok' : 'off'}">${product.inStock ? 'Disponibile' : 'Esaurito'}</span>
             ${product.inStock
-    ? `<button type="button" data-cart-add="${product.id}">Aggiungi</button>`
+    ? `<div class="product-quantity" aria-label="Quantità ${escapeHtml(product.name)}">
+        <button type="button" data-product-quantity="decrease" data-product-id="${product.id}" ${cartQuantity < 1 ? 'disabled' : ''} aria-label="Riduci quantità">−</button>
+        <span>${cartQuantity}</span>
+        <button type="button" data-product-quantity="increase" data-product-id="${product.id}" aria-label="Aumenta quantità">+</button>
+      </div>`
     : `<a href="${escapeHtml(product.permalink)}" data-shop-destination="${escapeHtml(product.permalink)}">Dettagli</a>`}
           </div>
         </div>
@@ -2019,6 +2025,17 @@ byId('orders-table').addEventListener('click', (event) => {
 });
 byId('shop-search').addEventListener('input', renderShopProducts);
 byId('shop-products').addEventListener('click', (event) => {
+  const quantityButton = event.target.closest('[data-product-quantity]');
+  if (quantityButton) {
+    const productId = Number(quantityButton.dataset.productId);
+    if (quantityButton.dataset.productQuantity === 'increase') {
+      addToShopCart(productId);
+      renderShopProducts();
+    } else {
+      updateShopCartItem(productId, 'decrease');
+    }
+    return;
+  }
   const cartButton = event.target.closest('[data-cart-add]');
   if (cartButton) {
     addToShopCart(Number(cartButton.dataset.cartAdd), cartButton);
@@ -2035,6 +2052,10 @@ byId('shop-cart-link').addEventListener('click', (event) => {
 });
 byId('shop-cart-close').addEventListener('click', () => setCartPanel(false));
 byId('shop-continue-shopping').addEventListener('click', () => {
+  setCartPanel(false);
+  byId('shop-products').scrollIntoView({ behavior: 'smooth', block: 'start' });
+});
+byId('shop-continue-shopping-top').addEventListener('click', () => {
   setCartPanel(false);
   byId('shop-products').scrollIntoView({ behavior: 'smooth', block: 'start' });
 });
