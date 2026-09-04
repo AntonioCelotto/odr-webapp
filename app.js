@@ -1210,8 +1210,9 @@ function applyModuleVisibility(rows) {
   };
 
   Object.entries(sectionIds).forEach(([module, sectionId]) => {
-    const hiddenForAgent = role === 'agent' && ['promotions', 'network'].includes(module);
-    const allowed = !hiddenForAgent && rows.some((row) => row.role === role && row.module === module && row.can_view);
+    const hiddenByRole = (role === 'agent' && ['promotions', 'network'].includes(module))
+      || (role === 'distributor' && module === 'promotions');
+    const allowed = !hiddenByRole && rows.some((row) => row.role === role && row.module === module && row.can_view);
     byId(sectionId)?.classList.toggle('module-denied', !allowed);
     document.querySelectorAll(`[data-route="${sectionId}"]`).forEach((link) => {
       link.classList.toggle('hidden', !allowed);
