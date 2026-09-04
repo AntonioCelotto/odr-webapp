@@ -1204,7 +1204,7 @@ function applyModuleVisibility(rows) {
   };
 
   Object.entries(sectionIds).forEach(([module, sectionId]) => {
-    const hiddenForAgent = role === 'agent' && module === 'promotions';
+    const hiddenForAgent = role === 'agent' && ['promotions', 'network'].includes(module);
     const allowed = !hiddenForAgent && rows.some((row) => row.role === role && row.module === module && row.can_view);
     byId(sectionId)?.classList.toggle('module-denied', !allowed);
     document.querySelectorAll(`[data-route="${sectionId}"]`).forEach((link) => {
@@ -1215,6 +1215,12 @@ function applyModuleVisibility(rows) {
   const agentCustomerAllowed = role === 'agent';
   byId('agent-customers')?.classList.toggle('module-denied', !agentCustomerAllowed);
   byId('agent-customers-nav')?.classList.toggle('hidden', !agentCustomerAllowed);
+  byId('metric-network-card')?.classList.toggle('hidden', role === 'agent');
+  if (byId('dashboard-intro')) {
+    byId('dashboard-intro').textContent = role === 'agent'
+      ? 'Controllo rapido di clienti, ordini e vendite WooCommerce.'
+      : 'Controllo rapido di codici, rete commerciale e vendite lette da WooCommerce.';
+  }
   document.querySelectorAll('[data-route="setup"]').forEach((link) => {
     link.classList.toggle('hidden', role !== 'admin');
   });
