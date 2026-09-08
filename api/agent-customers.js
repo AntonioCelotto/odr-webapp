@@ -32,6 +32,38 @@ function wooHeaders() {
   return { Authorization: `Basic ${Buffer.from(`${key}:${secret}`).toString('base64')}` };
 }
 
+const normalizeIdentity = (value) => String(value || '').trim().replace(/\s+/g, ' ').toLowerCase();
+
+function customerBelongsToAgent(metadata, profile) {
+  const assignedAgentId = (metadata || []).find((item) => item?.key === 'agente_wp_user_id')?.value;
+  return Boolean(profile.wordpress_user_id)
+    && Number(assignedAgentId) === Number(profile.wordpress_user_id);
+}
+
+function wooCustomerCard(customer) {
+  const billing = customer.billing || {};
+  const shipping = customer.shipping || {};
+  const email = normalizeIdentity(customer.email || billing.email);
+  return {
+    id: `wc-${customer.id}`,
+    name: `${customer.first_name || billing.first_name || ''} ${customer.last_name || billing.last_name || ''}`.trim()
+      || billing.company || email || 'Cliente',
+    company: billing.company || '', email, phone: billing.phone || '', area: billing.city || '',
+    source: 'woocommerce', orders: [],
+    address: {
+      firstName: billing.first_name || customer.first_name || '', lastName: billing.last_name || customer.last_name || '',
+      company: billing.company || '', address1: billing.address_1 || '', address2: billing.address_2 || '',
+      postcode: billing.postcode || '', city: billing.city || '', state: billing.state || '', country: billing.country || 'IT',
+      phone: billing.phone || '', email,
+    },
+    shipping: {
+      name: `${shipping.first_name || ''} ${shipping.last_name || ''}`.trim(), company: shipping.company || '',
+      address1: shipping.address_1 || '', address2: shipping.address_2 || '', postcode: shipping.postcode || '',
+      city: shipping.city || '', state: shipping.state || '', country: shipping.country || 'IT',
+    },
+  };
+}
+
 async function agentEntity(profile) {
   if (profile.role === 'admin') return null;
   if (!profile.network_entity_id) throw new Error('Agente non collegato alla rete commerciale');
@@ -64,6 +96,8 @@ export default async function handler(req, res) {
 
     if (req.method === 'GET') {
       const customers = new Map();
+      const assignedWooCustomerIds = new Set();
+      const assignedWooCustomerEmails = new Set();
       const appUrl = new URL('/rest/v1/agent_app_customers', base);
       appUrl.searchParams.set('agent_profile_id', `eq.${profile.id}`);
       appUrl.searchParams.set('active', 'eq.true');
@@ -103,6 +137,29 @@ export default async function handler(req, res) {
           },
         });
       }
+      if (profile.role === 'agent') {
+        for (let page = 1; page <= 10; page += 1) {
+          const customerUrl = new URL('/wp-json/wc/v3/customers', process.env.WOOCOMMERCE_STORE_URL);
+          customerUrl.searchParams.set('per_page', '100');
+          customerUrl.searchParams.set('page', String(page));
+          customerUrl.searchParams.set('orderby', 'registered_date');
+          customerUrl.searchParams.set('order', 'desc');
+          const customerResult = await fetch(customerUrl, { headers: wooHeaders() });
+          if (!customerResult.ok) {
+            if (customerResult.status === 400 && page > 1) break;
+            throw new Error('Anagrafiche clienti WooCommerce non disponibili');
+          }
+          const wooCustomers = await customerResult.json();
+          for (const customer of wooCustomers) {
+            if (!customerBelongsToAgent(customer.meta_data, profile)) continue;
+            const card = wooCustomerCard(customer);
+            assignedWooCustomerIds.add(Number(customer.id));
+            if (card.email) assignedWooCustomerEmails.add(card.email);
+            customers.set(card.id, card);
+          }
+          if (wooCustomers.length < 100) break;
+        }
+      }
       for (let page = 1; page <= 5; page += 1) {
         const url = new URL('/wp-json/wc/v3/orders', process.env.WOOCOMMERCE_STORE_URL);
         url.searchParams.set('per_page', '100');
@@ -120,8 +177,13 @@ export default async function handler(req, res) {
           const email = String(billing.email || '').toLowerCase();
           const key = Number(order.customer_id) > 0 ? `wc-${order.customer_id}` : email;
           const referencedAgent = (order.meta_data || []).find((meta) => meta.key === '_odr_agent_profile_id')?.value;
+          const referencedAgentEntity = (order.meta_data || []).find((meta) => meta.key === '_odr_agent_entity_id')?.value;
           const referencedCustomer = (order.meta_data || []).find((meta) => meta.key === '_odr_customer_reference')?.value;
-          if (profile.role === 'agent' && referencedAgent !== profile.id) continue;
+          const assignedCustomer = assignedWooCustomerIds.has(Number(order.customer_id)) || assignedWooCustomerEmails.has(email);
+          if (profile.role === 'agent'
+            && referencedAgent !== profile.id
+            && referencedAgentEntity !== profile.network_entity_id
+            && !assignedCustomer) continue;
           const referencedTarget = referencedAgent === profile.id && referencedCustomer
             ? [...customers.values()].find((customer) => customer.id === referencedCustomer)
             : null;
@@ -161,7 +223,7 @@ export default async function handler(req, res) {
           });
           const agentProfileId = (order.meta_data || []).find((meta) => meta.key === '_odr_agent_profile_id')?.value;
           const customerReference = (order.meta_data || []).find((meta) => meta.key === '_odr_customer_reference')?.value;
-          if (agentProfileId === profile.id) {
+          if (agentProfileId === profile.id || referencedAgentEntity === profile.network_entity_id || assignedCustomer) {
             const target = [...customers.values()].find((customer) => customer.id === customerReference)
               || [...customers.values()].find((customer) => customer.id === (Number(order.customer_id) > 0 ? `wc-${order.customer_id}` : `order-${order.id}`))
               || [...customers.values()].find((customer) => customer.email && customer.email.toLowerCase() === email);

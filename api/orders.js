@@ -14,9 +14,17 @@ async function getProfile(token) {
   const authResponse = await fetch(`${base}/auth/v1/user`, { headers });
   if (!authResponse.ok) return null;
   const user = await authResponse.json();
-  const profileResponse = await fetch(`${base}/rest/v1/profiles?id=eq.${user.id}&select=id,role,approval_status,network_entity_id`, { headers });
+  const profileResponse = await fetch(`${base}/rest/v1/profiles?id=eq.${user.id}&select=id,email,full_name,role,approval_status,network_entity_id,wordpress_user_id`, { headers });
   const [profile] = profileResponse.ok ? await profileResponse.json() : [];
   return profile?.approval_status === 'approved' ? { ...profile, email: user.email, headers } : null;
+}
+
+const normalizeIdentity = (value) => String(value || '').trim().replace(/\s+/g, ' ').toLowerCase();
+
+function customerBelongsToAgent(metadata, profile) {
+  const assignedAgentId = (metadata || []).find((item) => item?.key === 'agente_wp_user_id')?.value;
+  return Boolean(profile.wordpress_user_id)
+    && Number(assignedAgentId) === Number(profile.wordpress_user_id);
 }
 
 export default async function handler(request, response) {
@@ -41,6 +49,28 @@ export default async function handler(request, response) {
       const pageOrders = await wooResponse.json();
       wooOrders.push(...pageOrders);
       if (pageOrders.length < 100) break;
+    }
+    const assignedWooCustomerIds = new Set();
+    const assignedWooCustomerEmails = new Set();
+    if (profile.role === 'agent') {
+      for (let page = 1; page <= 10; page += 1) {
+        const customerUrl = new URL('/wp-json/wc/v3/customers', process.env.WOOCOMMERCE_STORE_URL);
+        customerUrl.searchParams.set('per_page', '100');
+        customerUrl.searchParams.set('page', String(page));
+        const customerResponse = await fetch(customerUrl, { headers: { Authorization: authorization } });
+        if (!customerResponse.ok) {
+          if (customerResponse.status === 400 && page > 1) break;
+          throw new Error(`WooCommerce clienti ${customerResponse.status}`);
+        }
+        const wooCustomers = await customerResponse.json();
+        for (const customer of wooCustomers) {
+          if (!customerBelongsToAgent(customer.meta_data, profile)) continue;
+          assignedWooCustomerIds.add(Number(customer.id));
+          const email = normalizeIdentity(customer.email || customer.billing?.email);
+          if (email) assignedWooCustomerEmails.add(email);
+        }
+        if (wooCustomers.length < 100) break;
+      }
     }
     const networkResponse = await fetch(
       `${process.env.SUPABASE_URL}/functions/v1/network-management`,
@@ -68,10 +98,18 @@ export default async function handler(request, response) {
     const orders = wooOrders
       .filter((order) => {
         const email = order.billing?.email?.toLowerCase() || '';
-        const agentProfileId = (order.meta_data || []).find((meta) => meta.key === '_odr_agent_profile_id')?.value;
+        const meta = order.meta_data || [];
+        const agentProfileId = meta.find((item) => item.key === '_odr_agent_profile_id')?.value;
+        const agentEntityId = meta.find((item) => item.key === '_odr_agent_entity_id')?.value;
         return profile.role === 'admin'
           || email === profile.email?.toLowerCase()
-          || (profile.role === 'agent' && (agentCustomerEmails.has(email) || agentProfileId === profile.id));
+          || (profile.role === 'agent' && (
+            agentCustomerEmails.has(email)
+            || agentProfileId === profile.id
+            || agentEntityId === profile.network_entity_id
+            || assignedWooCustomerIds.has(Number(order.customer_id))
+            || assignedWooCustomerEmails.has(email)
+          ));
       })
       .map((order) => {
         const email = order.billing?.email?.toLowerCase() || '';
