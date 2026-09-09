@@ -23,8 +23,10 @@ const normalizeIdentity = (value) => String(value || '').trim().replace(/\s+/g, 
 
 function customerBelongsToAgent(metadata, profile) {
   const assignedAgentId = (metadata || []).find((item) => item?.key === 'agente_wp_user_id')?.value;
-  return Boolean(profile.wordpress_user_id)
-    && Number(assignedAgentId) === Number(profile.wordpress_user_id);
+  if (profile.wordpress_user_id && Number(assignedAgentId) === Number(profile.wordpress_user_id)) return true;
+  const assignedAgent = (metadata || []).find((item) => item?.key === 'nome_agente')?.value;
+  return Boolean(profile.full_name)
+    && normalizeIdentity(assignedAgent) === normalizeIdentity(profile.full_name);
 }
 
 export default async function handler(request, response) {
@@ -167,6 +169,7 @@ export default async function handler(request, response) {
           commissionRate,
           agentEarning,
           items: (order.line_items || []).map((line) => ({
+            productId: Number(line.product_id) || 0,
             name: line.name || 'Prodotto',
             quantity: Number(line.quantity) || 0,
             total: Number(line.total) || 0,

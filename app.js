@@ -75,7 +75,111 @@ function byId(id) {
 }
 
 function money(value) {
-  return value.toLocaleString('it-IT', { style: 'currency', currency: 'EUR' });
+  return Number(value || 0).toLocaleString('it-IT', { style: 'currency', currency: 'EUR' });
+}
+
+const dashboardMonthFormatter = new Intl.DateTimeFormat('it-IT', { month: 'short' });
+
+function dashboardOrderPaidAmount(order) {
+  if (order.paymentStatus === 'paid') return Number(order.amount) || 0;
+  return (order.installments || []).reduce((sum, item) => sum + (item.paid ? Number(item.amount) || 0 : 0), 0);
+}
+
+function dashboardPeriodStart(period) {
+  const now = new Date();
+  if (period === 'all') return null;
+  if (period === 'year') return new Date(now.getFullYear(), 0, 1);
+  const start = new Date(now);
+  start.setDate(start.getDate() - Number(period || 365));
+  return start;
+}
+
+function dashboardFilteredOrders() {
+  const start = dashboardPeriodStart(byId('admin-dashboard-period')?.value || '365');
+  return reportOrders.filter((order) => {
+    if (['cancelled', 'failed', 'refunded', 'trash'].includes(String(order.status).toLowerCase())) return false;
+    return !start || new Date(`${order.date}T00:00:00`) >= start;
+  });
+}
+
+function dashboardBarRows(rows, valueFormatter = money) {
+  const maximum = Math.max(...rows.map((row) => row.value), 1);
+  return rows.length ? rows.map((row) => `
+    <div class="dashboard-bar-row">
+      <div><span>${escapeHtml(row.label)}</span><strong>${escapeHtml(valueFormatter(row.value))}</strong></div>
+      <div class="dashboard-bar-track"><i style="width:${Math.max(4, (row.value / maximum) * 100)}%"></i></div>
+    </div>`).join('') : '<div class="dashboard-empty">Nessun dato disponibile nel periodo.</div>';
+}
+
+function renderAdminSalesChart(orders) {
+  const months = [];
+  const now = new Date();
+  for (let offset = 11; offset >= 0; offset -= 1) {
+    const date = new Date(now.getFullYear(), now.getMonth() - offset, 1);
+    months.push({ key: `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`, label: dashboardMonthFormatter.format(date).replace('.', ''), value: 0 });
+  }
+  orders.forEach((order) => {
+    const month = months.find((item) => item.key === String(order.date).slice(0, 7));
+    if (month) month.value += Number(order.amount) || 0;
+  });
+  const width = 720; const height = 220; const insetX = 30; const insetY = 22;
+  const max = Math.max(...months.map((item) => item.value), 1);
+  const points = months.map((item, index) => ({ ...item, x: insetX + (index * (width - insetX * 2)) / 11, y: height - insetY - ((item.value / max) * (height - insetY * 2)) }));
+  const area = `${insetX},${height - insetY} ${points.map((item) => `${item.x},${item.y}`).join(' ')} ${width - insetX},${height - insetY}`;
+  byId('admin-sales-chart').innerHTML = `<svg viewBox="0 0 ${width} ${height}" role="img" aria-label="Andamento vendite ultimi dodici mesi"><defs><linearGradient id="salesFill" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#58735c" stop-opacity=".32"/><stop offset="1" stop-color="#58735c" stop-opacity=".02"/></linearGradient></defs><line x1="${insetX}" y1="${height - insetY}" x2="${width - insetX}" y2="${height - insetY}" class="dashboard-axis"/><polygon points="${area}" fill="url(#salesFill)"/><polyline points="${points.map((item) => `${item.x},${item.y}`).join(' ')}" class="dashboard-line"/>${points.map((item) => `<circle cx="${item.x}" cy="${item.y}" r="4" class="dashboard-point"><title>${item.label}: ${money(item.value)}</title></circle><text x="${item.x}" y="${height - 4}" text-anchor="middle">${item.label}</text>`).join('')}</svg>`;
+}
+
+function renderAdminDashboard() {
+  if (currentUser?.role !== 'admin' || !byId('admin-dashboard')) return;
+  const orders = dashboardFilteredOrders();
+  const total = orders.reduce((sum, order) => sum + (Number(order.amount) || 0), 0);
+  const paid = orders.reduce((sum, order) => sum + dashboardOrderPaidAmount(order), 0);
+  const unpaid = Math.max(0, total - paid);
+  const commissions = orders.reduce((sum, order) => sum + (Number(order.agentEarning) || 0), 0);
+  const customerKeys = new Set(orders.map((order) => String(order.customerEmail || order.customer).toLowerCase()).filter(Boolean));
+  const earliestOrder = new Map();
+  reportOrders.forEach((order) => {
+    const key = String(order.customerEmail || order.customer).toLowerCase();
+    if (key && (!earliestOrder.has(key) || order.date < earliestOrder.get(key))) earliestOrder.set(key, order.date);
+  });
+  const start = dashboardPeriodStart(byId('admin-dashboard-period')?.value || '365');
+  const newCustomers = [...customerKeys].filter((key) => !start || new Date(`${earliestOrder.get(key)}T00:00:00`) >= start).length;
+  const today = new Date().toISOString().slice(0, 10);
+  const overdue = orders.flatMap((order) => order.installments || []).filter((item) => !item.paid && item.dueDate < today).length;
+  byId('admin-kpi-revenue').textContent = money(total);
+  byId('admin-kpi-orders').textContent = orders.length.toLocaleString('it-IT');
+  byId('admin-kpi-order-average').textContent = `valore medio ${money(orders.length ? total / orders.length : 0)}`;
+  byId('admin-kpi-customers').textContent = customerKeys.size.toLocaleString('it-IT');
+  byId('admin-kpi-new-customers').textContent = `${newCustomers} nuovi nel periodo`;
+  byId('admin-kpi-paid').textContent = money(paid);
+  byId('admin-kpi-paid-rate').textContent = `${total ? Math.round((paid / total) * 100) : 0}% del fatturato`;
+  byId('admin-kpi-unpaid').textContent = money(unpaid);
+  byId('admin-kpi-overdue').textContent = `${overdue} rate scadute`;
+  byId('admin-kpi-commissions').textContent = money(commissions);
+  byId('admin-sales-total').textContent = money(total);
+  renderAdminSalesChart(orders);
+
+  const paidRate = total ? Math.min(100, (paid / total) * 100) : 0;
+  byId('admin-payment-chart').innerHTML = `<div class="dashboard-donut" style="--paid:${paidRate.toFixed(1)}%"><div><strong>${Math.round(paidRate)}%</strong><span>incassato</span></div></div><div class="dashboard-legend"><span><i></i>Incassato <b>${money(paid)}</b></span><span><i class="unpaid"></i>Da incassare <b>${money(unpaid)}</b></span></div>`;
+
+  const products = new Map(); const categories = new Map(); const agents = new Map();
+  orders.forEach((order) => {
+    if (order.agent) agents.set(order.agent, (agents.get(order.agent) || 0) + Number(order.amount || 0));
+    (order.items || []).forEach((item) => {
+      const quantity = Number(item.quantity) || 0;
+      products.set(item.name, (products.get(item.name) || 0) + quantity);
+      const product = shopProducts.find((entry) => Number(entry.id) === Number(item.productId)) || shopProducts.find((entry) => entry.name === item.name);
+      const category = product?.categories?.find((entry) => !/promo/i.test(`${entry.slug} ${entry.name}`))?.name || 'Altri';
+      categories.set(category, (categories.get(category) || 0) + quantity);
+    });
+  });
+  const topRows = (map, limit = 5) => [...map.entries()].map(([label, value]) => ({ label, value })).sort((a, b) => b.value - a.value).slice(0, limit);
+  byId('admin-products-chart').innerHTML = dashboardBarRows(topRows(products), (value) => `${value} pz`);
+  byId('admin-category-chart').innerHTML = dashboardBarRows(topRows(categories, 7), (value) => `${value} pz`);
+  byId('admin-agents-chart').innerHTML = dashboardBarRows(topRows(agents));
+
+  const deadlines = orders.flatMap((order) => (order.installments || []).filter((item) => !item.paid).map((item) => ({ ...item, order }))).sort((a, b) => a.dueDate.localeCompare(b.dueDate)).slice(0, 6);
+  byId('admin-deadlines').innerHTML = deadlines.length ? deadlines.map(({ order, ...item }) => `<div class="dashboard-deadline ${item.dueDate < today ? 'overdue' : ''}"><span><b>${escapeHtml(order.id)}</b><small>${escapeHtml(order.customer)}</small></span><strong>${money(item.amount)}</strong><time>${new Date(`${item.dueDate}T00:00:00`).toLocaleDateString('it-IT')}</time></div>`).join('') : '<div class="dashboard-empty">Nessuna scadenza aperta nel periodo.</div>';
 }
 
 function escapeHtml(value) {
@@ -566,6 +670,7 @@ async function loadShop() {
     renderShopCategories();
     renderShopProducts();
     renderShopCart();
+    renderAdminDashboard();
     loadShopAddress();
     if (shopCoupon && shopCart.length) applyShopCoupon({ silent: true });
     byId('shop-intro').textContent =
@@ -842,6 +947,7 @@ async function loadWooOrders() {
   renderOrders();
   renderNetwork();
   updateMetrics();
+  renderAdminDashboard();
   byId('report-message').textContent = `${reportOrders.length} ordini WooCommerce caricati.`;
 }
 
@@ -1241,6 +1347,9 @@ function applyModuleVisibility(rows) {
   byId('agent-customers')?.classList.toggle('module-denied', !agentCustomerAllowed);
   byId('agent-customers-nav')?.classList.toggle('hidden', !agentCustomerAllowed);
   byId('metric-network-card')?.classList.toggle('hidden', role === 'agent');
+  byId('admin-dashboard')?.classList.toggle('hidden', role !== 'admin');
+  byId('admin-dashboard-period-wrap')?.classList.toggle('hidden', role !== 'admin');
+  byId('role-dashboard-metrics')?.classList.toggle('hidden', role === 'admin');
   if (byId('dashboard-intro')) {
     byId('dashboard-intro').textContent = role === 'agent'
       ? 'Controllo rapido di clienti, ordini e vendite WooCommerce.'
@@ -2070,6 +2179,8 @@ byId('report-payment').addEventListener('change', renderOrders);
 byId('report-date-from').addEventListener('change', renderOrders);
 byId('report-date-to').addEventListener('change', renderOrders);
 byId('refresh-report').addEventListener('click', loadWooOrders);
+byId('admin-dashboard-period').addEventListener('change', renderAdminDashboard);
+byId('admin-open-orders').addEventListener('click', () => showRoute('reports', { push: true }));
 byId('orders-table').addEventListener('click', (event) => {
   const button = event.target.closest('[data-order-payment]');
   if (button) registerOrderPayment(button);

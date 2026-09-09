@@ -10,9 +10,8 @@
     <section id="auth-screen" class="auth-screen">
       <div class="auth-visual">
         <img src="/odr-logo.svg" alt="ODR" />
-        <p>Accesso convenzionato</p>
+        <p>Area riservata</p>
         <h1>ODR</h1>
-        <span>Codice paziente, promozioni e acquisto su WooCommerce in un flusso unico.</span>
       </div>
 
       <div class="auth-panel">
@@ -28,7 +27,12 @@
           </label>
           <label>
             Password
-            <input id="login-password" type="password" autocomplete="current-password" required />
+            <span class="password-field">
+              <input id="login-password" type="password" autocomplete="current-password" required />
+              <button id="toggle-login-password" class="password-toggle" type="button" aria-label="Mostra password" aria-pressed="false">
+                <svg aria-hidden="true" viewBox="0 0 24 24"><path d="M2.5 12s3.5-6 9.5-6 9.5 6 9.5 6-3.5 6-9.5 6-9.5-6-9.5-6Z"/><circle cx="12" cy="12" r="2.8"/></svg>
+              </button>
+            </span>
           </label>
           <button class="primary-action full" type="submit">Entra in ODR</button>
         </form>
@@ -47,10 +51,12 @@
           <label>
             Email
             <input id="register-email" type="email" autocomplete="email" required />
+            <small>Se hai già un account WordPress, usa esattamente la stessa email.</small>
           </label>
           <label>
-            Password
+            Password dell’app ODR
             <input id="register-password" type="password" minlength="8" autocomplete="new-password" required />
+            <small>È indipendente dalla password WordPress e servirà per entrare nell’app.</small>
           </label>
           <label>
             Telefono
@@ -64,6 +70,7 @@
               <option value="agent">Agente</option>
               <option value="distributor">Distributore</option>
             </select>
+            <small>Se l’email è già presente su WordPress, verrà utilizzato il ruolo associato.</small>
           </label>
           <label>
             Codice fornito dall'ospedale (facoltativo)
@@ -76,7 +83,7 @@
           <button class="primary-action full" type="submit">Crea profilo</button>
         </form>
 
-        <div id="auth-message" class="auth-message">Accedi oppure crea il tuo profilo ODR.</div>
+        <div id="auth-message" class="auth-message"></div>
       </div>
     </section>
 
@@ -94,9 +101,10 @@
           <a href="/shop" data-route="shop">Shop</a>
           <a href="/profilo" data-route="profile">Profilo</a>
           <a href="/codici" data-route="access">Codici</a>
+          <a id="agent-customers-nav" class="hidden" href="/clienti" data-route="agent-customers">Gestione clienti</a>
           <a href="/promozioni" data-route="promotions">Promozioni</a>
           <a href="/rete" data-route="network">Rete</a>
-          <a href="/report" data-route="reports">Report</a>
+          <a href="/ordini" data-route="reports">Ordini</a>
           <a id="admin-users-nav" class="hidden" href="/utenti" data-route="admin-users">Gestione utenti</a>
           <a href="/permessi" data-route="permissions">Permessi</a>
           <a href="/impostazioni" data-route="setup">Impostazioni</a>
@@ -138,10 +146,20 @@
           <div class="section-heading">
             <div>
               <h2>Dashboard</h2>
-              <p>Controllo rapido di codici, rete commerciale e vendite lette da WooCommerce.</p>
+              <p id="dashboard-intro">Controllo rapido di codici, rete commerciale e vendite lette da WooCommerce.</p>
             </div>
+            <label id="admin-dashboard-period-wrap" class="dashboard-period hidden">
+              <span>Periodo</span>
+              <select id="admin-dashboard-period" aria-label="Periodo dashboard">
+                <option value="30">Ultimi 30 giorni</option>
+                <option value="90">Ultimi 90 giorni</option>
+                <option value="365" selected>Ultimi 12 mesi</option>
+                <option value="year">Anno corrente</option>
+                <option value="all">Tutto il periodo</option>
+              </select>
+            </label>
           </div>
-          <div class="metrics">
+          <div id="role-dashboard-metrics" class="metrics">
             <div class="metric">
               <span>Vendite WooCommerce</span>
               <strong id="metric-revenue">€ 0,00</strong>
@@ -152,7 +170,7 @@
               <strong id="metric-codes">0</strong>
               <small>convenzioni utilizzabili</small>
             </div>
-            <div class="metric">
+            <div id="metric-network-card" class="metric">
               <span>Rete attiva</span>
               <strong id="metric-network">0</strong>
               <small>distributori, agenti, centri</small>
@@ -161,6 +179,24 @@
               <span>Ruolo corrente</span>
               <strong id="metric-role">Amministratore</strong>
               <small id="metric-email">-</small>
+            </div>
+          </div>
+          <div id="admin-dashboard" class="admin-dashboard hidden">
+            <div class="admin-kpis">
+              <article class="admin-kpi"><span>Fatturato</span><strong id="admin-kpi-revenue">0,00 €</strong><small>nel periodo selezionato</small></article>
+              <article class="admin-kpi"><span>Ordini</span><strong id="admin-kpi-orders">0</strong><small id="admin-kpi-order-average">valore medio 0,00 €</small></article>
+              <article class="admin-kpi"><span>Clienti con ordini</span><strong id="admin-kpi-customers">0</strong><small id="admin-kpi-new-customers">0 nuovi nel periodo</small></article>
+              <article class="admin-kpi admin-kpi-positive"><span>Incassato</span><strong id="admin-kpi-paid">0,00 €</strong><small id="admin-kpi-paid-rate">0% del fatturato</small></article>
+              <article class="admin-kpi admin-kpi-warning"><span>Da incassare</span><strong id="admin-kpi-unpaid">0,00 €</strong><small id="admin-kpi-overdue">0 rate scadute</small></article>
+              <article class="admin-kpi"><span>Provvigioni maturate</span><strong id="admin-kpi-commissions">0,00 €</strong><small>su ordini incassati</small></article>
+            </div>
+            <div class="admin-dashboard-grid">
+              <article class="dashboard-card dashboard-card-wide"><div class="dashboard-card-heading"><div><span>Vendite</span><h3>Andamento mensile</h3></div><strong id="admin-sales-total">0,00 €</strong></div><div id="admin-sales-chart" class="dashboard-chart"></div></article>
+              <article class="dashboard-card"><div class="dashboard-card-heading"><div><span>Incassi</span><h3>Stato pagamenti</h3></div></div><div id="admin-payment-chart" class="dashboard-donut-wrap"></div></article>
+              <article class="dashboard-card"><div class="dashboard-card-heading"><div><span>Catalogo</span><h3>Vendite per categoria</h3></div></div><div id="admin-category-chart" class="dashboard-bars"></div></article>
+              <article class="dashboard-card"><div class="dashboard-card-heading"><div><span>Prodotti</span><h3>Top 5 prodotti</h3></div></div><div id="admin-products-chart" class="dashboard-bars"></div></article>
+              <article class="dashboard-card"><div class="dashboard-card-heading"><div><span>Rete commerciale</span><h3>Performance agenti</h3></div></div><div id="admin-agents-chart" class="dashboard-bars"></div></article>
+              <article class="dashboard-card dashboard-card-wide"><div class="dashboard-card-heading"><div><span>Pagamenti</span><h3>Prossime scadenze</h3></div><button id="admin-open-orders" class="secondary-action" type="button">Vedi tutti gli ordini</button></div><div id="admin-deadlines" class="dashboard-deadlines"></div></article>
             </div>
           </div>
         </section>
@@ -180,6 +216,15 @@
             <div><span>Stato</span><strong id="profile-status">-</strong></div>
             <div><span>ID WordPress</span><strong id="profile-wordpress-id">Non collegato</strong></div>
           </div>
+          <form id="change-password-form" class="change-password-card">
+            <div class="change-password-heading"><span class="change-password-icon">•••</span><div><h3>Cambia password</h3><p>Aggiorna la password utilizzata per accedere all’app ODR.</p></div></div>
+            <div class="change-password-grid">
+              <label>Password attuale <span class="password-field"><input id="current-password" type="password" autocomplete="current-password" required /><button class="password-toggle" type="button" data-password-toggle="current-password" aria-label="Mostra password">◉</button></span></label>
+              <label>Nuova password <span class="password-field"><input id="new-password" type="password" minlength="8" autocomplete="new-password" required /><button class="password-toggle" type="button" data-password-toggle="new-password" aria-label="Mostra password">◉</button></span></label>
+              <label>Conferma nuova password <span class="password-field"><input id="confirm-new-password" type="password" minlength="8" autocomplete="new-password" required /><button class="password-toggle" type="button" data-password-toggle="confirm-new-password" aria-label="Mostra password">◉</button></span></label>
+            </div>
+            <div class="change-password-actions"><button class="primary-action" type="submit">Aggiorna password</button><span id="change-password-message"></span></div>
+          </form>
         </section>
 
         <section id="shop" class="workspace shop-workspace route-screen">
@@ -198,10 +243,9 @@
               <span>Cerca</span>
               <input id="shop-search" type="search" placeholder="Nome prodotto o codice SKU" />
             </label>
-            <div id="shop-categories" class="shop-categories" aria-label="Filtra per categoria"></div>
-            <label class="shop-sale-filter">
-              <input id="shop-sale-only" type="checkbox" />
-              <span>Solo promozioni</span>
+            <label class="shop-category-filter" for="shop-categories">
+              <span>Categoria</span>
+              <select id="shop-categories" aria-label="Filtra i prodotti per categoria"></select>
             </label>
           </div>
           <div id="shop-message" class="auth-message">Caricamento del tuo listino...</div>
@@ -211,7 +255,10 @@
                 <p class="eyebrow">Il tuo ordine</p>
                 <h3>Carrello</h3>
               </div>
-              <button id="shop-cart-close" class="icon-button" type="button" aria-label="Chiudi carrello">Chiudi</button>
+              <div class="shop-cart-top-actions">
+                <button id="shop-continue-shopping-top" class="secondary-action" type="button">Continua gli acquisti</button>
+                <button id="shop-cart-close" class="icon-button" type="button" aria-label="Chiudi carrello">Chiudi</button>
+              </div>
             </div>
             <div id="shop-cart-items" class="shop-cart-items"></div>
             <div class="shop-coupon">
@@ -338,6 +385,70 @@
           </div>
         </section>
 
+        <section id="agent-customers" class="workspace route-screen module-denied">
+          <div class="section-heading">
+            <div>
+              <p class="eyebrow">Ordini per conto dei centri</p>
+              <h2>Gestione clienti</h2>
+            </div>
+            <button id="new-agent-customer" class="primary-action" type="button">Aggiungi cliente</button>
+          </div>
+          <div id="agent-customer-message" class="auth-message">Caricamento clienti...</div>
+          <form id="agent-customer-form" class="admin-form hidden">
+            <div class="agent-customer-form-heading">
+              <span>＋</span>
+              <div><strong>Nuovo cliente</strong><small>Inserisci i dati del centro: saranno salvati nell’archivio dell’app ODR.</small></div>
+            </div>
+            <div class="form-grid">
+              <label>Nome centro / cliente <input id="agent-customer-name" required maxlength="250" /></label>
+              <label>Ragione sociale <input id="agent-customer-company" maxlength="250" /></label>
+              <label>Email <input id="agent-customer-email" type="email" required maxlength="200" /></label>
+              <label>Telefono <input id="agent-customer-phone" maxlength="60" /></label>
+              <label class="wide agent-customer-wide">Indirizzo <input id="agent-customer-address" maxlength="160" /></label>
+              <label>CAP <input id="agent-customer-postcode" maxlength="20" /></label>
+              <label>Città <input id="agent-customer-city" maxlength="100" /></label>
+              <label>Provincia <input id="agent-customer-state" maxlength="2" /></label>
+            </div>
+            <button id="toggle-agent-customer-extra" class="customer-extra-toggle" type="button"><span>＋</span> Aggiungi dati fiscali, spedizione e pagamenti</button>
+            <div id="agent-customer-extra" class="customer-extra hidden">
+              <h3>Dati fiscali</h3>
+              <div class="form-grid">
+                <label>Codice fiscale <input id="agent-customer-tax-code" maxlength="32" /></label>
+                <label>Partita IVA <input id="agent-customer-vat" maxlength="32" /></label>
+                <label>PEC <input id="agent-customer-pec" type="email" maxlength="200" /></label>
+                <label>Codice SDI <input id="agent-customer-sdi" maxlength="20" /></label>
+              </div>
+              <h3>Indirizzo di spedizione <small>(se diverso)</small></h3>
+              <div class="form-grid">
+                <label>Destinatario <input id="agent-customer-shipping-name" maxlength="250" /></label>
+                <label>Azienda <input id="agent-customer-shipping-company" maxlength="250" /></label>
+                <label class="wide agent-customer-wide">Indirizzo <input id="agent-customer-shipping-address" maxlength="160" /></label>
+                <label>CAP <input id="agent-customer-shipping-postcode" maxlength="20" /></label>
+                <label>Città <input id="agent-customer-shipping-city" maxlength="100" /></label>
+                <label>Provincia <input id="agent-customer-shipping-state" maxlength="2" /></label>
+              </div>
+              <h3>Condizioni di pagamento</h3>
+              <div class="payment-terms">
+                <label><input type="checkbox" name="agent-payment-term" value="30" checked /> 30 giorni</label>
+                <label><input type="checkbox" name="agent-payment-term" value="60" /> 60 giorni</label>
+                <label><input type="checkbox" name="agent-payment-term" value="90" /> 90 giorni</label>
+                <label><input type="checkbox" name="agent-payment-term" value="120" /> 120 giorni</label>
+              </div>
+              <label class="customer-notes">Altre informazioni <textarea id="agent-customer-notes" rows="3" maxlength="1000"></textarea></label>
+            </div>
+            <div class="action-row">
+              <button class="primary-action" type="submit">Salva cliente</button><input id="agent-customer-edit-id" type="hidden" />
+              <button id="cancel-agent-customer" class="secondary-action" type="button">Annulla</button>
+            </div>
+          </form>
+          <div id="agent-selected-customer" class="agent-selected-customer hidden"></div>
+          <label class="agent-customer-search">
+            <span>Cerca cliente</span>
+            <input id="agent-customer-search" type="search" placeholder="Cerca per nome, azienda, email o telefono" autocomplete="off" />
+          </label>
+          <div id="agent-customer-list" class="agent-customer-grid"></div>
+        </section>
+
         <section id="promotions" class="workspace route-screen">
           <div class="section-heading">
             <div>
@@ -428,7 +539,7 @@
           </div>
 
           <div class="table-wrap">
-            <table>
+            <table class="orders-table">
               <thead>
                 <tr>
                   <th>Tipo</th>
@@ -436,9 +547,11 @@
                   <th>Zona</th>
                   <th>Collegato a</th>
                   <th>Provvigione</th>
+                  <th>Fatturato</th>
+                  <th>Guadagno agente</th>
                   <th>Contatto</th>
                   <th>Account ODR</th>
-                  <th>Stato</th>
+                  <th>Stato WP</th>
                   <th></th>
                 </tr>
               </thead>
@@ -482,8 +595,8 @@
         <section id="reports" class="workspace route-screen">
           <div class="section-heading">
             <div>
-              <h2>Report vendite</h2>
-              <p>Ordini WooCommerce collegati a coupon, agenti, distributori e centri.</p>
+              <h2>Ordini</h2>
+              <p>Tutti gli ordini WooCommerce visibili per il tuo ruolo, con ricerca e filtri.</p>
             </div>
             <div class="action-row">
               <label class="secondary-action">
@@ -508,6 +621,7 @@
             <select id="report-payment">
               <option value="">Pagati e non pagati</option>
               <option value="paid">Pagati</option>
+              <option value="partial">Parzialmente pagati</option>
               <option value="unpaid">Non pagati</option>
             </select>
             <label>Dal <input id="report-date-from" type="date" /></label>
@@ -520,7 +634,7 @@
             <table>
               <thead>
                 <tr>
-                  <th>Ordine</th>
+                  <th>Cod. ordine</th>
                   <th>Data</th>
                   <th>Cliente</th>
                   <th>Coupon</th>
@@ -528,10 +642,8 @@
                   <th>Distributore</th>
                   <th>Centro</th>
                   <th>Importo</th>
-                  <th>Pagamento</th>
-                  <th>Imponibile provvigione</th>
-                  <th>Guadagno agente</th>
                   <th>Stato</th>
+                  <th>Dettagli</th>
                 </tr>
               </thead>
               <tbody id="orders-table"></tbody>
