@@ -3,7 +3,7 @@
  * L'autenticazione usa le stesse chiavi REST WooCommerce della webapp.
  */
 add_action( 'rest_api_init', function () {
-    register_rest_route( 'odr/v1', '/agent-customers', array(
+    register_rest_route( 'wc/v3', '/odr-agent-customers', array(
         'methods'             => WP_REST_Server::READABLE,
         'permission_callback' => function () {
             return current_user_can( 'manage_woocommerce' );
