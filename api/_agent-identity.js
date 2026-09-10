@@ -33,32 +33,39 @@ export async function getAgentIdentity(profile) {
     ? { apikey: serviceRoleKey, Authorization: `Bearer ${serviceRoleKey}` }
     : profile.headers;
 
-  const requests = [];
-  if (profile.network_entity_id) {
-    const entityUrl = new URL('/rest/v1/network_entities', base);
-    entityUrl.searchParams.set('id', `eq.${profile.network_entity_id}`);
-    entityUrl.searchParams.set('select', 'name,email,external_code');
-    requests.push(fetchRows(entityUrl, lookupHeaders));
-  } else {
-    requests.push(Promise.resolve([]));
-  }
-
-  const accountUrl = new URL('/rest/v1/wordpress_accounts', base);
-  accountUrl.searchParams.set('connected_profile_id', `eq.${profile.id}`);
-  accountUrl.searchParams.set('select', 'wordpress_user_id,email,full_name');
-  requests.push(fetchRows(accountUrl, lookupHeaders));
-
-  const [entities, wordpressAccounts] = await Promise.all(requests);
-  for (const entity of entities) {
-    addName(entity.name);
-    addEmail(entity.email);
-    const externalMatch = String(entity.external_code || '').match(/^WP-(\d+)$/i);
-    if (externalMatch) addWordPressId(externalMatch[1]);
-  }
+  const linkedAccountUrl = new URL('/rest/v1/wordpress_accounts', base);
+  linkedAccountUrl.searchParams.set('connected_profile_id', `eq.${profile.id}`);
+  linkedAccountUrl.searchParams.set('select', 'wordpress_user_id,email,full_name');
+  const emailAccountUrl = new URL('/rest/v1/wordpress_accounts', base);
+  emailAccountUrl.searchParams.set('email', `ilike.${profile.email}`);
+  emailAccountUrl.searchParams.set('select', 'wordpress_user_id,email,full_name');
+  const accountRows = await Promise.all([
+    fetchRows(linkedAccountUrl, lookupHeaders),
+    profile.email ? fetchRows(emailAccountUrl, lookupHeaders) : Promise.resolve([]),
+  ]);
+  const wordpressAccounts = [...new Map(accountRows.flat()
+    .map((account) => [Number(account.wordpress_user_id), account])).values()];
   for (const account of wordpressAccounts) {
     addName(account.full_name);
     addEmail(account.email);
     addWordPressId(account.wordpress_user_id);
+  }
+
+  const entityUrl = new URL('/rest/v1/network_entities', base);
+  entityUrl.searchParams.set('type', 'eq.agent');
+  entityUrl.searchParams.set('active', 'eq.true');
+  entityUrl.searchParams.set('select', 'id,name,email,external_code');
+  const entities = await fetchRows(entityUrl, lookupHeaders);
+  for (const entity of entities) {
+    const externalMatch = String(entity.external_code || '').match(/^WP-(\d+)$/i);
+    const matchesProfile = entity.id === profile.network_entity_id
+      || emails.has(normalizeIdentity(entity.email))
+      || names.has(normalizeIdentity(entity.name))
+      || (externalMatch && wordpressUserIds.has(Number(externalMatch[1])));
+    if (!matchesProfile) continue;
+    addName(entity.name);
+    addEmail(entity.email);
+    if (externalMatch) addWordPressId(externalMatch[1]);
   }
 
   return { names, emails, wordpressUserIds };
