@@ -129,13 +129,41 @@ function renderAdminSalesChart(orders) {
   byId('admin-sales-chart').innerHTML = `<svg viewBox="0 0 ${width} ${height}" role="img" aria-label="Andamento vendite ultimi dodici mesi"><defs><linearGradient id="salesFill" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#58735c" stop-opacity=".32"/><stop offset="1" stop-color="#58735c" stop-opacity=".02"/></linearGradient></defs><line x1="${insetX}" y1="${height - insetY}" x2="${width - insetX}" y2="${height - insetY}" class="dashboard-axis"/><polygon points="${area}" fill="url(#salesFill)"/><polyline points="${points.map((item) => `${item.x},${item.y}`).join(' ')}" class="dashboard-line"/>${points.map((item) => `<circle cx="${item.x}" cy="${item.y}" r="4" class="dashboard-point"><title>${item.label}: ${money(item.value)}</title></circle><text x="${item.x}" y="${height - 4}" text-anchor="middle">${item.label}</text>`).join('')}</svg>`;
 }
 
+const dashboardAreaProvinces = {
+  'Nord Ovest': new Set(['AO', 'AL', 'AT', 'BI', 'CN', 'NO', 'TO', 'VB', 'VC', 'BG', 'BS', 'CO', 'CR', 'LC', 'LO', 'MB', 'MI', 'MN', 'PV', 'SO', 'VA', 'GE', 'IM', 'SP', 'SV']),
+  'Nord Est': new Set(['BZ', 'TN', 'BL', 'PD', 'RO', 'TV', 'VE', 'VR', 'VI', 'BO', 'FC', 'FE', 'MO', 'PC', 'PR', 'RA', 'RE', 'RN', 'GO', 'PN', 'TS', 'UD']),
+  Centro: new Set(['AR', 'FI', 'GR', 'LI', 'LU', 'MS', 'PI', 'PO', 'PT', 'SI', 'AN', 'AP', 'FM', 'MC', 'PU', 'FR', 'LT', 'RI', 'RM', 'VT', 'PG', 'TR']),
+  Sud: new Set(['AQ', 'CH', 'PE', 'TE', 'CB', 'IS', 'AV', 'BN', 'CE', 'NA', 'SA', 'BA', 'BR', 'BT', 'FG', 'LE', 'TA', 'MT', 'PZ', 'CZ', 'CS', 'KR', 'RC', 'VV']),
+  Isole: new Set(['AG', 'CL', 'CT', 'EN', 'ME', 'PA', 'RG', 'SR', 'TP', 'CA', 'NU', 'OR', 'SS', 'SU']),
+};
+
+function dashboardOrderPieces(order) {
+  return (order.items || []).reduce((sum, item) => sum + (Number(item.quantity) || 0), 0);
+}
+
+function dashboardOrderArea(order) {
+  const province = String(order.shippingState || order.shippingAddress?.split(',').at(-1) || '').trim().toUpperCase();
+  return Object.entries(dashboardAreaProvinces).find(([, provinces]) => provinces.has(province))?.[0] || 'Non definita';
+}
+
+function renderItalyChart(orders) {
+  const areas = new Map(['Nord Ovest', 'Nord Est', 'Centro', 'Sud', 'Isole', 'Non definita'].map((label) => [label, 0]));
+  orders.forEach((order) => areas.set(dashboardOrderArea(order), (areas.get(dashboardOrderArea(order)) || 0) + Number(order.amount || 0)));
+  const total = [...areas.values()].reduce((sum, value) => sum + value, 0);
+  const rows = [...areas.entries()].filter(([, value]) => value > 0 || areas.size <= 1);
+  byId('admin-italy-chart').innerHTML = `
+    <svg class="italy-silhouette" viewBox="0 0 170 250" role="img" aria-label="Mappa schematica delle vendite in Italia">
+      <path d="M45 15 L94 17 L124 37 L108 57 L91 65 L98 87 L122 105 L112 125 L129 146 L118 164 L137 183 L125 199 L103 181 L91 157 L72 143 L64 118 L48 101 L53 77 L34 58 L25 37 Z" />
+      <path d="M108 208 L151 215 L141 232 L109 229 L91 217 Z" />
+      <path d="M49 179 L63 189 L58 222 L44 234 L36 214 Z" />
+    </svg>
+    <div class="dashboard-area-list">${rows.length ? rows.map(([label, value]) => `<span><i></i>${escapeHtml(label)}<b>${total ? Math.round((value / total) * 100) : 0}%</b><small>${money(value)}</small></span>`).join('') : '<div class="dashboard-empty">Nessuna area disponibile.</div>'}</div>`;
+}
+
 function renderAdminDashboard() {
   if (currentUser?.role !== 'admin' || !byId('admin-dashboard')) return;
   const orders = dashboardFilteredOrders();
   const total = orders.reduce((sum, order) => sum + (Number(order.amount) || 0), 0);
-  const paid = orders.reduce((sum, order) => sum + dashboardOrderPaidAmount(order), 0);
-  const unpaid = Math.max(0, total - paid);
-  const commissions = orders.reduce((sum, order) => sum + (Number(order.agentEarning) || 0), 0);
   const customerKeys = new Set(orders.map((order) => String(order.customerEmail || order.customer).toLowerCase()).filter(Boolean));
   const earliestOrder = new Map();
   reportOrders.forEach((order) => {
@@ -144,27 +172,39 @@ function renderAdminDashboard() {
   });
   const start = dashboardPeriodStart(byId('admin-dashboard-period')?.value || '365');
   const newCustomers = [...customerKeys].filter((key) => !start || new Date(`${earliestOrder.get(key)}T00:00:00`) >= start).length;
+  const orderCountByCustomer = new Map();
+  orders.forEach((order) => {
+    const key = String(order.customerEmail || order.customer).toLowerCase();
+    if (key) orderCountByCustomer.set(key, (orderCountByCustomer.get(key) || 0) + 1);
+  });
+  const repeatCustomers = [...orderCountByCustomer.values()].filter((count) => count > 1).length;
+  const pendingOrders = orders.filter((order) => ['pending', 'on-hold'].includes(String(order.status).toLowerCase()));
+  const workingOrders = orders.filter((order) => ['processing'].includes(String(order.status).toLowerCase()));
+  const summarizeOrders = (rows) => ({ pieces: rows.reduce((sum, order) => sum + dashboardOrderPieces(order), 0), amount: rows.reduce((sum, order) => sum + Number(order.amount || 0), 0) });
+  const pendingSummary = summarizeOrders(pendingOrders);
+  const workingSummary = summarizeOrders(workingOrders);
+  const distributorRevenue = orders.filter((order) => order.distributor).reduce((sum, order) => sum + Number(order.amount || 0), 0);
+  const agentRevenue = orders.filter((order) => order.agent).reduce((sum, order) => sum + Number(order.amount || 0), 0);
   const today = new Date().toISOString().slice(0, 10);
-  const overdue = orders.flatMap((order) => order.installments || []).filter((item) => !item.paid && item.dueDate < today).length;
   byId('admin-kpi-revenue').textContent = money(total);
-  byId('admin-kpi-orders').textContent = orders.length.toLocaleString('it-IT');
-  byId('admin-kpi-order-average').textContent = `valore medio ${money(orders.length ? total / orders.length : 0)}`;
-  byId('admin-kpi-customers').textContent = customerKeys.size.toLocaleString('it-IT');
-  byId('admin-kpi-new-customers').textContent = `${newCustomers} nuovi nel periodo`;
-  byId('admin-kpi-paid').textContent = money(paid);
-  byId('admin-kpi-paid-rate').textContent = `${total ? Math.round((paid / total) * 100) : 0}% del fatturato`;
-  byId('admin-kpi-unpaid').textContent = money(unpaid);
-  byId('admin-kpi-overdue').textContent = `${overdue} rate scadute`;
-  byId('admin-kpi-commissions').textContent = money(commissions);
+  byId('admin-kpi-pending').textContent = pendingOrders.length.toLocaleString('it-IT');
+  byId('admin-kpi-pending-detail').textContent = `${pendingSummary.pieces} pezzi · ${money(pendingSummary.amount)}`;
+  byId('admin-kpi-working').textContent = workingOrders.length.toLocaleString('it-IT');
+  byId('admin-kpi-working-detail').textContent = `${workingSummary.pieces} pezzi · ${money(workingSummary.amount)}`;
+  byId('admin-kpi-network-revenue').textContent = money(distributorRevenue + agentRevenue);
+  byId('admin-kpi-network-split').textContent = `Distributori ${money(distributorRevenue)} · Agenti ${money(agentRevenue)}`;
+  byId('admin-kpi-new-customer-count').textContent = newCustomers.toLocaleString('it-IT');
+  byId('admin-kpi-customers').textContent = `${customerKeys.size} clienti nel periodo`;
+  byId('admin-kpi-repeat-customers').textContent = repeatCustomers.toLocaleString('it-IT');
   byId('admin-sales-total').textContent = money(total);
   renderAdminSalesChart(orders);
+  renderItalyChart(orders);
 
-  const paidRate = total ? Math.min(100, (paid / total) * 100) : 0;
-  byId('admin-payment-chart').innerHTML = `<div class="dashboard-donut" style="--paid:${paidRate.toFixed(1)}%"><div><strong>${Math.round(paidRate)}%</strong><span>incassato</span></div></div><div class="dashboard-legend"><span><i></i>Incassato <b>${money(paid)}</b></span><span><i class="unpaid"></i>Da incassare <b>${money(unpaid)}</b></span></div>`;
-
-  const products = new Map(); const categories = new Map(); const agents = new Map();
+  const products = new Map(); const categories = new Map(); const agents = new Map(); const promotionSales = new Map();
   orders.forEach((order) => {
-    if (order.agent) agents.set(order.agent, (agents.get(order.agent) || 0) + Number(order.amount || 0));
+    const channel = order.agent ? `Agente · ${order.agent}` : order.distributor ? `Distributore · ${order.distributor}` : 'Vendita diretta';
+    agents.set(channel, (agents.get(channel) || 0) + Number(order.amount || 0));
+    if (order.coupon) order.coupon.split(',').map((value) => value.trim()).filter(Boolean).forEach((coupon) => promotionSales.set(coupon, (promotionSales.get(coupon) || 0) + Number(order.amount || 0)));
     (order.items || []).forEach((item) => {
       const quantity = Number(item.quantity) || 0;
       products.set(item.name, (products.get(item.name) || 0) + quantity);
@@ -176,6 +216,7 @@ function renderAdminDashboard() {
   const topRows = (map, limit = 5) => [...map.entries()].map(([label, value]) => ({ label, value })).sort((a, b) => b.value - a.value).slice(0, limit);
   byId('admin-products-chart').innerHTML = dashboardBarRows(topRows(products), (value) => `${value} pz`);
   byId('admin-category-chart').innerHTML = dashboardBarRows(topRows(categories, 7), (value) => `${value} pz`);
+  byId('admin-promotions-chart').innerHTML = dashboardBarRows(topRows(promotionSales));
   byId('admin-agents-chart').innerHTML = dashboardBarRows(topRows(agents));
 
   const deadlines = orders.flatMap((order) => (order.installments || []).filter((item) => !item.paid).map((item) => ({ ...item, order }))).sort((a, b) => a.dueDate.localeCompare(b.dueDate)).slice(0, 6);

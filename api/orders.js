@@ -180,6 +180,9 @@ export default async function handler(request, response) {
             order.shipping?.city || order.billing?.city,
             order.shipping?.state || order.billing?.state,
           ].filter(Boolean).join(', '),
+          shippingCity: order.shipping?.city || order.billing?.city || '',
+          shippingState: order.shipping?.state || order.billing?.state || '',
+          shippingCountry: order.shipping?.country || order.billing?.country || 'IT',
           paymentMethod: order.payment_method_title || '',
         };
       });

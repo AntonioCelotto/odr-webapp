@@ -160,22 +160,26 @@
             </label>
           </div>
           <div id="role-dashboard-metrics" class="metrics">
-            <div class="metric">
+            <div class="metric metric-visual">
+              <span class="metric-icon" aria-hidden="true">€</span>
               <span>Vendite WooCommerce</span>
               <strong id="metric-revenue">€ 0,00</strong>
               <small>ordini WooCommerce aggiornati</small>
             </div>
-            <div class="metric">
+            <div class="metric metric-visual">
+              <span class="metric-icon" aria-hidden="true">◇</span>
               <span>Codici attivi</span>
               <strong id="metric-codes">0</strong>
               <small>convenzioni utilizzabili</small>
             </div>
-            <div id="metric-network-card" class="metric">
+            <div id="metric-network-card" class="metric metric-visual">
+              <span class="metric-icon" aria-hidden="true">◎</span>
               <span>Rete attiva</span>
               <strong id="metric-network">0</strong>
               <small>distributori, agenti, centri</small>
             </div>
-            <div class="metric">
+            <div class="metric metric-visual">
+              <span class="metric-icon" aria-hidden="true">○</span>
               <span>Ruolo corrente</span>
               <strong id="metric-role">Amministratore</strong>
               <small id="metric-email">-</small>
@@ -183,19 +187,20 @@
           </div>
           <div id="admin-dashboard" class="admin-dashboard hidden">
             <div class="admin-kpis">
-              <article class="admin-kpi"><span>Fatturato</span><strong id="admin-kpi-revenue">0,00 €</strong><small>nel periodo selezionato</small></article>
-              <article class="admin-kpi"><span>Ordini</span><strong id="admin-kpi-orders">0</strong><small id="admin-kpi-order-average">valore medio 0,00 €</small></article>
-              <article class="admin-kpi"><span>Clienti con ordini</span><strong id="admin-kpi-customers">0</strong><small id="admin-kpi-new-customers">0 nuovi nel periodo</small></article>
-              <article class="admin-kpi admin-kpi-positive"><span>Incassato</span><strong id="admin-kpi-paid">0,00 €</strong><small id="admin-kpi-paid-rate">0% del fatturato</small></article>
-              <article class="admin-kpi admin-kpi-warning"><span>Da incassare</span><strong id="admin-kpi-unpaid">0,00 €</strong><small id="admin-kpi-overdue">0 rate scadute</small></article>
-              <article class="admin-kpi"><span>Provvigioni maturate</span><strong id="admin-kpi-commissions">0,00 €</strong><small>su ordini incassati</small></article>
+              <article class="admin-kpi"><span>Totale fatturato</span><strong id="admin-kpi-revenue">0,00 €</strong><small>nel periodo selezionato</small></article>
+              <article class="admin-kpi admin-kpi-warning"><span>Ordini in attesa</span><strong id="admin-kpi-pending">0</strong><small id="admin-kpi-pending-detail">0 pezzi · 0,00 €</small></article>
+              <article class="admin-kpi admin-kpi-positive"><span>Ordini in lavorazione</span><strong id="admin-kpi-working">0</strong><small id="admin-kpi-working-detail">0 pezzi · 0,00 €</small></article>
+              <article class="admin-kpi"><span>Fatturato rete</span><strong id="admin-kpi-network-revenue">0,00 €</strong><small id="admin-kpi-network-split">Distributori 0,00 € · Agenti 0,00 €</small></article>
+              <article class="admin-kpi"><span>Nuovi clienti</span><strong id="admin-kpi-new-customer-count">0</strong><small id="admin-kpi-customers">0 clienti nel periodo</small></article>
+              <article class="admin-kpi"><span>Clienti con riordino</span><strong id="admin-kpi-repeat-customers">0</strong><small>almeno due ordini effettuati</small></article>
             </div>
             <div class="admin-dashboard-grid">
               <article class="dashboard-card dashboard-card-wide"><div class="dashboard-card-heading"><div><span>Vendite</span><h3>Andamento mensile</h3></div><strong id="admin-sales-total">0,00 €</strong></div><div id="admin-sales-chart" class="dashboard-chart"></div></article>
-              <article class="dashboard-card"><div class="dashboard-card-heading"><div><span>Incassi</span><h3>Stato pagamenti</h3></div></div><div id="admin-payment-chart" class="dashboard-donut-wrap"></div></article>
+              <article class="dashboard-card"><div class="dashboard-card-heading"><div><span>Territorio</span><h3>Vendite in Italia</h3></div></div><div id="admin-italy-chart" class="dashboard-italy"></div></article>
               <article class="dashboard-card"><div class="dashboard-card-heading"><div><span>Catalogo</span><h3>Vendite per categoria</h3></div></div><div id="admin-category-chart" class="dashboard-bars"></div></article>
-              <article class="dashboard-card"><div class="dashboard-card-heading"><div><span>Prodotti</span><h3>Top 5 prodotti</h3></div></div><div id="admin-products-chart" class="dashboard-bars"></div></article>
-              <article class="dashboard-card"><div class="dashboard-card-heading"><div><span>Rete commerciale</span><h3>Performance agenti</h3></div></div><div id="admin-agents-chart" class="dashboard-bars"></div></article>
+              <article class="dashboard-card"><div class="dashboard-card-heading"><div><span>Promozioni</span><h3>Vendite promozionali</h3></div></div><div id="admin-promotions-chart" class="dashboard-bars"></div></article>
+              <article class="dashboard-card"><div class="dashboard-card-heading"><div><span>Prodotti</span><h3>Vendite per prodotto</h3></div></div><div id="admin-products-chart" class="dashboard-bars"></div></article>
+              <article class="dashboard-card"><div class="dashboard-card-heading"><div><span>Canali</span><h3>Agenti e distributori</h3></div></div><div id="admin-agents-chart" class="dashboard-bars"></div></article>
               <article class="dashboard-card dashboard-card-wide"><div class="dashboard-card-heading"><div><span>Pagamenti</span><h3>Prossime scadenze</h3></div><button id="admin-open-orders" class="secondary-action" type="button">Vedi tutti gli ordini</button></div><div id="admin-deadlines" class="dashboard-deadlines"></div></article>
             </div>
           </div>
