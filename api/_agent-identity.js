@@ -1,3 +1,5 @@
+import { Buffer } from 'node:buffer';
+
 const normalizeIdentity = (value) => String(value || '').trim().replace(/\s+/g, ' ').toLowerCase();
 
 async function fetchRows(url, headers) {
@@ -82,11 +84,10 @@ export async function getWordPressAgentCustomers(profile) {
     return { customerIds, customerEmails };
   }
 
-  const url = new URL('/wp-json/odr/v1/agent-customers', store);
+  const url = new URL('/wp-json/wc/v3/odr-agent-customers', store);
   url.searchParams.set('agent_id', String(wordpressUserId));
-  url.searchParams.set('consumer_key', key);
-  url.searchParams.set('consumer_secret', secret);
-  const response = await fetch(url, { cache: 'no-store' });
+  const authorization = `Basic ${Buffer.from(`${key}:${secret}`).toString('base64')}`;
+  const response = await fetch(url, { headers: { Authorization: authorization }, cache: 'no-store' });
   if (!response.ok) return { customerIds, customerEmails };
   const payload = await response.json();
   for (const customer of payload.customers || []) {
