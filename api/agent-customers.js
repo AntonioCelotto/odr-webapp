@@ -1,5 +1,5 @@
 import { Buffer } from 'node:buffer';
-import { customerBelongsToAgent, getAgentIdentity, normalizeIdentity } from './_agent-identity.js';
+import { customerBelongsToAgent, getAgentIdentity, getWordPressAgentCustomers, normalizeIdentity } from './_agent-identity.js';
 
 function json(res, status, body) {
   res.status(status);
@@ -92,6 +92,11 @@ export default async function handler(req, res) {
       const assignedWooCustomerIds = new Set();
       const assignedWooCustomerEmails = new Set();
       const agentIdentity = profile.role === 'agent' ? await getAgentIdentity(profile) : null;
+      const wordpressAssignments = profile.role === 'agent'
+        ? await getWordPressAgentCustomers(profile)
+        : { customerIds: new Set(), customerEmails: new Set() };
+      wordpressAssignments.customerIds.forEach((id) => assignedWooCustomerIds.add(id));
+      wordpressAssignments.customerEmails.forEach((email) => assignedWooCustomerEmails.add(email));
       const appUrl = new URL('/rest/v1/agent_app_customers', base);
       appUrl.searchParams.set('agent_profile_id', `eq.${profile.id}`);
       appUrl.searchParams.set('active', 'eq.true');
@@ -145,7 +150,10 @@ export default async function handler(req, res) {
           }
           const wooCustomers = await customerResult.json();
           for (const customer of wooCustomers) {
-            if (!customerBelongsToAgent(customer.meta_data, agentIdentity)) continue;
+            const customerEmail = normalizeIdentity(customer.email || customer.billing?.email);
+            const assignedByWordPress = assignedWooCustomerIds.has(Number(customer.id))
+              || assignedWooCustomerEmails.has(customerEmail);
+            if (!assignedByWordPress && !customerBelongsToAgent(customer.meta_data, agentIdentity)) continue;
             const card = wooCustomerCard(customer);
             assignedWooCustomerIds.add(Number(customer.id));
             if (card.email) assignedWooCustomerEmails.add(card.email);
