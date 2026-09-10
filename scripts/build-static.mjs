@@ -1,7 +1,7 @@
 import { build } from 'esbuild';
 import { cp, mkdir, rm, copyFile, readFile, writeFile } from 'node:fs/promises';
 
-const requiredFiles = ['index.html', 'styles.css', 'app.js', 'odr-logo.svg', 'auth-molecule-bg.webp'];
+const requiredFiles = ['index.html', 'styles.css', 'app.js', 'odr-logo.svg', 'auth-molecule-bg.webp', 'italy-map.svg'];
 const outputDirectories = ['dist', 'public'];
 const appRouteFiles = [
   'dashboard',
@@ -39,7 +39,7 @@ for (const directory of outputDirectories) {
   await rm(directory, { recursive: true, force: true });
   await mkdir(directory, { recursive: true });
 
-  for (const file of ['index.html', 'styles.css', 'odr-logo.svg', 'auth-molecule-bg.webp']) {
+  for (const file of ['index.html', 'styles.css', 'odr-logo.svg', 'auth-molecule-bg.webp', 'italy-map.svg']) {
     await copyFile(file, `${directory}/${file}`);
   }
   await cp('product-images', `${directory}/product-images`, { recursive: true });

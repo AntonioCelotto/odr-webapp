@@ -152,11 +152,7 @@ function renderItalyChart(orders) {
   const total = [...areas.values()].reduce((sum, value) => sum + value, 0);
   const rows = [...areas.entries()].filter(([, value]) => value > 0 || areas.size <= 1);
   byId('admin-italy-chart').innerHTML = `
-    <svg class="italy-silhouette" viewBox="0 0 170 250" role="img" aria-label="Mappa schematica delle vendite in Italia">
-      <path d="M45 15 L94 17 L124 37 L108 57 L91 65 L98 87 L122 105 L112 125 L129 146 L118 164 L137 183 L125 199 L103 181 L91 157 L72 143 L64 118 L48 101 L53 77 L34 58 L25 37 Z" />
-      <path d="M108 208 L151 215 L141 232 L109 229 L91 217 Z" />
-      <path d="M49 179 L63 189 L58 222 L44 234 L36 214 Z" />
-    </svg>
+    <div class="italy-map-wrap"><img class="italy-silhouette" src="/italy-map.svg" alt="Cartina geografica dell'Italia" /><small>Cartina: Wikimedia Commons, CC BY-SA 3.0</small></div>
     <div class="dashboard-area-list">${rows.length ? rows.map(([label, value]) => `<span><i></i>${escapeHtml(label)}<b>${total ? Math.round((value / total) * 100) : 0}%</b><small>${money(value)}</small></span>`).join('') : '<div class="dashboard-empty">Nessuna area disponibile.</div>'}</div>`;
 }
 
@@ -183,16 +179,15 @@ function renderAdminDashboard() {
   const summarizeOrders = (rows) => ({ pieces: rows.reduce((sum, order) => sum + dashboardOrderPieces(order), 0), amount: rows.reduce((sum, order) => sum + Number(order.amount || 0), 0) });
   const pendingSummary = summarizeOrders(pendingOrders);
   const workingSummary = summarizeOrders(workingOrders);
-  const distributorRevenue = orders.filter((order) => order.distributor).reduce((sum, order) => sum + Number(order.amount || 0), 0);
+  const distributorRevenue = orders.filter((order) => !order.agent && order.distributor).reduce((sum, order) => sum + Number(order.amount || 0), 0);
   const agentRevenue = orders.filter((order) => order.agent).reduce((sum, order) => sum + Number(order.amount || 0), 0);
-  const today = new Date().toISOString().slice(0, 10);
   byId('admin-kpi-revenue').textContent = money(total);
   byId('admin-kpi-pending').textContent = pendingOrders.length.toLocaleString('it-IT');
   byId('admin-kpi-pending-detail').textContent = `${pendingSummary.pieces} pezzi · ${money(pendingSummary.amount)}`;
   byId('admin-kpi-working').textContent = workingOrders.length.toLocaleString('it-IT');
   byId('admin-kpi-working-detail').textContent = `${workingSummary.pieces} pezzi · ${money(workingSummary.amount)}`;
-  byId('admin-kpi-network-revenue').textContent = money(distributorRevenue + agentRevenue);
-  byId('admin-kpi-network-split').textContent = `Distributori ${money(distributorRevenue)} · Agenti ${money(agentRevenue)}`;
+  byId('admin-kpi-distributor-revenue').textContent = money(distributorRevenue);
+  byId('admin-kpi-agent-revenue').textContent = money(agentRevenue);
   byId('admin-kpi-new-customer-count').textContent = newCustomers.toLocaleString('it-IT');
   byId('admin-kpi-customers').textContent = `${customerKeys.size} clienti nel periodo`;
   byId('admin-kpi-repeat-customers').textContent = repeatCustomers.toLocaleString('it-IT');
@@ -200,27 +195,27 @@ function renderAdminDashboard() {
   renderAdminSalesChart(orders);
   renderItalyChart(orders);
 
-  const products = new Map(); const categories = new Map(); const agents = new Map(); const promotionSales = new Map();
+  const products = new Map(); const categories = new Map(); const channels = new Map(); const promotionSales = new Map();
   orders.forEach((order) => {
-    const channel = order.agent ? `Agente · ${order.agent}` : order.distributor ? `Distributore · ${order.distributor}` : 'Vendita diretta';
-    agents.set(channel, (agents.get(channel) || 0) + Number(order.amount || 0));
-    if (order.coupon) order.coupon.split(',').map((value) => value.trim()).filter(Boolean).forEach((coupon) => promotionSales.set(coupon, (promotionSales.get(coupon) || 0) + Number(order.amount || 0)));
+    const channel = order.agent ? `Agente · ${order.agent}` : order.distributor ? `Distributore · ${order.distributor}` : 'Non associato alla rete';
+    channels.set(channel, (channels.get(channel) || 0) + Number(order.amount || 0));
     (order.items || []).forEach((item) => {
       const quantity = Number(item.quantity) || 0;
       products.set(item.name, (products.get(item.name) || 0) + quantity);
       const product = shopProducts.find((entry) => Number(entry.id) === Number(item.productId)) || shopProducts.find((entry) => entry.name === item.name);
       const category = product?.categories?.find((entry) => !/promo/i.test(`${entry.slug} ${entry.name}`))?.name || 'Altri';
       categories.set(category, (categories.get(category) || 0) + quantity);
+      const isPromotion = /promo|pacchett/i.test(item.name) || product?.categories?.some((entry) => /promo|pacchett/i.test(`${entry.slug} ${entry.name}`));
+      if (isPromotion) promotionSales.set(item.name, (promotionSales.get(item.name) || 0) + quantity);
     });
   });
   const topRows = (map, limit = 5) => [...map.entries()].map(([label, value]) => ({ label, value })).sort((a, b) => b.value - a.value).slice(0, limit);
   byId('admin-products-chart').innerHTML = dashboardBarRows(topRows(products), (value) => `${value} pz`);
   byId('admin-category-chart').innerHTML = dashboardBarRows(topRows(categories, 7), (value) => `${value} pz`);
-  byId('admin-promotions-chart').innerHTML = dashboardBarRows(topRows(promotionSales));
-  byId('admin-agents-chart').innerHTML = dashboardBarRows(topRows(agents));
-
-  const deadlines = orders.flatMap((order) => (order.installments || []).filter((item) => !item.paid).map((item) => ({ ...item, order }))).sort((a, b) => a.dueDate.localeCompare(b.dueDate)).slice(0, 6);
-  byId('admin-deadlines').innerHTML = deadlines.length ? deadlines.map(({ order, ...item }) => `<div class="dashboard-deadline ${item.dueDate < today ? 'overdue' : ''}"><span><b>${escapeHtml(order.id)}</b><small>${escapeHtml(order.customer)}</small></span><strong>${money(item.amount)}</strong><time>${new Date(`${item.dueDate}T00:00:00`).toLocaleDateString('it-IT')}</time></div>`).join('') : '<div class="dashboard-empty">Nessuna scadenza aperta nel periodo.</div>';
+  byId('admin-promotions-chart').innerHTML = dashboardBarRows(topRows(promotionSales), (value) => `${value} pz`);
+  byId('admin-agents-chart').innerHTML = dashboardBarRows(topRows(channels));
+  const channelTotal = [...channels.values()].reduce((sum, value) => sum + value, 0);
+  byId('admin-channel-total').textContent = `Totale canali ${money(channelTotal)} · ${Math.abs(channelTotal - total) < 0.01 ? 'corrisponde al fatturato totale' : 'da verificare'}`;
 }
 
 function escapeHtml(value) {
@@ -2221,7 +2216,6 @@ byId('report-date-from').addEventListener('change', renderOrders);
 byId('report-date-to').addEventListener('change', renderOrders);
 byId('refresh-report').addEventListener('click', loadWooOrders);
 byId('admin-dashboard-period').addEventListener('change', renderAdminDashboard);
-byId('admin-open-orders').addEventListener('click', () => showRoute('reports', { push: true }));
 byId('orders-table').addEventListener('click', (event) => {
   const button = event.target.closest('[data-order-payment]');
   if (button) registerOrderPayment(button);
