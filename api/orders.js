@@ -1,4 +1,5 @@
 import { Buffer } from 'node:buffer';
+import { customerBelongsToAgent, getAgentIdentity, normalizeIdentity } from './_agent-identity.js';
 
 function json(response, status, body) {
   response.status(status);
@@ -17,16 +18,6 @@ async function getProfile(token) {
   const profileResponse = await fetch(`${base}/rest/v1/profiles?id=eq.${user.id}&select=id,email,full_name,role,approval_status,network_entity_id,wordpress_user_id`, { headers });
   const [profile] = profileResponse.ok ? await profileResponse.json() : [];
   return profile?.approval_status === 'approved' ? { ...profile, email: user.email, headers } : null;
-}
-
-const normalizeIdentity = (value) => String(value || '').trim().replace(/\s+/g, ' ').toLowerCase();
-
-function customerBelongsToAgent(metadata, profile) {
-  const assignedAgentId = (metadata || []).find((item) => item?.key === 'agente_wp_user_id')?.value;
-  if (profile.wordpress_user_id && Number(assignedAgentId) === Number(profile.wordpress_user_id)) return true;
-  const assignedAgent = (metadata || []).find((item) => item?.key === 'nome_agente')?.value;
-  return Boolean(profile.full_name)
-    && normalizeIdentity(assignedAgent) === normalizeIdentity(profile.full_name);
 }
 
 export default async function handler(request, response) {
@@ -56,6 +47,7 @@ export default async function handler(request, response) {
     const assignedWooCustomerEmails = new Set();
     const wooCustomerAgentsById = new Map();
     const wooCustomerAgentsByEmail = new Map();
+    const agentIdentity = profile.role === 'agent' ? await getAgentIdentity(profile) : null;
     if (['agent', 'admin'].includes(profile.role)) {
       for (let page = 1; page <= 10; page += 1) {
         const customerUrl = new URL('/wp-json/wc/v3/customers', process.env.WOOCOMMERCE_STORE_URL);
@@ -76,7 +68,7 @@ export default async function handler(request, response) {
             wooCustomerAgentsById.set(Number(customer.id), assignment);
             if (email) wooCustomerAgentsByEmail.set(email, assignment);
           }
-          if (profile.role === 'agent' && customerBelongsToAgent(customer.meta_data, profile)) {
+          if (profile.role === 'agent' && customerBelongsToAgent(customer.meta_data, agentIdentity)) {
             assignedWooCustomerIds.add(Number(customer.id));
             if (email) assignedWooCustomerEmails.add(email);
           }

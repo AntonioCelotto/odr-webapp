@@ -1,4 +1,5 @@
 import { Buffer } from 'node:buffer';
+import { customerBelongsToAgent, getAgentIdentity, normalizeIdentity } from './_agent-identity.js';
 
 function json(res, status, body) {
   res.status(status);
@@ -30,16 +31,6 @@ function wooHeaders() {
   const secret = process.env.WOOCOMMERCE_CONSUMER_SECRET;
   if (!key || !secret) throw new Error('WooCommerce non configurato');
   return { Authorization: `Basic ${Buffer.from(`${key}:${secret}`).toString('base64')}` };
-}
-
-const normalizeIdentity = (value) => String(value || '').trim().replace(/\s+/g, ' ').toLowerCase();
-
-function customerBelongsToAgent(metadata, profile) {
-  const assignedAgentId = (metadata || []).find((item) => item?.key === 'agente_wp_user_id')?.value;
-  if (profile.wordpress_user_id && Number(assignedAgentId) === Number(profile.wordpress_user_id)) return true;
-  const assignedAgent = (metadata || []).find((item) => item?.key === 'nome_agente')?.value;
-  return Boolean(profile.full_name)
-    && normalizeIdentity(assignedAgent) === normalizeIdentity(profile.full_name);
 }
 
 function wooCustomerCard(customer) {
@@ -100,6 +91,7 @@ export default async function handler(req, res) {
       const customers = new Map();
       const assignedWooCustomerIds = new Set();
       const assignedWooCustomerEmails = new Set();
+      const agentIdentity = profile.role === 'agent' ? await getAgentIdentity(profile) : null;
       const appUrl = new URL('/rest/v1/agent_app_customers', base);
       appUrl.searchParams.set('agent_profile_id', `eq.${profile.id}`);
       appUrl.searchParams.set('active', 'eq.true');
@@ -153,7 +145,7 @@ export default async function handler(req, res) {
           }
           const wooCustomers = await customerResult.json();
           for (const customer of wooCustomers) {
-            if (!customerBelongsToAgent(customer.meta_data, profile)) continue;
+            if (!customerBelongsToAgent(customer.meta_data, agentIdentity)) continue;
             const card = wooCustomerCard(customer);
             assignedWooCustomerIds.add(Number(customer.id));
             if (card.email) assignedWooCustomerEmails.add(card.email);
