@@ -173,7 +173,7 @@ export default async function handler(request, response) {
           amount: Number(order.total) || 0,
           coupon: order.coupon_lines?.map((coupon) => coupon.code).join(', ') || '',
           center: entity?.type === 'center' ? entity.name : '',
-          agent: agentEntity?.name || '',
+          agent: agentEntity?.name || wooCustomerAgent?.name || '',
           agentEntityId: agentEntity?.id || orderAgentEntityId,
           distributor: entity?.type === 'distributor'
             ? entity.name
