@@ -71,6 +71,33 @@ export async function getAgentIdentity(profile) {
   return { names, emails, wordpressUserIds };
 }
 
+export async function getWordPressAgentCustomers(profile) {
+  const customerIds = new Set();
+  const customerEmails = new Set();
+  const wordpressUserId = Number(profile?.wordpress_user_id);
+  const store = process.env.WOOCOMMERCE_STORE_URL;
+  const key = process.env.WOOCOMMERCE_CONSUMER_KEY;
+  const secret = process.env.WOOCOMMERCE_CONSUMER_SECRET;
+  if (!store || !key || !secret || !Number.isInteger(wordpressUserId) || wordpressUserId <= 0) {
+    return { customerIds, customerEmails };
+  }
+
+  const url = new URL('/wp-json/odr/v1/agent-customers', store);
+  url.searchParams.set('agent_id', String(wordpressUserId));
+  url.searchParams.set('consumer_key', key);
+  url.searchParams.set('consumer_secret', secret);
+  const response = await fetch(url, { cache: 'no-store' });
+  if (!response.ok) return { customerIds, customerEmails };
+  const payload = await response.json();
+  for (const customer of payload.customers || []) {
+    const id = Number(customer.id);
+    if (Number.isInteger(id) && id > 0) customerIds.add(id);
+    const email = normalizeIdentity(customer.email);
+    if (email) customerEmails.add(email);
+  }
+  return { customerIds, customerEmails };
+}
+
 export function customerBelongsToAgent(metadata, identity) {
   const values = new Map((metadata || []).map((item) => [String(item?.key || ''), item?.value]));
   const assignedAgentId = values.get('agente_wp_user_id');
