@@ -1,5 +1,5 @@
 import { Buffer } from 'node:buffer';
-import { customerBelongsToAgent, getAgentIdentity, normalizeIdentity } from './_agent-identity.js';
+import { customerBelongsToAgent, getAgentIdentity, getWordPressAgentCustomers, normalizeIdentity } from './_agent-identity.js';
 
 function json(response, status, body) {
   response.status(status);
@@ -48,6 +48,11 @@ export default async function handler(request, response) {
     const wooCustomerAgentsById = new Map();
     const wooCustomerAgentsByEmail = new Map();
     const agentIdentity = profile.role === 'agent' ? await getAgentIdentity(profile) : null;
+    const wordpressAssignments = profile.role === 'agent'
+      ? await getWordPressAgentCustomers(profile)
+      : { customerIds: new Set(), customerEmails: new Set() };
+    wordpressAssignments.customerIds.forEach((id) => assignedWooCustomerIds.add(id));
+    wordpressAssignments.customerEmails.forEach((email) => assignedWooCustomerEmails.add(email));
     if (['agent', 'admin'].includes(profile.role)) {
       for (let page = 1; page <= 10; page += 1) {
         const customerUrl = new URL('/wp-json/wc/v3/customers', process.env.WOOCOMMERCE_STORE_URL);
