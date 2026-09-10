@@ -54,7 +54,9 @@ export default async function handler(request, response) {
     }
     const assignedWooCustomerIds = new Set();
     const assignedWooCustomerEmails = new Set();
-    if (profile.role === 'agent') {
+    const wooCustomerAgentsById = new Map();
+    const wooCustomerAgentsByEmail = new Map();
+    if (['agent', 'admin'].includes(profile.role)) {
       for (let page = 1; page <= 10; page += 1) {
         const customerUrl = new URL('/wp-json/wc/v3/customers', process.env.WOOCOMMERCE_STORE_URL);
         customerUrl.searchParams.set('per_page', '100');
@@ -66,10 +68,18 @@ export default async function handler(request, response) {
         }
         const wooCustomers = await customerResponse.json();
         for (const customer of wooCustomers) {
-          if (!customerBelongsToAgent(customer.meta_data, profile)) continue;
-          assignedWooCustomerIds.add(Number(customer.id));
           const email = normalizeIdentity(customer.email || customer.billing?.email);
-          if (email) assignedWooCustomerEmails.add(email);
+          const assignedAgentId = (customer.meta_data || []).find((item) => item?.key === 'agente_wp_user_id')?.value;
+          const assignedAgentName = (customer.meta_data || []).find((item) => item?.key === 'nome_agente')?.value;
+          const assignment = { wordpressUserId: Number(assignedAgentId) || 0, name: String(assignedAgentName || '').trim() };
+          if (assignment.wordpressUserId || assignment.name) {
+            wooCustomerAgentsById.set(Number(customer.id), assignment);
+            if (email) wooCustomerAgentsByEmail.set(email, assignment);
+          }
+          if (profile.role === 'agent' && customerBelongsToAgent(customer.meta_data, profile)) {
+            assignedWooCustomerIds.add(Number(customer.id));
+            if (email) assignedWooCustomerEmails.add(email);
+          }
         }
         if (wooCustomers.length < 100) break;
       }
@@ -84,6 +94,12 @@ export default async function handler(request, response) {
     const byEmail = new Map(network
       .filter((entity) => entity.email)
       .map((entity) => [entity.email.toLowerCase(), entity]));
+    const agentsByName = new Map(network
+      .filter((entity) => entity.type === 'agent' && entity.name)
+      .map((entity) => [normalizeIdentity(entity.name), entity]));
+    const agentsByWordPressId = new Map(network
+      .filter((entity) => entity.type === 'agent' && /^WP-\d+$/i.test(entity.external_code || ''))
+      .map((entity) => [Number(String(entity.external_code).slice(3)), entity]));
     const agentCustomerEmails = new Set(profile.role === 'agent' && profile.network_entity_id
       ? network
         .filter((entity) => entity.type === 'center' && entity.parent_id === profile.network_entity_id && entity.email)
@@ -122,9 +138,12 @@ export default async function handler(request, response) {
         const entity = byEmail.get(email);
         const parent = entity?.parent_id ? byId.get(entity.parent_id) : null;
         const grandparent = parent?.parent_id ? byId.get(parent.parent_id) : null;
+        const wooCustomerAgent = wooCustomerAgentsById.get(Number(order.customer_id)) || wooCustomerAgentsByEmail.get(normalizeIdentity(email));
+        const assignedAgentEntity = agentsByWordPressId.get(wooCustomerAgent?.wordpressUserId)
+          || agentsByName.get(normalizeIdentity(wooCustomerAgent?.name));
         const agentEntity = entity?.type === 'agent'
           ? entity
-          : entity?.type === 'center' && parent?.type === 'agent' ? parent : byId.get(orderAgentEntityId) || null;
+          : entity?.type === 'center' && parent?.type === 'agent' ? parent : byId.get(orderAgentEntityId) || assignedAgentEntity || null;
         const commissionBase = (order.line_items || [])
           .reduce((sum, line) => sum + (Number(line.total) || 0), 0);
         const commissionRate = Number(agentEntity?.commission_rate) || 0;
