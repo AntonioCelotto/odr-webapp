@@ -63,6 +63,7 @@ let validatedCode = null;
 let currentUser = null;
 let authBusy = false;
 let shopProducts = [];
+let packageDocuments = [];
 let shopCategory = 'all';
 let shopOpening = false;
 let shopCart = [];
@@ -565,6 +566,36 @@ function renderShopProducts() {
       : '';
     const cartQuantity = shopCart.find((item) => item.productId === product.id)?.quantity || 0;
     const bundleItems = Array.isArray(product.bundleItems) ? product.bundleItems : [];
+    const isPackage = bundleItems.length > 0 || product.categories.some((entry) => (
+      /promo|pacchett/i.test(`${entry.slug} ${entry.name}`)
+    ));
+    const documents = packageDocuments.filter((document) => Number(document.product_id) === Number(product.id));
+    const documentList = documents.length ? documents.map((document) => `
+      <div class="package-document-row">
+        <span class="package-document-icon" aria-hidden="true">PDF</span>
+        <span class="package-document-copy">
+          <strong>${escapeHtml(document.title)}</strong>
+          <small>${escapeHtml(document.file_name)}${document.file_size ? ` · ${(Number(document.file_size) / 1048576).toLocaleString('it-IT', { maximumFractionDigits: 1 })} MB` : ''}</small>
+        </span>
+        <button type="button" class="package-document-download" data-package-document-download="${escapeHtml(document.id)}">Scarica</button>
+        ${currentUser?.role === 'admin' ? `<button type="button" class="package-document-delete" data-package-document-delete="${escapeHtml(document.id)}" aria-label="Elimina ${escapeHtml(document.title)}">Elimina</button>` : ''}
+      </div>`).join('') : '<p class="package-document-empty">Nessun PDF disponibile per questo pacchetto.</p>';
+    const packageMaterials = isPackage && ['admin', 'agent', 'distributor'].includes(currentUser?.role) ? `
+      <details class="package-documents">
+        <summary>${currentUser?.role === 'admin' ? 'Gestisci PDF' : 'Materiali PDF'} <span>${documents.length}</span></summary>
+        <div class="package-document-list">${documentList}</div>
+        ${currentUser?.role === 'admin' ? `
+          <form class="package-document-form" data-package-document-form="${product.id}">
+            <label>Titolo del documento
+              <input type="text" name="title" maxlength="160" placeholder="Es. Scheda tecnica" required />
+            </label>
+            <label>File PDF
+              <input type="file" name="pdf" accept="application/pdf,.pdf" required />
+            </label>
+            <button type="submit">Carica PDF</button>
+            <small data-package-document-message></small>
+          </form>` : ''}
+      </details>` : '';
     const bundleDetails = bundleItems.length ? `
       <details class="product-bundle">
         <summary>Vedi composizione <span>${bundleItems.length} articoli</span></summary>
@@ -590,6 +621,7 @@ function renderShopProducts() {
           <small>${escapeHtml(product.sku || 'Prodotto ODR')}</small>
           <h3>${escapeHtml(product.name)}</h3>
           ${bundleDetails}
+          ${packageMaterials}
           <div class="${priceClass}">${regular}<strong>${productPrice(product)}</strong></div>
           <div class="product-actions product-actions-with-quantity">
             <span class="stock ${product.inStock ? 'ok' : 'off'}">${product.inStock ? 'Disponibile' : 'Esaurito'}</span>
@@ -608,6 +640,108 @@ function renderShopProducts() {
 
   byId('shop-message').classList.toggle('hidden', products.length > 0);
   if (!products.length) byId('shop-message').textContent = 'Nessun prodotto corrisponde ai filtri.';
+}
+
+async function loadPackageDocuments() {
+  if (!supabase || !['admin', 'agent', 'distributor'].includes(currentUser?.role)) {
+    packageDocuments = [];
+    return;
+  }
+  const { data, error } = await supabase
+    .from('package_documents')
+    .select('id,product_id,title,file_name,file_size,storage_path,created_at')
+    .order('created_at', { ascending: true });
+  if (error) throw error;
+  packageDocuments = data || [];
+}
+
+function safePdfName(name) {
+  const normalized = String(name || 'documento.pdf')
+    .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^a-zA-Z0-9._-]+/g, '-')
+    .replace(/-+/g, '-');
+  return normalized.toLowerCase().endsWith('.pdf') ? normalized : `${normalized}.pdf`;
+}
+
+async function uploadPackageDocument(form) {
+  if (currentUser?.role !== 'admin' || !supabase) return;
+  const productId = Number(form.dataset.packageDocumentForm);
+  const file = form.elements.pdf.files?.[0];
+  const title = form.elements.title.value.trim();
+  const message = form.querySelector('[data-package-document-message]');
+  if (!file || !title) return;
+  if (file.type !== 'application/pdf' && !file.name.toLowerCase().endsWith('.pdf')) {
+    message.textContent = 'Seleziona un file PDF valido.';
+    return;
+  }
+  if (file.size > 20 * 1024 * 1024) {
+    message.textContent = 'Il PDF non può superare 20 MB.';
+    return;
+  }
+  const button = form.querySelector('button[type="submit"]');
+  button.disabled = true;
+  message.textContent = 'Caricamento in corso...';
+  const uniqueId = globalThis.crypto?.randomUUID?.() || `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+  const storagePath = `${productId}/${uniqueId}-${safePdfName(file.name)}`;
+  try {
+    const { error: uploadError } = await supabase.storage
+      .from('package-documents')
+      .upload(storagePath, file, { contentType: 'application/pdf', upsert: false });
+    if (uploadError) throw uploadError;
+    const { data: userData } = await supabase.auth.getUser();
+    const { error: insertError } = await supabase.from('package_documents').insert({
+      product_id: productId,
+      title,
+      file_name: file.name,
+      file_size: file.size,
+      storage_path: storagePath,
+      created_by: userData.user?.id,
+    });
+    if (insertError) {
+      await supabase.storage.from('package-documents').remove([storagePath]);
+      throw insertError;
+    }
+    await loadPackageDocuments();
+    renderShopProducts();
+  } catch (error) {
+    message.textContent = error.message || 'Caricamento non riuscito.';
+    button.disabled = false;
+  }
+}
+
+async function downloadPackageDocument(documentId, trigger) {
+  const packageDocument = packageDocuments.find((entry) => entry.id === documentId);
+  if (!packageDocument || !supabase) return;
+  const original = trigger.textContent;
+  trigger.disabled = true;
+  trigger.textContent = 'Apro...';
+  try {
+    const { data, error } = await supabase.storage.from('package-documents').download(packageDocument.storage_path);
+    if (error) throw error;
+    const url = URL.createObjectURL(data);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = packageDocument.file_name || `${packageDocument.title}.pdf`;
+    link.click();
+    window.setTimeout(() => URL.revokeObjectURL(url), 30000);
+  } catch (error) {
+    window.alert(error.message || 'Download non riuscito.');
+  } finally {
+    trigger.disabled = false;
+    trigger.textContent = original;
+  }
+}
+
+async function deletePackageDocument(documentId) {
+  if (currentUser?.role !== 'admin' || !supabase) return;
+  const document = packageDocuments.find((entry) => entry.id === documentId);
+  if (!document || !window.confirm(`Eliminare il PDF “${document.title}”?`)) return;
+  const { error: storageError } = await supabase.storage.from('package-documents').remove([document.storage_path]);
+  if (storageError) return window.alert(storageError.message || 'Eliminazione del file non riuscita.');
+  const { error } = await supabase.from('package_documents').delete().eq('id', document.id);
+  if (error) return window.alert(error.message || 'Eliminazione non riuscita.');
+  await loadPackageDocuments();
+  renderShopProducts();
 }
 
 async function openWooSession(destination, trigger, items = [], coupon = '', options = {}) {
@@ -717,6 +851,7 @@ async function loadShop() {
     const payload = await response.json();
     if (!response.ok) throw new Error(payload.error || 'Catalogo non disponibile');
     shopProducts = payload.products || [];
+    await loadPackageDocuments();
     shopCategory = 'all';
     loadShopCart();
     if (validatedCode?.woo_coupon && !shopCoupon) {
@@ -2242,6 +2377,16 @@ byId('orders-table').addEventListener('click', (event) => {
 });
 byId('shop-search').addEventListener('input', renderShopProducts);
 byId('shop-products').addEventListener('click', (event) => {
+  const downloadButton = event.target.closest('[data-package-document-download]');
+  if (downloadButton) {
+    downloadPackageDocument(downloadButton.dataset.packageDocumentDownload, downloadButton);
+    return;
+  }
+  const deleteButton = event.target.closest('[data-package-document-delete]');
+  if (deleteButton) {
+    deletePackageDocument(deleteButton.dataset.packageDocumentDelete);
+    return;
+  }
   const quantityButton = event.target.closest('[data-product-quantity]');
   if (quantityButton) {
     const productId = Number(quantityButton.dataset.productId);
@@ -2262,6 +2407,12 @@ byId('shop-products').addEventListener('click', (event) => {
   if (!link) return;
   event.preventDefault();
   openWooSession(link.dataset.shopDestination, link);
+});
+byId('shop-products').addEventListener('submit', (event) => {
+  const form = event.target.closest('[data-package-document-form]');
+  if (!form) return;
+  event.preventDefault();
+  uploadPackageDocument(form);
 });
 byId('shop-cart-link').addEventListener('click', (event) => {
   event.preventDefault();
