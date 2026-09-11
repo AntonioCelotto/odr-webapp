@@ -564,12 +564,32 @@ function renderShopProducts() {
       ? `<del>${money(Number(product.regularPrice))}</del>`
       : '';
     const cartQuantity = shopCart.find((item) => item.productId === product.id)?.quantity || 0;
+    const bundleItems = Array.isArray(product.bundleItems) ? product.bundleItems : [];
+    const bundleDetails = bundleItems.length ? `
+      <details class="product-bundle">
+        <summary>Vedi composizione <span>${bundleItems.length} articoli</span></summary>
+        <div class="product-bundle-list">
+          ${bundleItems.map((item) => `
+            <div class="product-bundle-item">
+              ${item.image
+    ? `<img src="${escapeHtml(item.image)}" alt="" loading="lazy" />`
+    : '<span class="product-bundle-placeholder">ODR</span>'}
+              <span class="product-bundle-quantity">${item.quantity}×</span>
+              <span class="product-bundle-copy">
+                <strong>${escapeHtml(item.name)}</strong>
+                <small>${escapeHtml([item.sku, item.audience].filter(Boolean).join(' · '))}</small>
+              </span>
+            </div>
+          `).join('')}
+        </div>
+      </details>` : '';
     return `
       <article class="product-card">
         <div class="product-image">${image}<span>${escapeHtml(category)}</span></div>
         <div class="product-copy">
           <small>${escapeHtml(product.sku || 'Prodotto ODR')}</small>
           <h3>${escapeHtml(product.name)}</h3>
+          ${bundleDetails}
           <div class="${priceClass}">${regular}<strong>${productPrice(product)}</strong></div>
           <div class="product-actions product-actions-with-quantity">
             <span class="stock ${product.inStock ? 'ok' : 'off'}">${product.inStock ? 'Disponibile' : 'Esaurito'}</span>

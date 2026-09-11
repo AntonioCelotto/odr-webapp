@@ -16,6 +16,34 @@ function safeText(value) {
   return String(value || '').replace(/<[^>]*>/g, '').trim();
 }
 
+function bundleRows(product) {
+  const raw = (product.meta_data || []).find((item) => item?.key === 'woosb_ids')?.value;
+  if (!raw) return [];
+  if (Array.isArray(raw)) return raw;
+  if (typeof raw === 'object') return Object.values(raw);
+  if (typeof raw !== 'string') return [];
+
+  try {
+    const parsed = JSON.parse(raw);
+    if (Array.isArray(parsed)) return parsed;
+    if (parsed && typeof parsed === 'object') return Object.values(parsed);
+  } catch {
+    // Older plugin versions used a compact id/key/quantity string.
+  }
+
+  return raw.split(',').map((entry) => {
+    const [id, second, third] = entry.split('/');
+    return { id: Number(id), qty: Number(third ?? second ?? 1) };
+  });
+}
+
+function productAudience(product) {
+  const value = `${product?.name || ''} ${product?.sku || ''}`.toLowerCase();
+  if (value.includes('professional')) return 'Professional';
+  if (value.includes('retail')) return 'Retail';
+  return '';
+}
+
 async function getAuthenticatedProfile(token) {
   const supabaseUrl = process.env.SUPABASE_URL;
   const publishableKey = process.env.SUPABASE_PUBLISHABLE_KEY;
@@ -83,7 +111,9 @@ export default async function handler(request, response) {
     if (!profile) return json(response, 403, { error: 'Profilo non autorizzato' });
 
     const allowed = profile.role === 'admin' ? null : ROLE_CATEGORIES[profile.role] || [];
-    const products = (await getWooProducts())
+    const wooProducts = await getWooProducts();
+    const productsById = new Map(wooProducts.map((product) => [Number(product.id), product]));
+    const products = wooProducts
       .filter((product) => {
         if (!allowed) return true;
         return product.categories?.some((category) => allowed.includes(category.slug));
@@ -108,6 +138,20 @@ export default async function handler(request, response) {
         categories: (product.categories || []).map(({ id, name, slug }) => ({ id, name, slug })),
         permalink: product.permalink,
         shortDescription: safeText(product.short_description),
+        bundleItems: bundleRows(product).map((row) => {
+          const bundledProduct = productsById.get(Number(row?.id));
+          if (!bundledProduct) return null;
+          return {
+            id: Number(bundledProduct.id),
+            quantity: Math.max(0, Number(row?.qty) || 0),
+            name: safeText(bundledProduct.name),
+            sku: safeText(bundledProduct.sku),
+            audience: productAudience(bundledProduct),
+            price: bundledProduct.price,
+            image: bundledProduct.images?.[0]?.src || '',
+            shortDescription: safeText(bundledProduct.short_description),
+          };
+        }).filter((item) => item && item.quantity > 0),
       }));
 
     return json(response, 200, {
