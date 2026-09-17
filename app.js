@@ -295,13 +295,23 @@ function openDashboardDetail(type) {
   const orders = dashboardFilteredOrders();
   const periodLabel = byId('admin-dashboard-period')?.selectedOptions?.[0]?.textContent || 'Periodo selezionato';
   let title = ''; let summary = ''; let headers = ''; let rows = '';
-  if (type === 'pending' || type === 'working') {
+  if (['pending', 'working', 'total-revenue', 'distributor-revenue', 'agent-revenue'].includes(type)) {
     const detailOrders = type === 'pending'
       ? orders.filter((order) => ['pending', 'on-hold'].includes(String(order.status).toLowerCase()))
-      : orders.filter((order) => String(order.status).toLowerCase() === 'processing');
+      : type === 'working'
+        ? orders.filter((order) => String(order.status).toLowerCase() === 'processing')
+        : type === 'distributor-revenue'
+          ? orders.filter((order) => !order.agent && order.distributor)
+          : type === 'agent-revenue'
+            ? orders.filter((order) => order.agent)
+            : orders;
     const pieces = detailOrders.reduce((sum, order) => sum + dashboardOrderPieces(order), 0);
     const amount = detailOrders.reduce((sum, order) => sum + Number(order.amount || 0), 0);
-    title = type === 'pending' ? 'Ordini in attesa' : 'Ordini in lavorazione';
+    title = type === 'pending' ? 'Ordini in attesa'
+      : type === 'working' ? 'Ordini in lavorazione'
+        : type === 'distributor-revenue' ? 'Fatturato distributori'
+          : type === 'agent-revenue' ? 'Fatturato agenti'
+            : 'Totale fatturato';
     summary = `${periodLabel} · ${detailOrders.length} ordini · ${pieces} pezzi · ${money(amount)}`;
     headers = '<tr><th>Ordine</th><th>Data</th><th>Cliente</th><th>Pezzi</th><th>Importo</th><th>Stato</th><th>Canale</th></tr>';
     rows = dashboardOrderDetailRows(detailOrders);
