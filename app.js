@@ -309,6 +309,65 @@ function productCatalogImage(product) {
   return image.toString();
 }
 
+function bundleItemPricing(item) {
+  const unitPrice = Number(item?.price) || 0;
+  const quantity = Math.max(0, Number(item?.quantity) || 0);
+  if (!unitPrice) return '<small>Prezzo del singolo prodotto non disponibile</small>';
+  return `<small>— ${money(unitPrice)} cad. — Totale ${money(unitPrice * quantity)}</small>`;
+}
+
+function openProductDetail(productId) {
+  const product = shopProducts.find((item) => Number(item.id) === Number(productId));
+  const bundleItems = Array.isArray(product?.bundleItems) ? product.bundleItems : [];
+  if (!product || !bundleItems.length) return;
+
+  const imageUrl = productCatalogImage(product);
+  const theoreticalValue = bundleItems.reduce((total, item) => (
+    total + ((Number(item.price) || 0) * (Number(item.quantity) || 0))
+  ), 0);
+  const cartQuantity = shopCart.find((item) => item.productId === product.id)?.quantity || 0;
+  const description = product.description || product.shortDescription || 'Composizione e dettagli del pacchetto promozionale.';
+  byId('product-detail-content').innerHTML = `
+    <div class="product-detail-head">
+      <span>Pacchetto intelligente</span>
+      <button type="button" class="product-detail-close" data-product-detail-close aria-label="Chiudi scheda">×</button>
+    </div>
+    <div class="product-detail-layout">
+      <div class="product-detail-image">
+        ${imageUrl ? `<img src="${escapeHtml(imageUrl)}" alt="${escapeHtml(product.name)}" />` : '<div class="product-placeholder">ODR</div>'}
+      </div>
+      <div class="product-detail-copy">
+        <small>${escapeHtml(product.sku || 'Prodotto ODR')}</small>
+        <h2 id="product-detail-title">${escapeHtml(product.name)}</h2>
+        <p>${escapeHtml(description)}</p>
+        <div class="product-detail-composition">
+          <h3>Composizione del pacchetto</h3>
+          ${bundleItems.map((item) => `
+            <div class="product-detail-item">
+              ${item.image ? `<img src="${escapeHtml(item.image)}" alt="" loading="lazy" />` : '<span class="product-bundle-placeholder">ODR</span>'}
+              <div>
+                <strong>${item.quantity} × ${escapeHtml(item.name)}</strong>
+                ${bundleItemPricing(item)}
+              </div>
+            </div>`).join('')}
+        </div>
+        <div class="product-detail-totals">
+          ${theoreticalValue ? `<p><span>Valore totale dei prodotti</span><strong>${money(theoreticalValue)}</strong></p>` : ''}
+          <p><span>Prezzo pacchetto</span><strong>${productPrice(product)}</strong></p>
+        </div>
+        <div class="product-detail-actions">
+          <span class="stock ${product.inStock ? 'ok' : 'off'}">${product.inStock ? 'Disponibile' : 'Esaurito'}</span>
+          ${product.inStock ? `<div class="product-quantity" aria-label="Quantità ${escapeHtml(product.name)}">
+            <button type="button" data-detail-quantity="decrease" data-product-id="${product.id}" ${cartQuantity < 1 ? 'disabled' : ''} aria-label="Riduci quantità">−</button>
+            <span>${cartQuantity}</span>
+            <button type="button" data-detail-quantity="increase" data-product-id="${product.id}" aria-label="Aumenta quantità">+</button>
+          </div>` : ''}
+        </div>
+      </div>
+    </div>`;
+  if (!byId('product-detail-dialog').open) byId('product-detail-dialog').showModal();
+}
+
 function cartStorageKey() {
   return currentUser?.id ? `odr-cart:${currentUser.id}` : 'odr-cart';
 }
@@ -608,7 +667,7 @@ function renderShopProducts() {
               <span class="product-bundle-quantity">${item.quantity}×</span>
               <span class="product-bundle-copy">
                 <strong>${escapeHtml(item.name)}</strong>
-                <small>${escapeHtml([item.sku, item.audience].filter(Boolean).join(' · '))}</small>
+                ${bundleItemPricing(item)}
               </span>
             </div>
           `).join('')}
@@ -620,6 +679,7 @@ function renderShopProducts() {
         <div class="product-copy">
           <small>${escapeHtml(product.sku || 'Prodotto ODR')}</small>
           <h3>${escapeHtml(product.name)}</h3>
+          ${bundleItems.length ? `<button type="button" class="product-expand-button" data-product-expand="${product.id}">Espandi scheda</button>` : ''}
           ${bundleDetails}
           ${packageMaterials}
           <div class="${priceClass}">${regular}<strong>${productPrice(product)}</strong></div>
@@ -2377,6 +2437,11 @@ byId('orders-table').addEventListener('click', (event) => {
 });
 byId('shop-search').addEventListener('input', renderShopProducts);
 byId('shop-products').addEventListener('click', (event) => {
+  const expandButton = event.target.closest('[data-product-expand]');
+  if (expandButton) {
+    openProductDetail(Number(expandButton.dataset.productExpand));
+    return;
+  }
   const downloadButton = event.target.closest('[data-package-document-download]');
   if (downloadButton) {
     downloadPackageDocument(downloadButton.dataset.packageDocumentDownload, downloadButton);
@@ -2407,6 +2472,18 @@ byId('shop-products').addEventListener('click', (event) => {
   if (!link) return;
   event.preventDefault();
   openWooSession(link.dataset.shopDestination, link);
+});
+byId('product-detail-dialog').addEventListener('click', (event) => {
+  if (event.target === event.currentTarget || event.target.closest('[data-product-detail-close]')) {
+    event.currentTarget.close();
+    return;
+  }
+  const quantityButton = event.target.closest('[data-detail-quantity]');
+  if (!quantityButton) return;
+  const productId = Number(quantityButton.dataset.productId);
+  if (quantityButton.dataset.detailQuantity === 'increase') addToShopCart(productId);
+  else updateShopCartItem(productId, 'decrease');
+  openProductDetail(productId);
 });
 byId('shop-products').addEventListener('submit', (event) => {
   const form = event.target.closest('[data-package-document-form]');
