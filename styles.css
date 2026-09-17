@@ -2051,6 +2051,20 @@ h2 {
 .admin-kpi-warning::after { background: rgba(168, 131, 68, .16); }
 .admin-kpi span, .admin-kpi small { display: block; color: var(--muted); }
 .admin-kpi strong { display: block; margin: 9px 0 6px; font-size: clamp(24px, 2.4vw, 34px); letter-spacing: -.035em; }
+.admin-kpi-detail { position: relative; z-index: 1; margin-top: 14px; padding: 8px 12px; border: 1px solid rgba(83, 55, 87, .2); border-radius: 11px; color: var(--plum); background: rgba(255,255,255,.82); font-weight: 800; cursor: pointer; }
+.admin-kpi-detail:hover { color: #fff; background: var(--plum); }
+.dashboard-detail-dialog { width: min(1120px, calc(100vw - 28px)); max-height: calc(100vh - 28px); padding: 0; border: 0; border-radius: 24px; color: var(--ink); background: #fffdfa; box-shadow: 0 30px 90px rgba(30, 17, 32, .32); overflow: auto; }
+.dashboard-detail-dialog::backdrop { background: rgba(35, 22, 37, .64); backdrop-filter: blur(3px); }
+.dashboard-detail-head { position: sticky; top: 0; z-index: 2; display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 18px 22px; border-bottom: 1px solid rgba(83, 55, 87, .12); background: #fffdfa; }
+.dashboard-detail-head h2 { margin: 0; font-size: 23px; }
+.dashboard-detail-body { padding: 20px 22px 24px; }
+.dashboard-detail-summary { margin: 0 0 16px; color: var(--muted); }
+.dashboard-detail-table-wrap { overflow-x: auto; border: 1px solid rgba(83, 55, 87, .12); border-radius: 16px; background: #fff; }
+.dashboard-detail-table { width: 100%; min-width: 820px; border-collapse: collapse; }
+.dashboard-detail-table th, .dashboard-detail-table td { padding: 12px 14px; border-bottom: 1px solid rgba(83, 55, 87, .09); text-align: left; vertical-align: top; }
+.dashboard-detail-table th { color: var(--muted); background: #f7f4f6; font-size: 12px; text-transform: uppercase; letter-spacing: .04em; }
+.dashboard-detail-table tbody tr:last-child td { border-bottom: 0; }
+.dashboard-detail-table small { color: var(--muted); }
 .admin-dashboard-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px; }
 .dashboard-card { min-width: 0; padding: 19px; }
 .dashboard-card-wide { grid-column: span 2; }
