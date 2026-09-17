@@ -149,16 +149,18 @@
               <h2>Dashboard</h2>
               <p id="dashboard-intro">Controllo rapido di codici, rete commerciale e vendite lette da WooCommerce.</p>
             </div>
-            <label id="admin-dashboard-period-wrap" class="dashboard-period hidden">
-              <span>Periodo</span>
-              <select id="admin-dashboard-period" aria-label="Periodo dashboard">
+            <div id="admin-dashboard-period-wrap" class="dashboard-period hidden">
+              <label><span>Periodo</span><select id="admin-dashboard-period" aria-label="Periodo dashboard">
                 <option value="30">Ultimi 30 giorni</option>
                 <option value="90">Ultimi 90 giorni</option>
                 <option value="365" selected>Ultimi 12 mesi</option>
                 <option value="year">Anno corrente</option>
                 <option value="all">Tutto il periodo</option>
-              </select>
-            </label>
+                <option value="custom">Periodo personalizzato</option>
+              </select></label>
+              <label><span>Da</span><input id="admin-dashboard-date-from" type="date" aria-label="Data iniziale dashboard" /></label>
+              <label><span>A</span><input id="admin-dashboard-date-to" type="date" aria-label="Data finale dashboard" /></label>
+            </div>
           </div>
           <div id="role-dashboard-metrics" class="metrics">
             <div class="metric metric-visual">
@@ -193,7 +195,7 @@
               <article class="admin-kpi admin-kpi-positive"><span>Ordini in lavorazione</span><strong id="admin-kpi-working">0</strong><small id="admin-kpi-working-detail">0 pezzi · 0,00 €</small><button class="admin-kpi-detail" type="button" data-dashboard-detail="working">Vedi dettagli</button></article>
               <article class="admin-kpi"><span>Fatturato distributori</span><strong id="admin-kpi-distributor-revenue">0,00 €</strong><small>ordini associati ai distributori</small></article>
               <article class="admin-kpi"><span>Fatturato agenti</span><strong id="admin-kpi-agent-revenue">0,00 €</strong><small>ordini associati agli agenti</small></article>
-              <article class="admin-kpi"><span>Nuovi clienti</span><strong id="admin-kpi-new-customer-count">0</strong><small id="admin-kpi-customers">0 clienti nel periodo</small><button class="admin-kpi-detail" type="button" data-dashboard-detail="new-customers">Vedi dettagli</button></article>
+              <article class="admin-kpi"><span>Clienti</span><strong id="admin-kpi-new-customer-count">0</strong><small id="admin-kpi-customers">clienti nel periodo selezionato</small><button class="admin-kpi-detail" type="button" data-dashboard-detail="customers">Vedi dettagli</button></article>
               <article class="admin-kpi"><span>Clienti con riordino</span><strong id="admin-kpi-repeat-customers">0</strong><small>almeno due ordini effettuati</small><button class="admin-kpi-detail" type="button" data-dashboard-detail="repeat-customers">Vedi dettagli</button></article>
             </div>
             <div class="admin-dashboard-grid">
@@ -203,6 +205,7 @@
               <article class="dashboard-card"><div class="dashboard-card-heading"><div><span>Promozioni</span><h3>Vendite promozionali</h3></div></div><div id="admin-promotions-chart" class="dashboard-bars"></div></article>
               <article class="dashboard-card"><div class="dashboard-card-heading"><div><span>Prodotti</span><h3>Vendite per prodotto</h3></div></div><div id="admin-products-chart" class="dashboard-bars"></div></article>
               <article class="dashboard-card"><div class="dashboard-card-heading"><div><span>Canali</span><h3>Agenti e distributori</h3></div></div><div id="admin-agents-chart" class="dashboard-bars"></div><p id="admin-channel-total" class="dashboard-total-check"></p></article>
+              <article class="dashboard-card dashboard-card-full"><div class="dashboard-card-heading"><div><span>Clienti</span><h3>Nuovi clienti</h3></div><strong id="admin-new-customers-total">0</strong></div><p class="dashboard-card-copy">Clienti il cui primo ordine storico è compreso nel periodo selezionato.</p><div id="admin-new-customers" class="dashboard-new-customers"></div></article>
             </div>
           </div>
         </section>
