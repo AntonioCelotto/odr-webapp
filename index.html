@@ -99,6 +99,7 @@
         <nav class="nav" aria-label="Navigazione principale">
           <a class="active" href="/dashboard" data-route="dashboard">Dashboard</a>
           <a href="/shop" data-route="shop">Shop</a>
+          <a href="/materiale-mkt" data-route="marketing">Materiale MKT</a>
           <a href="/profilo" data-route="profile">Profilo</a>
           <a href="/codici" data-route="access">Codici</a>
           <a id="agent-customers-nav" class="hidden" href="/clienti" data-route="agent-customers">Gestione clienti</a>
@@ -318,6 +319,51 @@
             </div>
           </aside>
           <div id="shop-products" class="product-grid"></div>
+        </section>
+
+        <section id="marketing" class="workspace route-screen">
+          <div class="section-heading">
+            <div>
+              <p class="eyebrow">Documenti commerciali</p>
+              <h2>Materiale MKT</h2>
+              <p>PDF marketing disponibili per il tuo profilo.</p>
+            </div>
+          </div>
+
+          <form id="marketing-upload-form" class="marketing-upload panel hidden">
+            <div class="panel-title">
+              <div>
+                <p class="eyebrow">Amministrazione</p>
+                <h3>Carica un nuovo PDF</h3>
+              </div>
+            </div>
+            <div class="marketing-form-grid">
+              <label>Titolo
+                <input name="title" maxlength="160" required placeholder="Es. Brochure linea viso" />
+              </label>
+              <label>Destinatari
+                <select name="audience" required>
+                  <option value="all">Tutti gli account</option>
+                  <option value="agent">Solo agenti</option>
+                  <option value="distributor">Solo distributori</option>
+                  <option value="center">Solo centri benessere</option>
+                </select>
+              </label>
+              <label class="wide">Descrizione
+                <textarea name="description" rows="3" maxlength="600" placeholder="Breve descrizione del materiale"></textarea>
+              </label>
+              <label class="wide">File PDF
+                <input name="pdf" type="file" accept="application/pdf,.pdf" required />
+              </label>
+            </div>
+            <div class="marketing-upload-actions">
+              <button class="primary-action" type="submit">Carica materiale</button>
+              <span id="marketing-upload-message" class="auth-message"></span>
+            </div>
+          </form>
+
+          <div id="marketing-message" class="auth-message">Caricamento materiali...</div>
+          <div id="marketing-list" class="marketing-grid"></div>
         </section>
 
         <section id="access" class="split route-screen">
