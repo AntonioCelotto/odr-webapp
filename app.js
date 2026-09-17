@@ -47,6 +47,7 @@ const moduleLabels = {
 const appRoutes = {
   dashboard: { path: '/dashboard', title: 'Dashboard' },
   shop: { path: '/shop', title: 'Shop' },
+  marketing: { path: '/materiale-mkt', title: 'Materiale MKT' },
   profile: { path: '/profilo', title: 'Il mio profilo' },
   access: { path: '/codici', title: 'Codici e convenzioni' },
   promotions: { path: '/promozioni', title: 'Promozioni' },
@@ -64,6 +65,7 @@ let currentUser = null;
 let authBusy = false;
 let shopProducts = [];
 let packageDocuments = [];
+let marketingMaterials = [];
 let shopCategory = 'all';
 let shopOpening = false;
 let shopCart = [];
@@ -801,6 +803,187 @@ async function deletePackageDocument(documentId) {
   if (error) return window.alert(error.message || 'Eliminazione non riuscita.');
   await loadPackageDocuments();
   renderShopProducts();
+}
+
+const marketingAudienceRoles = {
+  all: ['agent', 'distributor', 'center', 'patient'],
+  agent: ['agent'],
+  distributor: ['distributor'],
+  center: ['center'],
+};
+
+function marketingAudienceLabel(roles = []) {
+  if (marketingAudienceRoles.all.every((role) => roles.includes(role))) return 'Tutti gli account';
+  if (roles.length === 1) return {
+    agent: 'Solo agenti',
+    distributor: 'Solo distributori',
+    center: 'Solo centri benessere',
+    patient: 'Solo pazienti',
+  }[roles[0]] || roleLabels[roles[0]] || roles[0];
+  return roles.map((role) => roleLabels[role] || role).join(', ');
+}
+
+function renderMarketingMaterials() {
+  const container = byId('marketing-list');
+  const message = byId('marketing-message');
+  if (!container || !message) return;
+  message.classList.toggle('hidden', marketingMaterials.length > 0);
+  message.textContent = marketingMaterials.length ? '' : 'Nessun materiale disponibile per il tuo profilo.';
+  container.innerHTML = marketingMaterials.map((material) => `
+    <article class="marketing-card">
+      <div class="marketing-card-icon">PDF</div>
+      <div class="marketing-card-copy">
+        <div class="marketing-card-head">
+          <div>
+            <span class="marketing-audience">${escapeHtml(marketingAudienceLabel(material.audience_roles || []))}</span>
+            <h3>${escapeHtml(material.title)}</h3>
+          </div>
+          <small>${new Date(material.created_at).toLocaleDateString('it-IT')}</small>
+        </div>
+        ${material.description ? `<p>${escapeHtml(material.description)}</p>` : ''}
+        <small>${escapeHtml(material.file_name)} · ${Math.max(1, Math.round((Number(material.file_size) || 0) / 1024))} KB</small>
+        <div class="marketing-card-actions">
+          <button class="secondary-action" type="button" data-marketing-download="${material.id}">Scarica</button>
+          <button class="secondary-action" type="button" data-marketing-share="${material.id}">Condividi</button>
+          ${currentUser?.role === 'admin' ? `<button class="danger-action" type="button" data-marketing-delete="${material.id}">Elimina</button>` : ''}
+        </div>
+      </div>
+    </article>
+  `).join('');
+}
+
+async function loadMarketingMaterials() {
+  if (!supabase || !currentUser) return;
+  const { data, error } = await supabase
+    .from('marketing_materials')
+    .select('id,title,description,file_name,file_size,storage_path,audience_roles,created_at')
+    .order('created_at', { ascending: false });
+  if (error) {
+    byId('marketing-message').classList.remove('hidden');
+    byId('marketing-message').textContent = 'Non è stato possibile caricare il materiale marketing.';
+    return;
+  }
+  marketingMaterials = data || [];
+  renderMarketingMaterials();
+}
+
+async function uploadMarketingMaterial(event) {
+  event.preventDefault();
+  if (currentUser?.role !== 'admin' || !supabase) return;
+  const form = event.currentTarget;
+  const file = form.elements.pdf.files?.[0];
+  const title = form.elements.title.value.trim();
+  const description = form.elements.description.value.trim();
+  const roles = marketingAudienceRoles[form.elements.audience.value] || marketingAudienceRoles.all;
+  const message = byId('marketing-upload-message');
+  if (!file || !title) return;
+  if (file.type !== 'application/pdf' && !file.name.toLowerCase().endsWith('.pdf')) {
+    message.textContent = 'Seleziona un file PDF valido.';
+    return;
+  }
+  if (file.size > 20 * 1024 * 1024) {
+    message.textContent = 'Il PDF non può superare 20 MB.';
+    return;
+  }
+  const button = form.querySelector('button[type="submit"]');
+  button.disabled = true;
+  message.textContent = 'Caricamento in corso...';
+  const uniqueId = globalThis.crypto?.randomUUID?.() || `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+  const storagePath = `${new Date().getFullYear()}/${uniqueId}-${safePdfName(file.name)}`;
+  try {
+    const { error: uploadError } = await supabase.storage
+      .from('marketing-materials')
+      .upload(storagePath, file, { contentType: 'application/pdf', upsert: false });
+    if (uploadError) throw uploadError;
+    const { data: userData } = await supabase.auth.getUser();
+    const { error: insertError } = await supabase.from('marketing_materials').insert({
+      title,
+      description: description || null,
+      file_name: file.name,
+      file_size: file.size,
+      storage_path: storagePath,
+      audience_roles: roles,
+      created_by: userData.user?.id,
+    });
+    if (insertError) {
+      await supabase.storage.from('marketing-materials').remove([storagePath]);
+      throw insertError;
+    }
+    form.reset();
+    message.textContent = 'Materiale caricato correttamente.';
+    await loadMarketingMaterials();
+  } catch (error) {
+    message.textContent = error.message || 'Caricamento non riuscito.';
+  } finally {
+    button.disabled = false;
+  }
+}
+
+async function marketingMaterialBlob(material) {
+  const { data, error } = await supabase.storage.from('marketing-materials').download(material.storage_path);
+  if (error) throw error;
+  return data;
+}
+
+async function downloadMarketingMaterial(materialId, trigger) {
+  const material = marketingMaterials.find((entry) => entry.id === materialId);
+  if (!material || !supabase) return;
+  const original = trigger.textContent;
+  trigger.disabled = true;
+  trigger.textContent = 'Scarico...';
+  try {
+    const blob = await marketingMaterialBlob(material);
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = material.file_name || `${material.title}.pdf`;
+    link.click();
+    window.setTimeout(() => URL.revokeObjectURL(url), 30000);
+  } catch (error) {
+    window.alert(error.message || 'Download non riuscito.');
+  } finally {
+    trigger.disabled = false;
+    trigger.textContent = original;
+  }
+}
+
+async function shareMarketingMaterial(materialId, trigger) {
+  const material = marketingMaterials.find((entry) => entry.id === materialId);
+  if (!material || !supabase) return;
+  const original = trigger.textContent;
+  trigger.disabled = true;
+  trigger.textContent = 'Preparo...';
+  try {
+    const blob = await marketingMaterialBlob(material);
+    const file = new File([blob], material.file_name || `${material.title}.pdf`, { type: 'application/pdf' });
+    if (navigator.share && (!navigator.canShare || navigator.canShare({ files: [file] }))) {
+      await navigator.share({ title: material.title, text: material.description || material.title, files: [file] });
+      return;
+    }
+    const { data, error } = await supabase.storage.from('marketing-materials').createSignedUrl(material.storage_path, 600);
+    if (error) throw error;
+    if (navigator.share) await navigator.share({ title: material.title, text: material.description || material.title, url: data.signedUrl });
+    else {
+      await navigator.clipboard.writeText(data.signedUrl);
+      window.alert('Link valido per 10 minuti copiato negli appunti.');
+    }
+  } catch (error) {
+    if (error?.name !== 'AbortError') window.alert(error.message || 'Condivisione non riuscita.');
+  } finally {
+    trigger.disabled = false;
+    trigger.textContent = original;
+  }
+}
+
+async function deleteMarketingMaterial(materialId) {
+  if (currentUser?.role !== 'admin' || !supabase) return;
+  const material = marketingMaterials.find((entry) => entry.id === materialId);
+  if (!material || !window.confirm(`Eliminare il materiale “${material.title}”?`)) return;
+  const { error: storageError } = await supabase.storage.from('marketing-materials').remove([material.storage_path]);
+  if (storageError) return window.alert(storageError.message || 'Eliminazione del file non riuscita.');
+  const { error } = await supabase.from('marketing_materials').delete().eq('id', material.id);
+  if (error) return window.alert(error.message || 'Eliminazione non riuscita.');
+  await loadMarketingMaterials();
 }
 
 async function openWooSession(destination, trigger, items = [], coupon = '', options = {}) {
@@ -1764,6 +1947,7 @@ function enterApp(user) {
   const isAdmin = user.role === 'admin';
   byId('admin-code-manager').classList.toggle('hidden', !isAdmin);
   byId('new-promotion-button').classList.toggle('hidden', !isAdmin);
+  byId('marketing-upload-form').classList.toggle('hidden', !isAdmin);
   byId('admin-users-nav').classList.toggle('hidden', !isAdmin);
   byId('admin-users').classList.remove('hidden');
   byId('admin-users').classList.toggle('module-denied', !isAdmin);
@@ -1781,6 +1965,7 @@ function enterApp(user) {
   loadActivePromoCode();
   loadPermissions();
   loadShop();
+  loadMarketingMaterials();
   loadWooOrders();
   if (user.role === 'agent') loadAgentCustomers();
   loadNetwork();
@@ -2546,6 +2731,22 @@ byId('shop-coupon').addEventListener('input', (event) => {
 byId('shop-categories').addEventListener('change', (event) => {
   shopCategory = event.currentTarget.value;
   renderShopProducts();
+});
+
+byId('marketing-upload-form').addEventListener('submit', uploadMarketingMaterial);
+byId('marketing-list').addEventListener('click', (event) => {
+  const downloadButton = event.target.closest('[data-marketing-download]');
+  if (downloadButton) {
+    downloadMarketingMaterial(downloadButton.dataset.marketingDownload, downloadButton);
+    return;
+  }
+  const shareButton = event.target.closest('[data-marketing-share]');
+  if (shareButton) {
+    shareMarketingMaterial(shareButton.dataset.marketingShare, shareButton);
+    return;
+  }
+  const deleteButton = event.target.closest('[data-marketing-delete]');
+  if (deleteButton) deleteMarketingMaterial(deleteButton.dataset.marketingDelete);
 });
 
 initSupabaseStatus();
