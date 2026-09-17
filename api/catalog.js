@@ -137,6 +137,7 @@ export default async function handler(request, response) {
           || '',
         categories: (product.categories || []).map(({ id, name, slug }) => ({ id, name, slug })),
         permalink: product.permalink,
+        description: safeText(product.description),
         shortDescription: safeText(product.short_description),
         bundleItems: bundleRows(product).map((row) => {
           const bundledProduct = productsById.get(Number(row?.id));
