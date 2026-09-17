@@ -352,9 +352,9 @@ function openProductDetail(productId) {
             </div>`).join('')}
         </div>
         <div class="product-detail-totals">
-          ${theoreticalValue ? `<p><span>Valore totale dei prodotti</span><strong>${money(theoreticalValue)}</strong></p>` : ''}
-          <p><span>Prezzo pacchetto</span><strong>${productPrice(product)}</strong></p>
+          ${theoreticalValue ? `<p><span>Valore totale promozione</span><strong>${money(theoreticalValue)}</strong></p>` : ''}
           ${totalSavings ? `<p class="product-detail-savings"><span>Risparmio totale</span><strong>${money(totalSavings)}</strong></p>` : ''}
+          <p class="product-detail-offer"><span>Totale offerta</span><strong>${productPrice(product)}</strong></p>
         </div>
         <div class="product-detail-actions">
           <span class="stock ${product.inStock ? 'ok' : 'off'}">${product.inStock ? 'Disponibile' : 'Esaurito'}</span>
