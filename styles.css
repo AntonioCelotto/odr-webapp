@@ -376,7 +376,8 @@ h4,
 .product-detail-item small { color: #786b79; }
 .product-detail-totals { margin-top: 18px; padding-top: 12px; border-top: 1px solid rgba(83, 55, 87, 0.14); }
 .product-detail-totals p { display: flex; justify-content: space-between; gap: 16px; margin: 8px 0; }
-.product-detail-totals .product-detail-savings { margin-top: 12px; padding-top: 12px; border-top: 1px dashed rgba(83, 55, 87, 0.2); color: #2f744f; font-size: 1.1rem; }
+.product-detail-totals .product-detail-savings { color: #2f744f; }
+.product-detail-totals .product-detail-offer { margin-top: 12px; padding-top: 12px; border-top: 1px dashed rgba(83, 55, 87, 0.28); color: #159447; font-size: 1.18rem; font-weight: 800; text-transform: uppercase; }
 .product-detail-actions { display: flex; align-items: center; justify-content: space-between; gap: 14px; margin-top: 18px; }
 
 @media (max-width: 760px) {
