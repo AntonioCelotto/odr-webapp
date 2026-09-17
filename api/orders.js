@@ -169,6 +169,7 @@ export default async function handler(request, response) {
           customerEmail: order.billing?.email || '',
           amount: Number(order.total) || 0,
           taxAmount: Number(order.total_tax) || 0,
+          shippingNetAmount: Number(order.shipping_total) || 0,
           shippingAmount: (Number(order.shipping_total) || 0) + (Number(order.shipping_tax) || 0),
           coupon: order.coupon_lines?.map((coupon) => coupon.code).join(', ') || '',
           center: entity?.type === 'center' ? entity.name : '',
