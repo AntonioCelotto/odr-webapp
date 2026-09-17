@@ -2107,6 +2107,8 @@ h2 {
 .dashboard-card-heading span { color: var(--muted); font-size: 12px; font-weight: 800; text-transform: uppercase; letter-spacing: .08em; }
 .dashboard-card-heading h3 { margin: 4px 0 0; font-size: 22px; }
 .dashboard-card-heading > strong { font-size: 18px; }
+.dashboard-card-detail { flex: 0 0 auto; padding: 8px 11px; border: 1px solid rgba(83, 55, 87, .18); border-radius: 10px; color: var(--plum); background: #fff; font-size: 12px; font-weight: 800; cursor: pointer; }
+.dashboard-card-detail:hover { color: #fff; background: var(--plum); }
 .dashboard-chart { min-height: 220px; }
 .dashboard-chart svg { display: block; width: 100%; height: auto; overflow: visible; }
 .dashboard-chart text { fill: var(--muted); font-size: 11px; }
