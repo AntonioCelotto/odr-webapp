@@ -199,15 +199,11 @@ function renderAdminDashboard() {
   const total = orders.reduce((sum, order) => sum + (Number(order.amount) || 0), 0);
   const customerKeys = new Set(orders.map((order) => String(order.customerEmail || order.customer).toLowerCase()).filter(Boolean));
   const validHistoricalOrders = reportOrders.filter((order) => !['cancelled', 'failed', 'refunded', 'trash'].includes(String(order.status).toLowerCase()));
-  const earliestOrder = new Map();
-  validHistoricalOrders.forEach((order) => {
-    const key = String(order.customerEmail || order.customer).toLowerCase();
-    if (key && (!earliestOrder.has(key) || order.date < earliestOrder.get(key).date)) earliestOrder.set(key, order);
-  });
   const { start, end } = dashboardDateRange();
-  const newCustomerOrders = [...earliestOrder.values()].filter((order) => {
-    const firstDate = dashboardDateValue(order.date);
-    return (!start || firstDate >= start) && (!end || firstDate <= end);
+  const historicalCustomerGroups = dashboardCustomerGroups(validHistoricalOrders);
+  const newCustomerOrders = [...historicalCustomerGroups.values()].filter((customer) => customer.orders.length === 1).map((customer) => customer.orders[0]).filter((order) => {
+    const orderDate = dashboardDateValue(order.date);
+    return (!start || orderDate >= start) && (!end || orderDate <= end);
   }).sort((a, b) => String(b.date).localeCompare(String(a.date)));
   const orderCountByCustomer = new Map();
   orders.forEach((order) => {
@@ -233,7 +229,6 @@ function renderAdminDashboard() {
   byId('admin-kpi-customers').textContent = 'clienti nel periodo selezionato';
   byId('admin-kpi-repeat-customers').textContent = repeatCustomers.toLocaleString('it-IT');
   byId('admin-new-customers-total').textContent = newCustomerOrders.length.toLocaleString('it-IT');
-  byId('admin-new-customers').innerHTML = newCustomerOrders.length ? `<table><thead><tr><th>Cliente</th><th>Primo ordine</th><th>Importo</th><th>Pezzi</th><th>Canale</th></tr></thead><tbody>${newCustomerOrders.map((order) => `<tr><td><strong>${escapeHtml(order.customer || '-')}</strong>${order.customerEmail ? `<br><small>${escapeHtml(order.customerEmail)}</small>` : ''}</td><td>${escapeHtml(order.date || '-')}<br><small>${escapeHtml(order.id || '')}</small></td><td><strong>${money(order.amount)}</strong></td><td>${dashboardOrderPieces(order)}</td><td>${escapeHtml(order.agent || order.distributor || order.center || '-')}</td></tr>`).join('')}</tbody></table>` : '<div class="dashboard-empty">Nessun nuovo cliente nel periodo selezionato.</div>';
   byId('admin-sales-total').textContent = money(total);
   renderAdminSalesChart(orders);
   renderItalyChart(orders);
@@ -288,6 +283,13 @@ function dashboardOrderDetailRows(orders) {
   </tr>`).join('');
 }
 
+function dashboardOrderOrigin(order) {
+  if (order.agent) return { label: `Agente · ${order.agent}`, direct: false };
+  if (order.distributor) return { label: `Distributore · ${order.distributor}`, direct: false };
+  if (order.center) return { label: `Centro · ${order.center}`, direct: false };
+  return { label: 'Acquisto diretto', direct: true };
+}
+
 function openDashboardDetail(type) {
   if (currentUser?.role !== 'admin') return;
   const orders = dashboardFilteredOrders();
@@ -303,6 +305,21 @@ function openDashboardDetail(type) {
     summary = `${periodLabel} · ${detailOrders.length} ordini · ${pieces} pezzi · ${money(amount)}`;
     headers = '<tr><th>Ordine</th><th>Data</th><th>Cliente</th><th>Pezzi</th><th>Importo</th><th>Stato</th><th>Canale</th></tr>';
     rows = dashboardOrderDetailRows(detailOrders);
+  } else if (type === 'new-customers') {
+    const { start, end } = dashboardDateRange();
+    const historicalOrders = reportOrders.filter((order) => !['cancelled', 'failed', 'refunded', 'trash'].includes(String(order.status).toLowerCase()));
+    const customers = [...dashboardCustomerGroups(historicalOrders).values()].filter((customer) => customer.orders.length === 1).filter((customer) => {
+      const orderDate = dashboardDateValue(customer.orders[0].date);
+      return (!start || orderDate >= start) && (!end || orderDate <= end);
+    }).sort((a, b) => String(b.orders[0].date).localeCompare(String(a.orders[0].date)));
+    title = 'Nuovi clienti';
+    summary = `${periodLabel} · ${customers.length} clienti con un solo acquisto complessivo`;
+    headers = '<tr><th>Cliente</th><th>Ordine</th><th>Importo</th><th>Pezzi</th><th>Provenienza</th></tr>';
+    rows = customers.map((customer) => {
+      const order = customer.orders[0];
+      const origin = dashboardOrderOrigin(order);
+      return `<tr><td><strong>${escapeHtml(customer.customer)}</strong>${customer.email ? `<br><small>${escapeHtml(customer.email)}</small>` : ''}</td><td>${escapeHtml(order.date || '-')}<br><small>${escapeHtml(order.id || '')}</small></td><td><strong>${money(order.amount)}</strong></td><td>${dashboardOrderPieces(order)}</td><td><span class="dashboard-origin ${origin.direct ? 'direct' : ''}">${escapeHtml(origin.label)}</span></td></tr>`;
+    }).join('');
   } else {
     const periodGroups = dashboardCustomerGroups(orders);
     let customers = [...periodGroups.values()];
