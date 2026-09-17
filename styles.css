@@ -2081,6 +2081,7 @@ h2 {
 .admin-kpi::after { content: ''; position: absolute; width: 70px; height: 70px; right: -20px; top: -20px; border-radius: 50%; background: rgba(142, 129, 170, .10); }
 .admin-kpi-positive::after { background: rgba(88, 115, 92, .14); }
 .admin-kpi-warning::after { background: rgba(168, 131, 68, .16); }
+.admin-kpi-new::after { background: rgba(53, 145, 105, .16); }
 .admin-kpi span, .admin-kpi small { display: block; color: var(--muted); }
 .admin-kpi strong { display: block; margin: 9px 0 6px; font-size: clamp(24px, 2.4vw, 34px); letter-spacing: -.035em; }
 .admin-kpi-detail { position: relative; z-index: 1; margin-top: 14px; padding: 8px 12px; border: 1px solid rgba(83, 55, 87, .2); border-radius: 11px; color: var(--plum); background: rgba(255,255,255,.82); font-weight: 800; cursor: pointer; }
@@ -2146,12 +2147,8 @@ h2 {
 .dashboard-area-list b { color: var(--ink); }
 .dashboard-area-list small { grid-column: 2 / -1; margin-top: -5px; color: var(--muted); }
 .dashboard-total-check { margin: 14px 0 0; padding-top: 12px; border-top: 1px solid rgba(77, 54, 82, .1); color: var(--green); font-size: 12px; font-weight: 750; }
-.dashboard-new-customers { overflow-x: auto; border: 1px solid rgba(83, 55, 87, .11); border-radius: 16px; background: #fff; }
-.dashboard-new-customers table { width: 100%; min-width: 760px; border-collapse: collapse; }
-.dashboard-new-customers th, .dashboard-new-customers td { padding: 12px 14px; border-bottom: 1px solid rgba(83, 55, 87, .09); text-align: left; vertical-align: top; }
-.dashboard-new-customers th { color: var(--muted); background: #f7f4f6; font-size: 12px; text-transform: uppercase; letter-spacing: .04em; }
-.dashboard-new-customers tbody tr:last-child td { border-bottom: 0; }
-.dashboard-new-customers small { color: var(--muted); }
+.dashboard-origin { display: inline-flex; margin-top: 4px; padding: 4px 8px; border-radius: 999px; color: #2f6253; background: #e7f3ed; font-size: 12px; font-weight: 800; }
+.dashboard-origin.direct { color: #725622; background: #f7edd8; }
 
 @media (max-width: 1100px) {
   .admin-kpis, .admin-dashboard-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
