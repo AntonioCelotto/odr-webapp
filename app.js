@@ -295,7 +295,36 @@ function openDashboardDetail(type) {
   const orders = dashboardFilteredOrders();
   const periodLabel = byId('admin-dashboard-period')?.selectedOptions?.[0]?.textContent || 'Periodo selezionato';
   let title = ''; let summary = ''; let headers = ''; let rows = '';
-  if (['pending', 'working', 'total-revenue', 'distributor-revenue', 'agent-revenue'].includes(type)) {
+  if (['category-sales', 'promotion-sales', 'product-sales', 'channel-sales'].includes(type)) {
+    const breakdown = new Map();
+    if (type === 'channel-sales') {
+      orders.forEach((order) => {
+        const label = order.agent ? `Agente · ${order.agent}` : order.distributor ? `Distributore · ${order.distributor}` : order.center ? `Centro · ${order.center}` : 'Acquisto diretto / non associato';
+        const current = breakdown.get(label) || { quantity: 0, amount: 0 };
+        current.quantity += 1;
+        current.amount += Number(order.amount || 0);
+        breakdown.set(label, current);
+      });
+      title = 'Agenti e distributori';
+      headers = '<tr><th>Canale</th><th>Ordini</th><th>Fatturato</th></tr>';
+      rows = [...breakdown.entries()].sort((a, b) => b[1].amount - a[1].amount).map(([label, value]) => `<tr><td><strong>${escapeHtml(label)}</strong></td><td>${value.quantity}</td><td><strong>${money(value.amount)}</strong></td></tr>`).join('');
+      summary = `${periodLabel} · ${breakdown.size} canali · ${money([...breakdown.values()].reduce((sum, value) => sum + value.amount, 0))}`;
+    } else {
+      orders.forEach((order) => (order.items || []).forEach((item) => {
+        const quantity = Number(item.quantity) || 0;
+        const product = shopProducts.find((entry) => Number(entry.id) === Number(item.productId)) || shopProducts.find((entry) => entry.name === item.name);
+        const isPromotion = /promo|pacchett/i.test(item.name) || product?.categories?.some((entry) => /promo|pacchett/i.test(`${entry.slug} ${entry.name}`));
+        let label = item.name;
+        if (type === 'category-sales') label = product?.categories?.find((entry) => !/promo/i.test(`${entry.slug} ${entry.name}`))?.name || 'Altri';
+        if (type === 'promotion-sales' && !isPromotion) return;
+        breakdown.set(label, (breakdown.get(label) || 0) + quantity);
+      }));
+      title = type === 'category-sales' ? 'Vendite per categoria' : type === 'promotion-sales' ? 'Vendite promozionali' : 'Vendite per prodotto';
+      headers = `<tr><th>${type === 'category-sales' ? 'Categoria' : type === 'promotion-sales' ? 'Promozione' : 'Prodotto'}</th><th>Pezzi venduti</th></tr>`;
+      rows = [...breakdown.entries()].sort((a, b) => b[1] - a[1]).map(([label, quantity]) => `<tr><td><strong>${escapeHtml(label)}</strong></td><td>${quantity.toLocaleString('it-IT')}</td></tr>`).join('');
+      summary = `${periodLabel} · ${breakdown.size} voci · ${[...breakdown.values()].reduce((sum, value) => sum + value, 0).toLocaleString('it-IT')} pezzi`;
+    }
+  } else if (['pending', 'working', 'total-revenue', 'distributor-revenue', 'agent-revenue'].includes(type)) {
     const detailOrders = type === 'pending'
       ? orders.filter((order) => ['pending', 'on-hold'].includes(String(order.status).toLowerCase()))
       : type === 'working'
