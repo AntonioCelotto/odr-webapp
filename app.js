@@ -97,11 +97,32 @@ function dashboardPeriodStart(period) {
   return start;
 }
 
+function dashboardDateValue(date) {
+  return date ? new Date(`${date}T00:00:00`) : null;
+}
+
+function dashboardDateRange() {
+  const period = byId('admin-dashboard-period')?.value || '365';
+  const customFrom = dashboardDateValue(byId('admin-dashboard-date-from')?.value);
+  const customTo = dashboardDateValue(byId('admin-dashboard-date-to')?.value);
+  if (period === 'custom') return { start: customFrom, end: customTo };
+  return { start: dashboardPeriodStart(period), end: new Date() };
+}
+
+function syncDashboardDateInputs() {
+  const period = byId('admin-dashboard-period')?.value || '365';
+  if (period === 'custom') return;
+  const start = dashboardPeriodStart(period);
+  byId('admin-dashboard-date-from').value = start ? start.toISOString().slice(0, 10) : '';
+  byId('admin-dashboard-date-to').value = new Date().toISOString().slice(0, 10);
+}
+
 function dashboardFilteredOrders() {
-  const start = dashboardPeriodStart(byId('admin-dashboard-period')?.value || '365');
+  const { start, end } = dashboardDateRange();
   return reportOrders.filter((order) => {
     if (['cancelled', 'failed', 'refunded', 'trash'].includes(String(order.status).toLowerCase())) return false;
-    return !start || new Date(`${order.date}T00:00:00`) >= start;
+    const orderDate = dashboardDateValue(order.date);
+    return (!start || orderDate >= start) && (!end || orderDate <= end);
   });
 }
 
@@ -125,11 +146,24 @@ function renderAdminSalesChart(orders) {
     const month = months.find((item) => item.key === String(order.date).slice(0, 7));
     if (month) month.value += Number(order.amount) || 0;
   });
-  const width = 720; const height = 220; const insetX = 30; const insetY = 22;
-  const max = Math.max(...months.map((item) => item.value), 1);
-  const points = months.map((item, index) => ({ ...item, x: insetX + (index * (width - insetX * 2)) / 11, y: height - insetY - ((item.value / max) * (height - insetY * 2)) }));
-  const area = `${insetX},${height - insetY} ${points.map((item) => `${item.x},${item.y}`).join(' ')} ${width - insetX},${height - insetY}`;
-  byId('admin-sales-chart').innerHTML = `<svg viewBox="0 0 ${width} ${height}" role="img" aria-label="Andamento vendite ultimi dodici mesi"><defs><linearGradient id="salesFill" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#58735c" stop-opacity=".32"/><stop offset="1" stop-color="#58735c" stop-opacity=".02"/></linearGradient></defs><line x1="${insetX}" y1="${height - insetY}" x2="${width - insetX}" y2="${height - insetY}" class="dashboard-axis"/><polygon points="${area}" fill="url(#salesFill)"/><polyline points="${points.map((item) => `${item.x},${item.y}`).join(' ')}" class="dashboard-line"/>${points.map((item) => `<circle cx="${item.x}" cy="${item.y}" r="4" class="dashboard-point"><title>${item.label}: ${money(item.value)}</title></circle><text x="${item.x}" y="${height - 4}" text-anchor="middle">${item.label}</text>`).join('')}</svg>`;
+  const width = 760; const height = 250; const insetX = 72; const insetRight = 20; const insetTop = 18; const insetBottom = 28;
+  const rawMax = Math.max(...months.map((item) => item.value), 1);
+  const roughStep = rawMax / 4;
+  const magnitude = 10 ** Math.floor(Math.log10(Math.max(roughStep, 1)));
+  const normalizedStep = roughStep / magnitude;
+  const step = (normalizedStep <= 1 ? 1 : normalizedStep <= 2 ? 2 : normalizedStep <= 5 ? 5 : 10) * magnitude;
+  const max = step * 4;
+  const chartHeight = height - insetTop - insetBottom;
+  const chartWidth = width - insetX - insetRight;
+  const points = months.map((item, index) => ({ ...item, x: insetX + (index * chartWidth) / 11, y: insetTop + chartHeight - ((item.value / max) * chartHeight) }));
+  const grid = Array.from({ length: 5 }, (_, index) => {
+    const value = step * index;
+    const y = insetTop + chartHeight - ((value / max) * chartHeight);
+    const label = value >= 1000 ? `${Number((value / 1000).toFixed(value % 1000 ? 1 : 0)).toLocaleString('it-IT')} mila €` : money(value).replace(',00', '');
+    return `<line x1="${insetX}" y1="${y}" x2="${width - insetRight}" y2="${y}" class="dashboard-grid-line"/><text x="${insetX - 9}" y="${y + 4}" text-anchor="end" class="dashboard-axis-label">${label}</text>`;
+  }).join('');
+  const area = `${insetX},${insetTop + chartHeight} ${points.map((item) => `${item.x},${item.y}`).join(' ')} ${width - insetRight},${insetTop + chartHeight}`;
+  byId('admin-sales-chart').innerHTML = `<svg viewBox="0 0 ${width} ${height}" role="img" aria-label="Andamento vendite mensili con griglia valori"><defs><linearGradient id="salesFill" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#58735c" stop-opacity=".32"/><stop offset="1" stop-color="#58735c" stop-opacity=".02"/></linearGradient></defs>${grid}<line x1="${insetX}" y1="${insetTop}" x2="${insetX}" y2="${insetTop + chartHeight}" class="dashboard-axis"/><polygon points="${area}" fill="url(#salesFill)"/><polyline points="${points.map((item) => `${item.x},${item.y}`).join(' ')}" class="dashboard-line"/>${points.map((item) => `<circle cx="${item.x}" cy="${item.y}" r="4" class="dashboard-point"><title>${item.label}: ${money(item.value)}</title></circle><text x="${item.x}" y="${height - 6}" text-anchor="middle">${item.label}</text>`).join('')}</svg>`;
 }
 
 const dashboardAreaProvinces = {
@@ -164,13 +198,17 @@ function renderAdminDashboard() {
   const orders = dashboardFilteredOrders();
   const total = orders.reduce((sum, order) => sum + (Number(order.amount) || 0), 0);
   const customerKeys = new Set(orders.map((order) => String(order.customerEmail || order.customer).toLowerCase()).filter(Boolean));
+  const validHistoricalOrders = reportOrders.filter((order) => !['cancelled', 'failed', 'refunded', 'trash'].includes(String(order.status).toLowerCase()));
   const earliestOrder = new Map();
-  reportOrders.forEach((order) => {
+  validHistoricalOrders.forEach((order) => {
     const key = String(order.customerEmail || order.customer).toLowerCase();
-    if (key && (!earliestOrder.has(key) || order.date < earliestOrder.get(key))) earliestOrder.set(key, order.date);
+    if (key && (!earliestOrder.has(key) || order.date < earliestOrder.get(key).date)) earliestOrder.set(key, order);
   });
-  const start = dashboardPeriodStart(byId('admin-dashboard-period')?.value || '365');
-  const newCustomers = [...customerKeys].filter((key) => !start || new Date(`${earliestOrder.get(key)}T00:00:00`) >= start).length;
+  const { start, end } = dashboardDateRange();
+  const newCustomerOrders = [...earliestOrder.values()].filter((order) => {
+    const firstDate = dashboardDateValue(order.date);
+    return (!start || firstDate >= start) && (!end || firstDate <= end);
+  }).sort((a, b) => String(b.date).localeCompare(String(a.date)));
   const orderCountByCustomer = new Map();
   orders.forEach((order) => {
     const key = String(order.customerEmail || order.customer).toLowerCase();
@@ -191,9 +229,11 @@ function renderAdminDashboard() {
   byId('admin-kpi-working-detail').textContent = `${workingSummary.pieces} pezzi · ${money(workingSummary.amount)}`;
   byId('admin-kpi-distributor-revenue').textContent = money(distributorRevenue);
   byId('admin-kpi-agent-revenue').textContent = money(agentRevenue);
-  byId('admin-kpi-new-customer-count').textContent = newCustomers.toLocaleString('it-IT');
-  byId('admin-kpi-customers').textContent = `${customerKeys.size} clienti nel periodo`;
+  byId('admin-kpi-new-customer-count').textContent = customerKeys.size.toLocaleString('it-IT');
+  byId('admin-kpi-customers').textContent = 'clienti nel periodo selezionato';
   byId('admin-kpi-repeat-customers').textContent = repeatCustomers.toLocaleString('it-IT');
+  byId('admin-new-customers-total').textContent = newCustomerOrders.length.toLocaleString('it-IT');
+  byId('admin-new-customers').innerHTML = newCustomerOrders.length ? `<table><thead><tr><th>Cliente</th><th>Primo ordine</th><th>Importo</th><th>Pezzi</th><th>Canale</th></tr></thead><tbody>${newCustomerOrders.map((order) => `<tr><td><strong>${escapeHtml(order.customer || '-')}</strong>${order.customerEmail ? `<br><small>${escapeHtml(order.customerEmail)}</small>` : ''}</td><td>${escapeHtml(order.date || '-')}<br><small>${escapeHtml(order.id || '')}</small></td><td><strong>${money(order.amount)}</strong></td><td>${dashboardOrderPieces(order)}</td><td>${escapeHtml(order.agent || order.distributor || order.center || '-')}</td></tr>`).join('')}</tbody></table>` : '<div class="dashboard-empty">Nessun nuovo cliente nel periodo selezionato.</div>';
   byId('admin-sales-total').textContent = money(total);
   renderAdminSalesChart(orders);
   renderItalyChart(orders);
@@ -265,21 +305,14 @@ function openDashboardDetail(type) {
     rows = dashboardOrderDetailRows(detailOrders);
   } else {
     const periodGroups = dashboardCustomerGroups(orders);
-    const allGroups = dashboardCustomerGroups(reportOrders.filter((order) => !['cancelled', 'failed', 'refunded', 'trash'].includes(String(order.status).toLowerCase())));
     let customers = [...periodGroups.values()];
-    if (type === 'new-customers') {
-      title = 'Nuovi clienti';
-      const start = dashboardPeriodStart(byId('admin-dashboard-period')?.value || '365');
-      customers = customers.filter((customer) => {
-        const allOrders = allGroups.get(customer.key)?.orders || customer.orders;
-        const firstDate = [...allOrders].sort((a, b) => String(a.date).localeCompare(String(b.date)))[0]?.date;
-        return !start || new Date(`${firstDate}T00:00:00`) >= start;
-      });
+    if (type === 'customers') {
+      title = 'Clienti';
     } else {
       title = 'Clienti con riordino';
       customers = customers.filter((customer) => customer.orders.length > 1);
     }
-    customers.sort((a, b) => String(b.orders.at(-1)?.date || '').localeCompare(String(a.orders.at(-1)?.date || '')));
+    customers.sort((a, b) => Math.max(...b.orders.map((order) => new Date(order.date).getTime())) - Math.max(...a.orders.map((order) => new Date(order.date).getTime())));
     summary = `${periodLabel} · ${customers.length} clienti`;
     headers = '<tr><th>Cliente</th><th>Primo ordine</th><th>Ultimo ordine</th><th>Ordini</th><th>Pezzi</th><th>Totale acquistato</th></tr>';
     rows = customers.map((customer) => {
@@ -2686,7 +2719,14 @@ byId('report-payment').addEventListener('change', renderOrders);
 byId('report-date-from').addEventListener('change', renderOrders);
 byId('report-date-to').addEventListener('change', renderOrders);
 byId('refresh-report').addEventListener('click', loadWooOrders);
-byId('admin-dashboard-period').addEventListener('change', renderAdminDashboard);
+byId('admin-dashboard-period').addEventListener('change', () => {
+  syncDashboardDateInputs();
+  renderAdminDashboard();
+});
+['admin-dashboard-date-from', 'admin-dashboard-date-to'].forEach((id) => byId(id).addEventListener('change', () => {
+  byId('admin-dashboard-period').value = 'custom';
+  renderAdminDashboard();
+}));
 byId('orders-table').addEventListener('click', (event) => {
   const button = event.target.closest('[data-order-payment]');
   if (button) registerOrderPayment(button);
@@ -2811,7 +2851,6 @@ byId('shop-categories').addEventListener('change', (event) => {
   shopCategory = event.currentTarget.value;
   renderShopProducts();
 });
-
 byId('marketing-upload-form').addEventListener('submit', uploadMarketingMaterial);
 byId('marketing-list').addEventListener('click', (event) => {
   const downloadButton = event.target.closest('[data-marketing-download]');
@@ -2828,6 +2867,7 @@ byId('marketing-list').addEventListener('click', (event) => {
   if (deleteButton) deleteMarketingMaterial(deleteButton.dataset.marketingDelete);
 });
 
+syncDashboardDateInputs();
 initSupabaseStatus();
 initRouting();
 renderCodes();
