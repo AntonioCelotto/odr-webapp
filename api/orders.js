@@ -168,6 +168,8 @@ export default async function handler(request, response) {
           customer: `${order.billing?.first_name || ''} ${order.billing?.last_name || ''}`.trim() || order.billing?.email || 'Cliente',
           customerEmail: order.billing?.email || '',
           amount: Number(order.total) || 0,
+          taxAmount: Number(order.total_tax) || 0,
+          shippingAmount: (Number(order.shipping_total) || 0) + (Number(order.shipping_tax) || 0),
           coupon: order.coupon_lines?.map((coupon) => coupon.code).join(', ') || '',
           center: entity?.type === 'center' ? entity.name : '',
           agent: agentEntity?.name || wooCustomerAgent?.name || '',
