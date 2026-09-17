@@ -221,6 +221,78 @@ function renderAdminDashboard() {
   byId('admin-channel-total').textContent = `Totale canali ${money(channelTotal)} · ${Math.abs(channelTotal - total) < 0.01 ? 'corrisponde al fatturato totale' : 'da verificare'}`;
 }
 
+function dashboardCustomerKey(order) {
+  return String(order.customerEmail || order.customer || '').trim().toLowerCase();
+}
+
+function dashboardCustomerGroups(orders) {
+  const groups = new Map();
+  orders.forEach((order) => {
+    const key = dashboardCustomerKey(order);
+    if (!key) return;
+    if (!groups.has(key)) groups.set(key, { key, customer: order.customer || '-', email: order.customerEmail || '', orders: [] });
+    groups.get(key).orders.push(order);
+  });
+  return groups;
+}
+
+function dashboardOrderDetailRows(orders) {
+  return orders.map((order) => `<tr>
+    <td><strong>${escapeHtml(order.id)}</strong></td>
+    <td>${escapeHtml(order.date || '-')}</td>
+    <td><strong>${escapeHtml(order.customer || '-')}</strong>${order.customerEmail ? `<br><small>${escapeHtml(order.customerEmail)}</small>` : ''}</td>
+    <td>${dashboardOrderPieces(order).toLocaleString('it-IT')}</td>
+    <td><strong>${money(order.amount)}</strong></td>
+    <td><span class="state ${orderStatusClass(order.status)}">${escapeHtml(orderStatusLabel(order.status))}</span></td>
+    <td>${escapeHtml(order.agent || order.distributor || order.center || '-')}</td>
+  </tr>`).join('');
+}
+
+function openDashboardDetail(type) {
+  if (currentUser?.role !== 'admin') return;
+  const orders = dashboardFilteredOrders();
+  const periodLabel = byId('admin-dashboard-period')?.selectedOptions?.[0]?.textContent || 'Periodo selezionato';
+  let title = ''; let summary = ''; let headers = ''; let rows = '';
+  if (type === 'pending' || type === 'working') {
+    const detailOrders = type === 'pending'
+      ? orders.filter((order) => ['pending', 'on-hold'].includes(String(order.status).toLowerCase()))
+      : orders.filter((order) => String(order.status).toLowerCase() === 'processing');
+    const pieces = detailOrders.reduce((sum, order) => sum + dashboardOrderPieces(order), 0);
+    const amount = detailOrders.reduce((sum, order) => sum + Number(order.amount || 0), 0);
+    title = type === 'pending' ? 'Ordini in attesa' : 'Ordini in lavorazione';
+    summary = `${periodLabel} · ${detailOrders.length} ordini · ${pieces} pezzi · ${money(amount)}`;
+    headers = '<tr><th>Ordine</th><th>Data</th><th>Cliente</th><th>Pezzi</th><th>Importo</th><th>Stato</th><th>Canale</th></tr>';
+    rows = dashboardOrderDetailRows(detailOrders);
+  } else {
+    const periodGroups = dashboardCustomerGroups(orders);
+    const allGroups = dashboardCustomerGroups(reportOrders.filter((order) => !['cancelled', 'failed', 'refunded', 'trash'].includes(String(order.status).toLowerCase())));
+    let customers = [...periodGroups.values()];
+    if (type === 'new-customers') {
+      title = 'Nuovi clienti';
+      const start = dashboardPeriodStart(byId('admin-dashboard-period')?.value || '365');
+      customers = customers.filter((customer) => {
+        const allOrders = allGroups.get(customer.key)?.orders || customer.orders;
+        const firstDate = [...allOrders].sort((a, b) => String(a.date).localeCompare(String(b.date)))[0]?.date;
+        return !start || new Date(`${firstDate}T00:00:00`) >= start;
+      });
+    } else {
+      title = 'Clienti con riordino';
+      customers = customers.filter((customer) => customer.orders.length > 1);
+    }
+    customers.sort((a, b) => String(b.orders.at(-1)?.date || '').localeCompare(String(a.orders.at(-1)?.date || '')));
+    summary = `${periodLabel} · ${customers.length} clienti`;
+    headers = '<tr><th>Cliente</th><th>Primo ordine</th><th>Ultimo ordine</th><th>Ordini</th><th>Pezzi</th><th>Totale acquistato</th></tr>';
+    rows = customers.map((customer) => {
+      const sorted = [...customer.orders].sort((a, b) => String(a.date).localeCompare(String(b.date)));
+      const pieces = sorted.reduce((sum, order) => sum + dashboardOrderPieces(order), 0);
+      const amount = sorted.reduce((sum, order) => sum + Number(order.amount || 0), 0);
+      return `<tr><td><strong>${escapeHtml(customer.customer)}</strong>${customer.email ? `<br><small>${escapeHtml(customer.email)}</small>` : ''}</td><td>${escapeHtml(sorted[0]?.date || '-')}<br><small>${escapeHtml(sorted[0]?.id || '')}</small></td><td>${escapeHtml(sorted.at(-1)?.date || '-')}<br><small>${escapeHtml(sorted.at(-1)?.id || '')}</small></td><td>${sorted.length}</td><td>${pieces}</td><td><strong>${money(amount)}</strong></td></tr>`;
+    }).join('');
+  }
+  byId('dashboard-detail-content').innerHTML = `<div class="dashboard-detail-head"><h2 id="dashboard-detail-title">${escapeHtml(title)}</h2><button class="product-detail-close" type="button" data-dashboard-detail-close aria-label="Chiudi">×</button></div><div class="dashboard-detail-body"><p class="dashboard-detail-summary">${escapeHtml(summary)}</p>${rows ? `<div class="dashboard-detail-table-wrap"><table class="dashboard-detail-table"><thead>${headers}</thead><tbody>${rows}</tbody></table></div>` : '<div class="dashboard-empty">Nessun dato disponibile nel periodo selezionato.</div>'}</div>`;
+  if (!byId('dashboard-detail-dialog').open) byId('dashboard-detail-dialog').showModal();
+}
+
 function escapeHtml(value) {
   return String(value ?? '')
     .replaceAll('&', '&amp;')
@@ -2668,6 +2740,13 @@ byId('product-detail-dialog').addEventListener('click', (event) => {
   if (quantityButton.dataset.detailQuantity === 'increase') addToShopCart(productId);
   else updateShopCartItem(productId, 'decrease');
   openProductDetail(productId);
+});
+byId('admin-dashboard').addEventListener('click', (event) => {
+  const button = event.target.closest('[data-dashboard-detail]');
+  if (button) openDashboardDetail(button.dataset.dashboardDetail);
+});
+byId('dashboard-detail-dialog').addEventListener('click', (event) => {
+  if (event.target === event.currentTarget || event.target.closest('[data-dashboard-detail-close]')) event.currentTarget.close();
 });
 byId('shop-products').addEventListener('submit', (event) => {
   const form = event.target.closest('[data-package-document-form]');
