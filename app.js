@@ -179,9 +179,13 @@ function dashboardOrderPieces(order) {
 }
 
 function dashboardOrderTaxable(order) {
+  const amount = Number(order.amount) || 0;
+  const tax = Number(order.taxAmount) || 0;
+  const shippingNet = Number(order.shippingNetAmount) || 0;
+  const taxableProducts = amount - tax - shippingNet;
+  if (amount || tax || shippingNet) return Math.max(0, taxableProducts);
   if (order.commissionBase !== undefined && order.commissionBase !== null) return Number(order.commissionBase) || 0;
-  const itemTotal = (order.items || []).reduce((sum, item) => sum + (Number(item.total) || 0), 0);
-  return itemTotal || Number(order.amount) || 0;
+  return (order.items || []).reduce((sum, item) => sum + (Number(item.total) || 0), 0);
 }
 
 function dashboardOrderArea(order) {
