@@ -3305,3 +3305,34 @@ body .shop-cart-thumb img {
     grid-template-columns: 1fr;
   }
 }
+
+
+.marketing-upload { margin-bottom: 1.25rem; }
+.marketing-form-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1rem; }
+.marketing-form-grid label { display: grid; gap: 0.45rem; color: var(--muted); font-size: 0.84rem; font-weight: 700; }
+.marketing-form-grid .wide { grid-column: 1 / -1; }
+.marketing-form-grid input,
+.marketing-form-grid select,
+.marketing-form-grid textarea { width: 100%; }
+.marketing-upload-actions { display: flex; align-items: center; gap: 1rem; margin-top: 1rem; }
+.marketing-upload-actions .auth-message { margin: 0; }
+.marketing-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 1rem; }
+.marketing-card { display: grid; grid-template-columns: 64px minmax(0, 1fr); gap: 1rem; padding: 1.1rem; border: 1px solid rgba(83, 55, 87, 0.13); border-radius: 20px; background: #fffdfa; box-shadow: 0 14px 34px rgba(45, 29, 47, 0.07); }
+.marketing-card-icon { display: grid; place-items: center; width: 64px; height: 76px; border-radius: 14px; color: #fff; background: linear-gradient(145deg, #a83443, #6e1f2b); font-size: 0.82rem; font-weight: 900; }
+.marketing-card-copy { min-width: 0; }
+.marketing-card-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 1rem; }
+.marketing-card-head h3 { margin: 0.35rem 0 0; }
+.marketing-card-head > small,
+.marketing-card-copy > small { color: var(--muted); }
+.marketing-card-copy > p { margin: 0.75rem 0; color: var(--muted); line-height: 1.5; }
+.marketing-audience { display: inline-flex; padding: 0.25rem 0.55rem; border-radius: 999px; color: #35664b; background: #e8f4ed; font-size: 0.7rem; font-weight: 850; }
+.marketing-card-actions { display: flex; flex-wrap: wrap; gap: 0.55rem; margin-top: 1rem; }
+
+@media (max-width: 640px) {
+  .marketing-form-grid { grid-template-columns: 1fr; }
+  .marketing-form-grid .wide { grid-column: auto; }
+  .marketing-grid { grid-template-columns: 1fr; }
+  .marketing-card { grid-template-columns: 48px minmax(0, 1fr); padding: 0.9rem; }
+  .marketing-card-icon { width: 48px; height: 58px; font-size: 0.68rem; }
+  .marketing-card-head { display: grid; gap: 0.35rem; }
+}
