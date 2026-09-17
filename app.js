@@ -321,10 +321,11 @@ function openProductDetail(productId) {
   const bundleItems = Array.isArray(product?.bundleItems) ? product.bundleItems : [];
   if (!product || !bundleItems.length) return;
 
-  const imageUrl = productCatalogImage(product);
   const theoreticalValue = bundleItems.reduce((total, item) => (
     total + ((Number(item.price) || 0) * (Number(item.quantity) || 0))
   ), 0);
+  const packagePrice = Number(product.price) || 0;
+  const totalSavings = Math.max(0, theoreticalValue - packagePrice);
   const cartQuantity = shopCart.find((item) => item.productId === product.id)?.quantity || 0;
   const description = product.description || product.shortDescription || 'Composizione e dettagli del pacchetto promozionale.';
   byId('product-detail-content').innerHTML = `
@@ -333,9 +334,6 @@ function openProductDetail(productId) {
       <button type="button" class="product-detail-close" data-product-detail-close aria-label="Chiudi scheda">×</button>
     </div>
     <div class="product-detail-layout">
-      <div class="product-detail-image">
-        ${imageUrl ? `<img src="${escapeHtml(imageUrl)}" alt="${escapeHtml(product.name)}" />` : '<div class="product-placeholder">ODR</div>'}
-      </div>
       <div class="product-detail-copy">
         <small>${escapeHtml(product.sku || 'Prodotto ODR')}</small>
         <h2 id="product-detail-title">${escapeHtml(product.name)}</h2>
@@ -354,6 +352,7 @@ function openProductDetail(productId) {
         <div class="product-detail-totals">
           ${theoreticalValue ? `<p><span>Valore totale dei prodotti</span><strong>${money(theoreticalValue)}</strong></p>` : ''}
           <p><span>Prezzo pacchetto</span><strong>${productPrice(product)}</strong></p>
+          ${totalSavings ? `<p class="product-detail-savings"><span>Risparmio totale</span><strong>${money(totalSavings)}</strong></p>` : ''}
         </div>
         <div class="product-detail-actions">
           <span class="stock ${product.inStock ? 'ok' : 'off'}">${product.inStock ? 'Disponibile' : 'Esaurito'}</span>
