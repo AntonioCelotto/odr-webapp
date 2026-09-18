@@ -204,7 +204,7 @@ function renderItalyChart(orders) {
 }
 
 function renderAdminDashboard() {
-  if (currentUser?.role !== 'admin' || !byId('admin-dashboard')) return;
+  if (!['admin', 'agent', 'distributor'].includes(currentUser?.role) || !byId('admin-dashboard')) return;
   const orders = dashboardFilteredOrders();
   const total = orders.reduce((sum, order) => sum + (Number(order.amount) || 0), 0);
   const customerKeys = new Set(orders.map((order) => String(order.customerEmail || order.customer).toLowerCase()).filter(Boolean));
@@ -310,7 +310,7 @@ function dashboardOrderOrigin(order) {
 }
 
 function openDashboardDetail(type) {
-  if (currentUser?.role !== 'admin') return;
+  if (!['admin', 'agent', 'distributor'].includes(currentUser?.role)) return;
   const orders = dashboardFilteredOrders();
   const periodLabel = byId('admin-dashboard-period')?.selectedOptions?.[0]?.textContent || 'Periodo selezionato';
   let title = ''; let summary = ''; let headers = ''; let rows = '';
@@ -1962,17 +1962,27 @@ function applyModuleVisibility(rows) {
   byId('agent-customers')?.classList.toggle('module-denied', !agentCustomerAllowed);
   byId('agent-customers-nav')?.classList.toggle('hidden', !agentCustomerAllowed);
   byId('metric-network-card')?.classList.toggle('hidden', role === 'agent');
-  byId('admin-dashboard')?.classList.toggle('hidden', role !== 'admin');
-  byId('admin-dashboard-period-wrap')?.classList.toggle('hidden', role !== 'admin');
-  byId('role-dashboard-metrics')?.classList.toggle('hidden', role === 'admin');
+  const hasSalesDashboard = ['admin', 'agent', 'distributor'].includes(role);
+  byId('admin-dashboard')?.classList.toggle('hidden', !hasSalesDashboard);
+  byId('admin-dashboard-period-wrap')?.classList.toggle('hidden', !hasSalesDashboard);
+  byId('role-dashboard-metrics')?.classList.toggle('hidden', hasSalesDashboard);
+  document.querySelectorAll('[data-admin-dashboard-only]').forEach((element) => {
+    element.classList.toggle('hidden', role !== 'admin');
+  });
+  if (byId('dashboard-revenue-label')) {
+    byId('dashboard-revenue-label').textContent = role === 'admin' ? 'Totale fatturato' : 'Il tuo fatturato';
+  }
   if (byId('dashboard-intro')) {
     byId('dashboard-intro').textContent = role === 'agent'
-      ? 'Controllo rapido di clienti, ordini e vendite WooCommerce.'
-      : 'Controllo rapido di codici, rete commerciale e vendite lette da WooCommerce.';
+      ? 'La tua dashboard: clienti, ordini e vendite WooCommerce collegati al tuo account agente.'
+      : role === 'distributor'
+        ? 'La tua dashboard: clienti, ordini e vendite WooCommerce collegati al tuo account distributore.'
+        : 'Controllo rapido di codici, rete commerciale e vendite lette da WooCommerce.';
   }
   document.querySelectorAll('[data-route="setup"]').forEach((link) => {
     link.classList.toggle('hidden', role !== 'admin');
   });
+  if (hasSalesDashboard) renderAdminDashboard();
   showRoute(routeFromPath(window.location.pathname), { push: false });
 }
 
