@@ -2,10 +2,12 @@ import { Buffer } from 'node:buffer';
 
 const ROLE_CATEGORIES = {
   patient: ['persone-fisiche'],
-  center: ['prodotti', 'prodotti-2', 'pacchetti-promozionali'],
-  agent: ['prodotti', 'prodotti-2', 'pacchetti-promozionali', 'merchandising'],
+  center: ['prodotti', 'prodotti-2', 'pacchetti-promozionali', '2-linea-retail', '2-linea-retail-pf'],
+  agent: ['prodotti', 'prodotti-2', 'pacchetti-promozionali', '2-linea-professional', 'merchandising'],
   distributor: ['confezione_distributore', 'pacchetti-promozionali', 'merchandising'],
 };
+
+const SHARED_COMMERCIAL_CATEGORY_PREFIXES = ['3-promo-', 'promo-', '5-mkt-', '6-mkt-', '7-mkt-'];
 
 function json(response, status, body) {
   response.status(status);
@@ -72,8 +74,13 @@ async function getWooCoupon(client, code) {
 }
 
 function productAllowed(product, role) {
-  const allowed = role === 'admin' ? null : ROLE_CATEGORIES[role] || [];
-  return !allowed || product.categories?.some((category) => allowed.includes(category.slug));
+  if (role === 'admin') return true;
+  const allowed = ROLE_CATEGORIES[role] || [];
+  return product.categories?.some(({ slug = '' }) => (
+    allowed.includes(slug)
+    || (['agent', 'distributor'].includes(role)
+      && SHARED_COMMERCIAL_CATEGORY_PREFIXES.some((prefix) => slug.startsWith(prefix)))
+  ));
 }
 
 function validateCoupon(coupon, subtotal, email) {
