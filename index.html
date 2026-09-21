@@ -34,6 +34,7 @@
               </button>
             </span>
           </label>
+          <button id="show-password-recovery" class="auth-link-button" type="button">Password dimenticata?</button>
           <button class="primary-action full" type="submit">Entra in ODR</button>
         </form>
 
@@ -81,6 +82,41 @@
             <span>Accetto privacy e comunicazioni operative ODR.</span>
           </label>
           <button class="primary-action full" type="submit">Crea profilo</button>
+        </form>
+
+        <form id="password-recovery-form" class="auth-form hidden">
+          <div class="auth-form-heading">
+            <h2>Recupera password</h2>
+            <p>Inserisci l’email usata nell’app ODR. Riceverai un link per scegliere una nuova password.</p>
+          </div>
+          <label>
+            Email
+            <input id="recovery-email" type="email" autocomplete="email" required />
+          </label>
+          <button class="primary-action full" type="submit">Invia link di recupero</button>
+          <button id="back-to-login" class="auth-link-button centered" type="button">Torna all’accesso</button>
+        </form>
+
+        <form id="password-reset-form" class="auth-form hidden">
+          <div class="auth-form-heading">
+            <h2>Scegli la nuova password</h2>
+            <p>La nuova password deve contenere almeno 8 caratteri.</p>
+          </div>
+          <label>
+            Nuova password
+            <span class="password-field">
+              <input id="reset-password" type="password" minlength="8" autocomplete="new-password" required />
+              <button class="password-toggle" type="button" data-password-toggle="reset-password" aria-label="Mostra password" aria-pressed="false">◉</button>
+            </span>
+          </label>
+          <label>
+            Conferma nuova password
+            <span class="password-field">
+              <input id="reset-password-confirm" type="password" minlength="8" autocomplete="new-password" required />
+              <button class="password-toggle" type="button" data-password-toggle="reset-password-confirm" aria-label="Mostra password" aria-pressed="false">◉</button>
+            </span>
+          </label>
+          <button class="primary-action full" type="submit">Salva nuova password</button>
         </form>
 
         <div id="auth-message" class="auth-message"></div>
