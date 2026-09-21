@@ -63,6 +63,8 @@ const appRoutes = {
 let validatedCode = null;
 let currentUser = null;
 let authBusy = false;
+let passwordRecoveryActive = window.location.pathname === '/recupera-password'
+  || window.location.hash.includes('type=recovery');
 let shopProducts = [];
 let packageDocuments = [];
 let marketingMaterials = [];
@@ -2064,14 +2066,26 @@ async function validateCode() {
 
 function setAuthMode(mode) {
   const loginActive = mode === 'login';
+  const registerActive = mode === 'register';
+  const recoveryActive = mode === 'recovery';
+  const resetActive = mode === 'reset';
+  byId('auth-screen').classList.remove('hidden');
+  byId('app-shell').classList.add('hidden');
+  byId('auth-screen').classList.toggle('auth-reset-mode', recoveryActive || resetActive);
   byId('show-login').classList.toggle('active', loginActive);
-  byId('show-register').classList.toggle('active', !loginActive);
+  byId('show-register').classList.toggle('active', registerActive);
+  byId('show-login').disabled = resetActive;
+  byId('show-register').disabled = resetActive;
   byId('login-form').classList.toggle('hidden', !loginActive);
-  byId('register-form').classList.toggle('hidden', loginActive);
+  byId('register-form').classList.toggle('hidden', !registerActive);
+  byId('password-recovery-form').classList.toggle('hidden', !recoveryActive);
+  byId('password-reset-form').classList.toggle('hidden', !resetActive);
   showAuthMessage(
     loginActive
       ? ''
-      : 'Il paziente viene attivato subito; gli altri profili richiedono approvazione.',
+      : registerActive
+        ? 'Il paziente viene attivato subito; gli altri profili richiedono approvazione.'
+        : '',
   );
 }
 
@@ -2083,7 +2097,7 @@ function showAuthMessage(message, type = '') {
 
 function setAuthBusy(busy) {
   authBusy = busy;
-  document.querySelectorAll('#login-form button, #register-form button').forEach((button) => {
+  document.querySelectorAll('#login-form button, #register-form button, #password-recovery-form button, #password-reset-form button').forEach((button) => {
     button.disabled = busy;
   });
 }
@@ -2604,6 +2618,62 @@ async function submitRegistration(event) {
   }
 }
 
+async function submitPasswordRecovery(event) {
+  event.preventDefault();
+  if (authBusy || !supabase) return;
+
+  const email = byId('recovery-email').value.trim();
+  setAuthBusy(true);
+  showAuthMessage('Invio del link in corso...');
+  const { error } = await supabase.auth.resetPasswordForEmail(email, {
+    redirectTo: `${window.location.origin}/recupera-password`,
+  });
+  setAuthBusy(false);
+
+  if (error) {
+    showAuthMessage('Non è stato possibile inviare il link. Riprova tra qualche minuto.', 'error');
+    return;
+  }
+
+  showAuthMessage(
+    'Se l’indirizzo è associato a un account ODR, riceverai a breve un’email con il link per reimpostare la password.',
+    'success',
+  );
+}
+
+async function submitPasswordReset(event) {
+  event.preventDefault();
+  if (authBusy || !supabase) return;
+
+  const password = byId('reset-password').value;
+  const confirmation = byId('reset-password-confirm').value;
+  if (password.length < 8) {
+    showAuthMessage('La nuova password deve contenere almeno 8 caratteri.', 'error');
+    return;
+  }
+  if (password !== confirmation) {
+    showAuthMessage('Le due password non coincidono.', 'error');
+    return;
+  }
+
+  setAuthBusy(true);
+  showAuthMessage('Aggiornamento della password in corso...');
+  const { error } = await supabase.auth.updateUser({ password });
+  if (error) {
+    setAuthBusy(false);
+    showAuthMessage('Il link non è più valido o è scaduto. Richiedine uno nuovo.', 'error');
+    return;
+  }
+
+  await supabase.auth.signOut();
+  passwordRecoveryActive = false;
+  window.history.replaceState({}, '', '/');
+  setAuthMode('login');
+  byId('password-reset-form').reset();
+  setAuthBusy(false);
+  showAuthMessage('Password aggiornata. Ora puoi accedere con la nuova password.', 'success');
+}
+
 async function submitLogout() {
   if (!supabase) return;
   await supabase.auth.signOut();
@@ -2738,6 +2808,11 @@ async function restoreSession() {
   const { data } = await supabase.auth.getSession();
   if (!data.session?.user) return;
 
+  if (passwordRecoveryActive) {
+    setAuthMode('reset');
+    return;
+  }
+
   try {
     await enterAuthenticatedApp(data.session.user);
   } catch {
@@ -2748,6 +2823,11 @@ async function restoreSession() {
 
 byId('show-login').addEventListener('click', () => setAuthMode('login'));
 byId('show-register').addEventListener('click', () => setAuthMode('register'));
+byId('show-password-recovery').addEventListener('click', () => {
+  byId('recovery-email').value = byId('login-email').value.trim();
+  setAuthMode('recovery');
+});
+byId('back-to-login').addEventListener('click', () => setAuthMode('login'));
 byId('toggle-login-password').addEventListener('click', () => {
   const input = byId('login-password');
   const button = byId('toggle-login-password');
@@ -2763,6 +2843,12 @@ byId('change-password-form').addEventListener('click', (event) => {
 byId('change-password-form').addEventListener('submit', changePassword);
 byId('login-form').addEventListener('submit', submitLogin);
 byId('register-form').addEventListener('submit', submitRegistration);
+byId('password-recovery-form').addEventListener('submit', submitPasswordRecovery);
+byId('password-reset-form').addEventListener('submit', submitPasswordReset);
+byId('password-reset-form').addEventListener('click', (event) => {
+  const toggle = event.target.closest('[data-password-toggle]');
+  if (toggle) togglePasswordField(toggle);
+});
 byId('logout-button').addEventListener('click', submitLogout);
 byId('refresh-users').addEventListener('click', loadAdminUsers);
 byId('admin-users-table').addEventListener('click', handleAdminUserAction);
@@ -2957,9 +3043,18 @@ byId('marketing-list').addEventListener('click', (event) => {
 syncDashboardDateInputs();
 initSupabaseStatus();
 initRouting();
+if (supabase) {
+  supabase.auth.onAuthStateChange((event) => {
+    if (event !== 'PASSWORD_RECOVERY') return;
+    passwordRecoveryActive = true;
+    setAuthMode('reset');
+    showAuthMessage('Link verificato. Scegli ora la nuova password.', 'success');
+  });
+}
 renderCodes();
 renderPromotions();
 renderNetwork();
 renderOrders();
 updateMetrics();
+if (passwordRecoveryActive) setAuthMode('reset');
 restoreSession();
