@@ -803,6 +803,52 @@ select {
   gap: 14px;
 }
 
+.auth-form-heading {
+  display: grid;
+  gap: 7px;
+  margin-bottom: 2px;
+}
+
+.auth-form-heading h2,
+.auth-form-heading p {
+  margin: 0;
+}
+
+.auth-form-heading h2 {
+  color: var(--ink);
+  font-family: Georgia, 'Times New Roman', serif;
+  font-size: 25px;
+}
+
+.auth-form-heading p {
+  color: var(--muted);
+  font-size: 14px;
+  line-height: 1.55;
+}
+
+.auth-link-button {
+  justify-self: end;
+  margin-top: -5px;
+  padding: 2px 0;
+  color: var(--violet-strong);
+  border: 0;
+  background: transparent;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 750;
+  cursor: pointer;
+}
+
+.auth-link-button.centered {
+  justify-self: center;
+  margin-top: 0;
+}
+
+.auth-link-button:hover,
+.auth-link-button:focus-visible {
+  text-decoration: underline;
+}
+
 .auth-form label {
   color: var(--muted);
   font-size: 13px;
