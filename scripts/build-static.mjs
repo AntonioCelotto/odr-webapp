@@ -17,6 +17,7 @@ const appRouteFiles = [
   'utenti',
   'permessi',
   'impostazioni',
+  'recupera-password',
 ];
 const publicConfig = {
   supabaseUrl: process.env.SUPABASE_URL || '',
