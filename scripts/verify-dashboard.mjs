@@ -28,7 +28,11 @@ for (const role of ['admin','agent','distributor']) {
  assert.match(content('admin-promotions-chart'), /2 pz/);
  assert(!content('admin-products-chart').includes('Pacchetto promo'));
  for(const id of ['admin-products-chart','admin-category-chart','admin-promotions-chart']) assert(!content(id).includes('€'));
- assert.match(text('admin-channel-total'),/Imponibile canali 200,00 €/);
+ assert.match(text('admin-channel-total'),role==='admin'?/Imponibile canali 200,00 €/:/Imponibile clienti 200,00 €/);
+ assert.equal(elements.get('dashboard-network-channels').hidden,role!=='admin');
+ assert.equal(elements.get('dashboard-customer-channels').hidden,role==='admin');
+ assert.equal(text('dashboard-channel-title'),role==='admin'?'Agenti e distributori':'I miei clienti');
+ if(role!=='admin') { assert.match(content('dashboard-customer-channels'),/Cliente A/); assert.match(content('dashboard-customer-channels'),/200,00 €/); }
  for(const type of ['pending','working','total-revenue','agent-revenue','distributor-revenue','category-sales','promotion-sales','product-sales','channel-sales','customers','repeat-customers']) {
   run(`openDashboardDetail('${type}')`);
   if (['category-sales','promotion-sales','product-sales'].includes(type)) {

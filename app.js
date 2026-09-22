@@ -304,8 +304,20 @@ function renderAdminDashboard() {
   byId('admin-channel-distributors-total').textContent = money(distributorRows.reduce((sum, row) => sum + row.value, 0));
   const unassignedRows = channelRows.filter(row => row.label === 'Non associato alla rete');
   byId('admin-channel-unassigned').innerHTML = unassignedRows.length ? dashboardBarRows(unassignedRows) : '';
+  const customerView = currentUser.role !== 'admin';
+  byId('dashboard-channel-label').textContent = customerView ? 'Clienti · imponibile' : 'Canali · imponibile';
+  byId('dashboard-channel-title').textContent = customerView ? 'I miei clienti' : 'Agenti e distributori';
+  byId('dashboard-network-channels').hidden = customerView;
+  byId('admin-channel-unassigned').hidden = customerView;
+  byId('dashboard-customer-channels').hidden = !customerView;
+  const customerRows = customerView ? [...dashboardCustomerGroups(orders).values()].map(customer => ({
+    label: customer.email ? `${customer.customer} · ${customer.email}` : customer.customer,
+    value: customer.orders.reduce((sum, order) => sum + dashboardOrderTaxable(order), 0),
+    gross: customer.orders.reduce((sum, order) => sum + (Number(order.amount) || 0), 0),
+  })).sort((a,b) => b.value - a.value) : [];
+  byId('dashboard-customer-channels').innerHTML = customerView ? dashboardBarRows(customerRows) : '';
   const channelTotal = [...channels.values()].reduce((sum, value) => sum + value.value, 0);
-  byId('admin-channel-total').textContent = `Imponibile canali ${money(channelTotal)} · ${Math.abs(channelTotal - totalTaxable) < 0.01 ? 'corrisponde all’imponibile totale' : 'da verificare'}`;
+  byId('admin-channel-total').textContent = `Imponibile ${customerView ? 'clienti' : 'canali'} ${money(channelTotal)} · ${Math.abs(channelTotal - totalTaxable) < 0.01 ? 'corrisponde all’imponibile totale' : 'da verificare'}`;
 }
 
 function dashboardCustomerKey(order) {
@@ -352,7 +364,16 @@ function openDashboardDetail(type) {
   let title = ''; let summary = ''; let headers = ''; let rows = '';
   if (['category-sales', 'promotion-sales', 'product-sales', 'channel-sales'].includes(type)) {
     const breakdown = new Map();
-    if (type === 'channel-sales') {
+    if (type === 'channel-sales' && currentUser.role !== 'admin') {
+      const customers = [...dashboardCustomerGroups(orders).values()].map(customer => ({...customer,
+        taxable: customer.orders.reduce((sum, order) => sum + dashboardOrderTaxable(order), 0),
+        gross: customer.orders.reduce((sum, order) => sum + (Number(order.amount) || 0), 0),
+      })).sort((a,b) => b.taxable - a.taxable);
+      title = 'I miei clienti';
+      headers = '<tr><th>Cliente</th><th>Ordini</th><th>Imponibile prodotti</th><th>Totale lordo</th></tr>';
+      rows = customers.map(customer => `<tr><td><strong>${escapeHtml(customer.customer)}</strong>${customer.email ? `<br><small>${escapeHtml(customer.email)}</small>` : ''}</td><td>${customer.orders.length}</td><td><strong>${money(customer.taxable)}</strong></td><td><small>${money(customer.gross)}</small></td></tr>`).join('');
+      summary = `${periodLabel} · ${customers.length} clienti · Imponibile ${money(customers.reduce((sum, customer) => sum + customer.taxable, 0))} · Totale lordo ${money(customers.reduce((sum, customer) => sum + customer.gross, 0))}`;
+    } else if (type === 'channel-sales') {
       orders.forEach((order) => {
         const label = order.agent ? `Agente · ${order.agent}` : order.distributor ? `Distributore · ${order.distributor}` : order.center ? `Centro · ${order.center}` : 'Acquisto diretto / non associato';
         const current = breakdown.get(label) || { quantity: 0, amount: 0, taxable: 0 };

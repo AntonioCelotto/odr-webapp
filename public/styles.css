@@ -3437,3 +3437,5 @@ body .shop-cart-thumb img {
 .dashboard-overview .dashboard-channel-card { min-width: 0; padding: 16px; }
 @media (max-width: 1050px) { .dashboard-overview { grid-template-columns: 1fr; } }
 @media (max-width: 520px) { .dashboard-overview .admin-kpis { grid-template-columns: 1fr; } }
+
+.dashboard-channel-card [hidden] { display: none !important; }
