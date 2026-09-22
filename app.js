@@ -97,6 +97,7 @@ function dashboardPeriodStart(period) {
   if (period === 'year') return new Date(now.getFullYear(), 0, 1);
   const start = new Date(now);
   start.setDate(start.getDate() - Number(period || 365));
+  start.setHours(0, 0, 0, 0);
   return start;
 }
 
@@ -112,12 +113,16 @@ function dashboardDateRange() {
   return { start: dashboardPeriodStart(period), end: new Date() };
 }
 
+function dashboardLocalDate(date) {
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+}
+
 function syncDashboardDateInputs() {
   const period = byId('admin-dashboard-period')?.value || '365';
   if (period === 'custom') return;
   const start = dashboardPeriodStart(period);
-  byId('admin-dashboard-date-from').value = start ? start.toISOString().slice(0, 10) : '';
-  byId('admin-dashboard-date-to').value = new Date().toISOString().slice(0, 10);
+  byId('admin-dashboard-date-from').value = start ? dashboardLocalDate(start) : '';
+  byId('admin-dashboard-date-to').value = dashboardLocalDate(new Date());
 }
 
 function dashboardFilteredOrders() {
