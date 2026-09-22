@@ -1,4 +1,3 @@
-import { loadAttributionIndex } from './_order-attribution.js';
 import { Buffer } from 'node:buffer';
 import { customerBelongsToAgent, getAgentIdentity, getWordPressAgentCustomers, normalizeIdentity } from './_agent-identity.js';
 
@@ -89,7 +88,6 @@ export default async function handler(req, res) {
     }
 
     if (req.method === 'GET') {
-      const attributionIndex = await loadAttributionIndex(wooHeaders().Authorization);
       const customers = new Map();
       const assignedWooCustomerIds = new Set();
       const assignedWooCustomerEmails = new Set();
@@ -184,8 +182,10 @@ export default async function handler(req, res) {
           const referencedAgentEntity = (order.meta_data || []).find((meta) => meta.key === '_odr_agent_entity_id')?.value;
           const referencedCustomer = (order.meta_data || []).find((meta) => meta.key === '_odr_customer_reference')?.value;
           const assignedCustomer = assignedWooCustomerIds.has(Number(order.customer_id)) || assignedWooCustomerEmails.has(email);
-          const attributedToAgent = attributionIndex.visible(order, profile, attributionIndex.resolve(order));
-          if (!attributedToAgent) continue;
+          if (profile.role === 'agent'
+            && referencedAgent !== profile.id
+            && referencedAgentEntity !== profile.network_entity_id
+            && !assignedCustomer) continue;
           const referencedTarget = referencedAgent === profile.id && referencedCustomer
             ? [...customers.values()].find((customer) => customer.id === referencedCustomer)
             : null;
@@ -225,7 +225,7 @@ export default async function handler(req, res) {
           });
           const agentProfileId = (order.meta_data || []).find((meta) => meta.key === '_odr_agent_profile_id')?.value;
           const customerReference = (order.meta_data || []).find((meta) => meta.key === '_odr_customer_reference')?.value;
-          if (attributedToAgent) {
+          if (agentProfileId === profile.id || referencedAgentEntity === profile.network_entity_id || assignedCustomer) {
             const target = [...customers.values()].find((customer) => customer.id === customerReference)
               || [...customers.values()].find((customer) => customer.id === (Number(order.customer_id) > 0 ? `wc-${order.customer_id}` : `order-${order.id}`))
               || [...customers.values()].find((customer) => customer.email && customer.email.toLowerCase() === email);

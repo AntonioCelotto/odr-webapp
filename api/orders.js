@@ -1,5 +1,5 @@
 import { Buffer } from 'node:buffer';
-import { loadAttributionIndex, assignmentKey, metaValue } from './_order-attribution.js';
+import { customerBelongsToAgent, getAgentIdentity, getWordPressAgentCustomers, normalizeIdentity } from './_agent-identity.js';
 
 function json(response, status, body) {
   response.status(status);
@@ -21,37 +21,14 @@ async function getProfile(token) {
 }
 
 export default async function handler(request, response) {
-  if (!['GET', 'PATCH'].includes(request.method)) return json(response, 405, { error: 'Metodo non consentito' });
+  if (request.method !== 'GET') return json(response, 405, { error: 'Metodo non consentito' });
   const token = String(request.headers.authorization || '').replace(/^Bearer\s+/i, '');
   try {
     const profile = token ? await getProfile(token) : null;
     if (!profile) return json(response, 403, { error: 'Accesso richiesto' });
     const authorization = `Basic ${Buffer.from(`${process.env.WOOCOMMERCE_CONSUMER_KEY}:${process.env.WOOCOMMERCE_CONSUMER_SECRET}`).toString('base64')}`;
-    if (request.method === 'PATCH') {
-      if (profile.role !== 'admin') return json(response, 403, {error:'Operazione riservata agli amministratori'});
-      const { orderId, mode, entityId } = request.body || {};
-      if (!Number.isSafeInteger(Number(orderId)) || Number(orderId) <= 0 || !['manual','automatic'].includes(mode)) return json(response,400,{error:'Associazione non valida'});
-      if (mode === 'manual') {
-        const networkResponse = await fetch(`${process.env.SUPABASE_URL}/functions/v1/network-management`,{headers:profile.headers});
-        if (!networkResponse.ok) throw new Error('Rete non disponibile');
-        const network = await networkResponse.json();
-        if (!(network.entities || []).some(entity => entity.id === entityId && entity.active && ['agent','distributor'].includes(entity.type))) return json(response,400,{error:'Seleziona un agente o distributore attivo'});
-      }
-      const url = new URL(`/wp-json/wc/v3/orders/${Number(orderId)}`,process.env.WOOCOMMERCE_STORE_URL);
-      const before = await fetch(url,{headers:{Authorization:authorization},cache:'no-store'});
-      if (!before.ok) return json(response,before.status===404?404:502,{error:'Ordine non disponibile'});
-      const existing = await before.json();
-      const savedMeta = (existing.meta_data || []).find(item => item.key === assignmentKey);
-      const value = {mode, entityId:mode==='manual'?entityId:'', updatedBy:profile.id, updatedAt:new Date().toISOString()};
-      const result = await fetch(url,{method:'PUT',headers:{Authorization:authorization,'Content-Type':'application/json'},body:JSON.stringify({meta_data:[{...(savedMeta?{id:savedMeta.id}:{}),key:assignmentKey,value}]})});
-      if (!result.ok) throw new Error('Salvataggio associazione non riuscito');
-      const saved = metaValue(await result.json(), assignmentKey);
-      if (saved?.mode !== value.mode || saved?.entityId !== value.entityId) throw new Error('Associazione non confermata da WooCommerce');
-      return json(response,200,{saved:true});
-    }
-    const attributionIndex = await loadAttributionIndex(authorization);
     const wooOrders = [];
-    for (let page = 1; page <= 100; page += 1) {
+    for (let page = 1; page <= 5; page += 1) {
       const url = new URL('/wp-json/wc/v3/orders', process.env.WOOCOMMERCE_STORE_URL);
       url.searchParams.set('per_page', '100');
       url.searchParams.set('page', String(page));
@@ -66,6 +43,65 @@ export default async function handler(request, response) {
       wooOrders.push(...pageOrders);
       if (pageOrders.length < 100) break;
     }
+    const assignedWooCustomerIds = new Set();
+    const assignedWooCustomerEmails = new Set();
+    const wooCustomerAgentsById = new Map();
+    const wooCustomerAgentsByEmail = new Map();
+    const agentIdentity = profile.role === 'agent' ? await getAgentIdentity(profile) : null;
+    const wordpressAssignments = profile.role === 'agent'
+      ? await getWordPressAgentCustomers(profile)
+      : { customerIds: new Set(), customerEmails: new Set() };
+    wordpressAssignments.customerIds.forEach((id) => assignedWooCustomerIds.add(id));
+    wordpressAssignments.customerEmails.forEach((email) => assignedWooCustomerEmails.add(email));
+    if (['agent', 'admin'].includes(profile.role)) {
+      for (let page = 1; page <= 10; page += 1) {
+        const customerUrl = new URL('/wp-json/wc/v3/customers', process.env.WOOCOMMERCE_STORE_URL);
+        customerUrl.searchParams.set('per_page', '100');
+        customerUrl.searchParams.set('page', String(page));
+        const customerResponse = await fetch(customerUrl, { headers: { Authorization: authorization } });
+        if (!customerResponse.ok) {
+          if (customerResponse.status === 400 && page > 1) break;
+          throw new Error(`WooCommerce clienti ${customerResponse.status}`);
+        }
+        const wooCustomers = await customerResponse.json();
+        for (const customer of wooCustomers) {
+          const email = normalizeIdentity(customer.email || customer.billing?.email);
+          const assignedAgentId = (customer.meta_data || []).find((item) => item?.key === 'agente_wp_user_id')?.value;
+          const assignedAgentName = (customer.meta_data || []).find((item) => item?.key === 'nome_agente')?.value;
+          const assignment = { wordpressUserId: Number(assignedAgentId) || 0, name: String(assignedAgentName || '').trim() };
+          if (assignment.wordpressUserId || assignment.name) {
+            wooCustomerAgentsById.set(Number(customer.id), assignment);
+            if (email) wooCustomerAgentsByEmail.set(email, assignment);
+          }
+          if (profile.role === 'agent' && customerBelongsToAgent(customer.meta_data, agentIdentity)) {
+            assignedWooCustomerIds.add(Number(customer.id));
+            if (email) assignedWooCustomerEmails.add(email);
+          }
+        }
+        if (wooCustomers.length < 100) break;
+      }
+    }
+    const networkResponse = await fetch(
+      `${process.env.SUPABASE_URL}/functions/v1/network-management`,
+      { headers: profile.headers },
+    );
+    const networkPayload = networkResponse.ok ? await networkResponse.json() : {};
+    const network = networkPayload.entities || [];
+    const byId = new Map(network.map((entity) => [entity.id, entity]));
+    const byEmail = new Map(network
+      .filter((entity) => entity.email)
+      .map((entity) => [entity.email.toLowerCase(), entity]));
+    const agentsByName = new Map(network
+      .filter((entity) => entity.type === 'agent' && entity.name)
+      .map((entity) => [normalizeIdentity(entity.name), entity]));
+    const agentsByWordPressId = new Map(network
+      .filter((entity) => entity.type === 'agent' && /^WP-\d+$/i.test(entity.external_code || ''))
+      .map((entity) => [Number(String(entity.external_code).slice(3)), entity]));
+    const agentCustomerEmails = new Set(profile.role === 'agent' && profile.network_entity_id
+      ? network
+        .filter((entity) => entity.type === 'center' && entity.parent_id === profile.network_entity_id && entity.email)
+        .map((entity) => entity.email.toLowerCase())
+      : []);
     const [customerTermsResponse, manualPaymentsResponse] = await Promise.all([
       fetch(`${process.env.SUPABASE_URL}/rest/v1/agent_app_customers?select=id,payment_terms`, { headers: profile.headers }),
       fetch(`${process.env.SUPABASE_URL}/rest/v1/order_payment_entries?select=*`, { headers: profile.headers }),
@@ -75,12 +111,36 @@ export default async function handler(request, response) {
     const manualPayments = manualPaymentsResponse.ok ? await manualPaymentsResponse.json() : [];
 
     const orders = wooOrders
-      .map(order => ({order, attribution:attributionIndex.resolve(order)}))
-      .filter(({order,attribution}) => attributionIndex.visible(order,profile,attribution))
-      .map(({order,attribution}) => {
-        const customerReference = metaValue(order, '_odr_customer_reference') || '';
-        const agentProfileId = metaValue(order, '_odr_agent_profile_id') || '';
-        const agentEntity = attribution.agent;
+      .filter((order) => {
+        const email = order.billing?.email?.toLowerCase() || '';
+        const meta = order.meta_data || [];
+        const agentProfileId = meta.find((item) => item.key === '_odr_agent_profile_id')?.value;
+        const agentEntityId = meta.find((item) => item.key === '_odr_agent_entity_id')?.value;
+        return profile.role === 'admin'
+          || email === profile.email?.toLowerCase()
+          || (profile.role === 'agent' && (
+            agentCustomerEmails.has(email)
+            || agentProfileId === profile.id
+            || agentEntityId === profile.network_entity_id
+            || assignedWooCustomerIds.has(Number(order.customer_id))
+            || assignedWooCustomerEmails.has(email)
+          ));
+      })
+      .map((order) => {
+        const email = order.billing?.email?.toLowerCase() || '';
+        const meta = order.meta_data || [];
+        const customerReference = meta.find((item) => item.key === '_odr_customer_reference')?.value || '';
+        const agentProfileId = meta.find((item) => item.key === '_odr_agent_profile_id')?.value || '';
+        const orderAgentEntityId = meta.find((item) => item.key === '_odr_agent_entity_id')?.value || '';
+        const entity = byEmail.get(email);
+        const parent = entity?.parent_id ? byId.get(entity.parent_id) : null;
+        const grandparent = parent?.parent_id ? byId.get(parent.parent_id) : null;
+        const wooCustomerAgent = wooCustomerAgentsById.get(Number(order.customer_id)) || wooCustomerAgentsByEmail.get(normalizeIdentity(email));
+        const assignedAgentEntity = agentsByWordPressId.get(wooCustomerAgent?.wordpressUserId)
+          || agentsByName.get(normalizeIdentity(wooCustomerAgent?.name));
+        const agentEntity = entity?.type === 'agent'
+          ? entity
+          : entity?.type === 'center' && parent?.type === 'agent' ? parent : byId.get(orderAgentEntityId) || assignedAgentEntity || null;
         const commissionBase = (order.line_items || [])
           .reduce((sum, line) => sum + (Number(line.total) || 0), 0);
         const commissionRate = Number(agentEntity?.commission_rate) || 0;
@@ -112,14 +172,14 @@ export default async function handler(request, response) {
           shippingNetAmount: Number(order.shipping_total) || 0,
           shippingAmount: Number(order.shipping_total) || 0,
           coupon: order.coupon_lines?.map((coupon) => coupon.code).join(', ') || '',
-          center: attribution.center?.name || '',
-          agent: agentEntity?.name || '',
-          agentEntityId: agentEntity?.id || '',
-          distributor: attribution.distributor?.name || '',
-          distributorEntityId: attribution.distributor?.id || '',
-          assignmentMode: attribution.source,
-          assignmentEntityId: attribution.entityId,
-          assignmentConflict: attribution.conflict,
+          center: entity?.type === 'center' ? entity.name : '',
+          agent: agentEntity?.name || wooCustomerAgent?.name || '',
+          agentEntityId: agentEntity?.id || orderAgentEntityId,
+          distributor: entity?.type === 'distributor'
+            ? entity.name
+            : entity?.type === 'agent' && parent?.type === 'distributor'
+              ? parent.name
+              : grandparent?.type === 'distributor' ? grandparent.name : '',
           status: order.status,
           paymentStatus,
           installments,
@@ -146,7 +206,7 @@ export default async function handler(request, response) {
           paymentMethod: order.payment_method_title || '',
         };
       });
-    return json(response, 200, { orders, assignmentOptions:profile.role==='admin'?attributionIndex.options:[], warnings:attributionIndex.warnings });
+    return json(response, 200, { orders });
   } catch (error) {
     console.error('orders_error', error instanceof Error ? error.message : error);
     return json(response, 502, { error: 'Ordini WooCommerce non disponibili' });

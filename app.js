@@ -32,7 +32,6 @@ let canManageNetwork = false;
 
 let reportOrders = [];
 let filteredReportOrders = [];
-let orderAssignmentOptions = [];
 
 const moduleLabels = {
   dashboard: 'Dashboard',
@@ -1577,16 +1576,14 @@ async function loadWooOrders() {
   const payload = await response.json();
   if (!response.ok) {
     byId('report-message').textContent = payload.error || 'Report temporaneamente non disponibile.';
-    return false;
+    return;
   }
   reportOrders = payload.orders || [];
-  orderAssignmentOptions = payload.assignmentOptions || [];
   renderOrders();
   renderNetwork();
   updateMetrics();
   renderAdminDashboard();
-  byId('report-message').textContent = `${reportOrders.length} ordini WooCommerce caricati. ${(payload.warnings || []).join(' ')}`;
-  return true;
+  byId('report-message').textContent = `${reportOrders.length} ordini WooCommerce caricati.`;
 }
 
 async function loadPromoCodes() {
@@ -1839,49 +1836,6 @@ async function handleNetworkAction(event) {
   await loadNetwork();
 }
 
-function orderAssignmentControl(order) {
-  if (currentUser?.role !== 'admin' || !/^WC-\d+$/.test(order.id)) return '';
-  const selected = order.assignmentMode === 'manual' ? order.assignmentEntityId : '';
-  const options = [...orderAssignmentOptions].sort((a,b)=>a.type.localeCompare(b.type)||a.name.localeCompare(b.name,'it'));
-  return `<div class="order-assignment">
-    <label for="assignment-${escapeHtml(order.id)}">Associa questo ordine</label>
-    <select id="assignment-${escapeHtml(order.id)}">
-      <option value="">Automatico da cliente / ordine</option>
-      ${selected && !options.some(item=>item.id===selected) ? `<option value="${escapeHtml(selected)}" selected>Assegnazione salvata non più attiva</option>` : ''}
-      ${options.map(item=>`<option value="${escapeHtml(item.id)}" ${selected===item.id?'selected':''}>${escapeHtml(roleLabels[item.type])} · ${escapeHtml(item.name)}</option>`).join('')}
-    </select>
-    <button type="button" data-save-assignment="${escapeHtml(order.id)}">Salva associazione</button>
-    <small>${order.assignmentConflict ? 'Associazione da verificare' : selected ? 'Assegnazione manuale salvata' : 'Associazione automatica'} · Solo questo ordine</small>
-    <span id="assignment-message-${escapeHtml(order.id)}" role="status"></span>
-  </div>`;
-}
-
-async function saveOrderAssignment(button) {
-  if (currentUser?.role !== 'admin') return;
-  const orderId = button.dataset.saveAssignment;
-  const select = byId(`assignment-${orderId}`);
-  const message = byId(`assignment-message-${orderId}`);
-  const entityId = select.value;
-  button.disabled = true; select.disabled = true;
-  message.textContent = 'Salvataggio...';
-  try {
-    const { data } = await supabase.auth.getSession();
-    const response = await fetch('/api/orders', {
-      method:'PATCH', headers:{Authorization:`Bearer ${data.session?.access_token || ''}`, 'Content-Type':'application/json'},
-      body:JSON.stringify({orderId:Number(orderId.slice(3)),mode:entityId?'manual':'automatic',entityId}),
-    });
-    const payload = await response.json();
-    if (!response.ok || !payload.saved) throw new Error(payload.error || 'Associazione non salvata');
-    message.textContent = 'Salvata. Aggiornamento report...';
-    const refreshed = await loadWooOrders();
-    byId('report-message').textContent += refreshed ? ' Associazione salvata e report aggiornati.' : ' Associazione salvata: premi Aggiorna per ricaricare i report.';
-  } catch(error) {
-    message.textContent = error.message || 'Salvataggio non riuscito';
-  } finally {
-    button.disabled = false; select.disabled = false;
-  }
-}
-
 function renderOrders() {
   const query = byId('report-search').value.trim().toLowerCase();
   const status = byId('report-status').value;
@@ -1913,7 +1867,6 @@ function renderOrders() {
         <td data-label="Imponibile"><strong>${money(dashboardOrderTaxable(order))}</strong><br><small>Totale lordo ${money(order.amount)}</small></td>
         <td data-label="Stato WP"><span class="state ${orderStatusClass(order.status)}">${escapeHtml(orderStatusLabel(order.status))}</span></td>
         <td data-label="Dettagli">
-          ${orderAssignmentControl(order)}
           <details class="order-details">
             <summary>Apri ordine</summary>
             <div>
@@ -2973,8 +2926,6 @@ byId('admin-dashboard-period').addEventListener('change', () => {
   renderAdminDashboard();
 }));
 byId('orders-table').addEventListener('click', (event) => {
-  const assignment = event.target.closest('[data-save-assignment]');
-  if (assignment) { saveOrderAssignment(assignment); return; }
   const button = event.target.closest('[data-order-payment]');
   if (button) registerOrderPayment(button);
 });

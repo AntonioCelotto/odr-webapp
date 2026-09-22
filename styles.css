@@ -3415,9 +3415,3 @@ body .shop-cart-thumb img {
 .dashboard-sales-values { display: grid; gap: 4px; text-align: right; }
 .dashboard-sales-values small, .dashboard-bar-row > small, .report-summary small { color: var(--muted, #657067); font-size: 12px; font-weight: 400; }
 #admin-kpi-pending-detail b, #admin-kpi-working-detail b { color: var(--ink, #26332b); }
-
-.order-assignment { display: grid; gap: 7px; min-width: 220px; max-width: 320px; margin-bottom: 12px; }
-.order-assignment label { font-size: 12px; font-weight: 600; }
-.order-assignment select { width: 100%; min-width: 0; padding: 8px; border: 1px solid var(--line, #ddd); border-radius: 8px; background: #fff; }
-.order-assignment small, .order-assignment [role="status"] { white-space: normal; font-size: 12px; }
-.order-assignment button { padding: 8px; border-radius: 8px; cursor: pointer; }
