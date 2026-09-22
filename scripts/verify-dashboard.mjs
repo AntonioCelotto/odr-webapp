@@ -46,3 +46,16 @@ run(`reportOrders=[]; renderAdminDashboard(); renderOrders();`);
 assert.equal(text('admin-kpi-revenue'),'0,00 €');
 assert(!content('admin-sales-chart').includes('NaN'));
 console.log('PASS: 3 ruoli; 12 dettagli; IVA e trasporto netto; grafici, canali, prodotti; ordini esclusi; riepilogo Ordini; stato vuoto.');
+
+run(`orderAssignmentOptions=[{id:'a',type:'agent',name:'Agente A'},{id:'d',type:'distributor',name:'Distributore D'}];`);
+for(const role of ['admin','agent','distributor']) {
+ run(`currentUser={role:'${role}'}; reportOrders=${JSON.stringify([order])}; renderOrders();`);
+ const table=content('orders-table');
+ assert.equal(table.includes('Salva associazione'),role==='admin');
+ if(role==='admin') {
+  assert.match(table,/Associa questo ordine/);
+  assert.match(table,/Agente A/);
+  assert.match(table,/Distributore D/);
+ }
+}
+console.log('PASS: menu associazione visibile solo all’amministratore; agenti e distributori selezionabili.');
