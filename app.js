@@ -133,6 +133,7 @@ function dashboardBarRows(rows, valueFormatter = money) {
   return rows.length ? rows.map((row) => `
     <div class="dashboard-bar-row">
       <div><span>${escapeHtml(row.label)}</span><strong>${escapeHtml(valueFormatter(row.value))}</strong></div>
+      ${row.gross !== undefined ? `<small>Totale lordo ${money(row.gross)}${row.quantity !== undefined ? ` · ${row.quantity} pz` : ''}</small>` : ''}
       <div class="dashboard-bar-track"><i style="width:${Math.max(4, (row.value / maximum) * 100)}%"></i></div>
     </div>`).join('') : '<div class="dashboard-empty">Nessun dato disponibile nel periodo.</div>';
 }
@@ -146,7 +147,7 @@ function renderAdminSalesChart(orders) {
   }
   orders.forEach((order) => {
     const month = months.find((item) => item.key === String(order.date).slice(0, 7));
-    if (month) month.value += dashboardOrderTaxable(order);
+    if (month) { month.value += dashboardOrderTaxable(order); month.gross = (month.gross || 0) + Number(order.amount || 0); }
   });
   const width = 760; const height = 250; const insetX = 72; const insetRight = 20; const insetTop = 18; const insetBottom = 28;
   const rawMax = Math.max(...months.map((item) => item.value), 1);
@@ -165,7 +166,7 @@ function renderAdminSalesChart(orders) {
     return `<line x1="${insetX}" y1="${y}" x2="${width - insetRight}" y2="${y}" class="dashboard-grid-line"/><text x="${insetX - 9}" y="${y + 4}" text-anchor="end" class="dashboard-axis-label">${label}</text>`;
   }).join('');
   const area = `${insetX},${insetTop + chartHeight} ${points.map((item) => `${item.x},${item.y}`).join(' ')} ${width - insetRight},${insetTop + chartHeight}`;
-  byId('admin-sales-chart').innerHTML = `<svg viewBox="0 0 ${width} ${height}" role="img" aria-label="Andamento mensile dell'imponibile con griglia valori"><defs><linearGradient id="salesFill" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#58735c" stop-opacity=".32"/><stop offset="1" stop-color="#58735c" stop-opacity=".02"/></linearGradient></defs>${grid}<line x1="${insetX}" y1="${insetTop}" x2="${insetX}" y2="${insetTop + chartHeight}" class="dashboard-axis"/><polygon points="${area}" fill="url(#salesFill)"/><polyline points="${points.map((item) => `${item.x},${item.y}`).join(' ')}" class="dashboard-line"/>${points.map((item) => `<circle cx="${item.x}" cy="${item.y}" r="4" class="dashboard-point"><title>${item.label} · Imponibile: ${money(item.value)}</title></circle><text x="${item.x}" y="${height - 6}" text-anchor="middle">${item.label}</text>`).join('')}</svg>`;
+  byId('admin-sales-chart').innerHTML = `<svg viewBox="0 0 ${width} ${height}" role="img" aria-label="Andamento mensile dell'imponibile con griglia valori"><defs><linearGradient id="salesFill" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#58735c" stop-opacity=".32"/><stop offset="1" stop-color="#58735c" stop-opacity=".02"/></linearGradient></defs>${grid}<line x1="${insetX}" y1="${insetTop}" x2="${insetX}" y2="${insetTop + chartHeight}" class="dashboard-axis"/><polygon points="${area}" fill="url(#salesFill)"/><polyline points="${points.map((item) => `${item.x},${item.y}`).join(' ')}" class="dashboard-line"/>${points.map((item) => `<circle cx="${item.x}" cy="${item.y}" r="4" class="dashboard-point"><title>${item.label} · Imponibile: ${money(item.value)} · Totale lordo: ${money(item.gross)}</title></circle><text x="${item.x}" y="${height - 6}" text-anchor="middle">${item.label}</text>`).join('')}</svg>`;
 }
 
 const dashboardAreaProvinces = {
@@ -185,9 +186,17 @@ function dashboardOrderTaxable(order) {
   const tax = Number(order.taxAmount) || 0;
   const shippingNet = Number(order.shippingNetAmount) || 0;
   const taxableProducts = amount - tax - shippingNet;
-  if (amount || tax || shippingNet) return Math.max(0, taxableProducts);
+  if (amount || tax || shippingNet) return Math.max(0, Math.round((taxableProducts + Number.EPSILON) * 100) / 100);
   if (order.commissionBase !== undefined && order.commissionBase !== null) return Number(order.commissionBase) || 0;
   return (order.items || []).reduce((sum, item) => sum + (Number(item.total) || 0), 0);
+}
+
+function addDashboardProductSale(map, label, item) {
+  const sale = map.get(label) || { value: 0, gross: 0, quantity: 0 };
+  sale.value += Number(item.total) || 0;
+  sale.gross += (Number(item.total) || 0) + (Number(item.taxAmount) || 0);
+  sale.quantity += Number(item.quantity) || 0;
+  map.set(label, sale);
 }
 
 function dashboardOrderArea(order) {
@@ -196,13 +205,19 @@ function dashboardOrderArea(order) {
 }
 
 function renderItalyChart(orders) {
-  const areas = new Map(['Nord Ovest', 'Nord Est', 'Centro', 'Sud', 'Isole', 'Non definita'].map((label) => [label, 0]));
-  orders.forEach((order) => areas.set(dashboardOrderArea(order), (areas.get(dashboardOrderArea(order)) || 0) + Number(order.amount || 0)));
-  const total = [...areas.values()].reduce((sum, value) => sum + value, 0);
-  const rows = [...areas.entries()].filter(([, value]) => value > 0 || areas.size <= 1);
+  const areas = new Map();
+  orders.forEach((order) => {
+    const area = dashboardOrderArea(order);
+    const value = areas.get(area) || { taxable: 0, gross: 0 };
+    value.taxable += dashboardOrderTaxable(order);
+    value.gross += Number(order.amount) || 0;
+    areas.set(area, value);
+  });
+  const total = [...areas.values()].reduce((sum, value) => sum + value.taxable, 0);
+  const rows = [...areas.entries()];
   byId('admin-italy-chart').innerHTML = `
     <div class="italy-map-wrap"><img class="italy-silhouette" src="/italy-map.svg" alt="Cartina geografica dell'Italia" /><small>Cartina: Wikimedia Commons, CC BY-SA 3.0</small></div>
-    <div class="dashboard-area-list">${rows.length ? rows.map(([label, value]) => `<span><i></i>${escapeHtml(label)}<b>${total ? Math.round((value / total) * 100) : 0}%</b><small>${money(value)}</small></span>`).join('') : '<div class="dashboard-empty">Nessuna area disponibile.</div>'}</div>`;
+    <div class="dashboard-area-list">${rows.length ? rows.map(([label, value]) => `<span><i></i>${escapeHtml(label)}<b>${total ? Math.round((value.taxable / total) * 100) : 0}%</b><small><strong>Imponibile ${money(value.taxable)}</strong><br>Totale lordo ${money(value.gross)}</small></span>`).join('') : '<div class="dashboard-empty">Nessuna area disponibile.</div>'}</div>`;
 }
 
 function renderAdminDashboard() {
@@ -225,7 +240,7 @@ function renderAdminDashboard() {
   const repeatCustomers = [...orderCountByCustomer.values()].filter((count) => count > 1).length;
   const pendingOrders = orders.filter((order) => ['pending', 'on-hold'].includes(String(order.status).toLowerCase()));
   const workingOrders = orders.filter((order) => ['processing'].includes(String(order.status).toLowerCase()));
-  const summarizeOrders = (rows) => ({ pieces: rows.reduce((sum, order) => sum + dashboardOrderPieces(order), 0), amount: rows.reduce((sum, order) => sum + Number(order.amount || 0), 0) });
+  const summarizeOrders = (rows) => ({ pieces: rows.reduce((sum, order) => sum + dashboardOrderPieces(order), 0), amount: rows.reduce((sum, order) => sum + Number(order.amount || 0), 0), taxable: rows.reduce((sum, order) => sum + dashboardOrderTaxable(order), 0) });
   const pendingSummary = summarizeOrders(pendingOrders);
   const workingSummary = summarizeOrders(workingOrders);
   const distributorRevenue = orders.filter((order) => !order.agent && order.distributor).reduce((sum, order) => sum + Number(order.amount || 0), 0);
@@ -236,42 +251,45 @@ function renderAdminDashboard() {
   byId('admin-kpi-revenue').textContent = money(totalTaxable);
   byId('admin-kpi-revenue-taxable').textContent = `Totale lordo ${money(total)}`;
   byId('admin-kpi-pending').textContent = pendingOrders.length.toLocaleString('it-IT');
-  byId('admin-kpi-pending-detail').textContent = `${pendingSummary.pieces} pezzi · ${money(pendingSummary.amount)}`;
+  byId('admin-kpi-pending-detail').innerHTML = `<b>Imponibile ${money(pendingSummary.taxable)}</b><br>Totale lordo ${money(pendingSummary.amount)} · ${pendingSummary.pieces} pezzi`;
   byId('admin-kpi-working').textContent = workingOrders.length.toLocaleString('it-IT');
-  byId('admin-kpi-working-detail').textContent = `${workingSummary.pieces} pezzi · ${money(workingSummary.amount)}`;
-  byId('admin-kpi-distributor-revenue').textContent = money(distributorRevenue);
-  byId('admin-kpi-agent-revenue').textContent = money(agentRevenue);
-  byId('admin-kpi-distributor-taxable').textContent = `Imponibile ${money(distributorTaxable)}`;
-  byId('admin-kpi-agent-taxable').textContent = `Imponibile ${money(agentTaxable)}`;
+  byId('admin-kpi-working-detail').innerHTML = `<b>Imponibile ${money(workingSummary.taxable)}</b><br>Totale lordo ${money(workingSummary.amount)} · ${workingSummary.pieces} pezzi`;
+  byId('admin-kpi-distributor-revenue').textContent = money(distributorTaxable);
+  byId('admin-kpi-agent-revenue').textContent = money(agentTaxable);
+  byId('admin-kpi-distributor-taxable').textContent = `Totale lordo ${money(distributorRevenue)}`;
+  byId('admin-kpi-agent-taxable').textContent = `Totale lordo ${money(agentRevenue)}`;
   byId('admin-kpi-new-customer-count').textContent = customerKeys.size.toLocaleString('it-IT');
   byId('admin-kpi-customers').textContent = 'clienti nel periodo selezionato';
   byId('admin-kpi-repeat-customers').textContent = repeatCustomers.toLocaleString('it-IT');
   byId('admin-new-customers-total').textContent = newCustomerOrders.length.toLocaleString('it-IT');
   byId('admin-sales-total').textContent = money(totalTaxable);
+  byId('admin-sales-gross').textContent = `Totale lordo ${money(total)}`;
   renderAdminSalesChart(orders);
   renderItalyChart(orders);
 
   const products = new Map(); const categories = new Map(); const channels = new Map(); const promotionSales = new Map();
   orders.forEach((order) => {
     const channel = order.agent ? `Agente · ${order.agent}` : order.distributor ? `Distributore · ${order.distributor}` : 'Non associato alla rete';
-    channels.set(channel, (channels.get(channel) || 0) + Number(order.amount || 0));
+    const channelValue = channels.get(channel) || { value: 0, gross: 0 };
+    channelValue.value += dashboardOrderTaxable(order);
+    channelValue.gross += Number(order.amount) || 0;
+    channels.set(channel, channelValue);
     (order.items || []).forEach((item) => {
-      const quantity = Number(item.quantity) || 0;
-      products.set(item.name, (products.get(item.name) || 0) + quantity);
+      addDashboardProductSale(products, item.name, item);
       const product = shopProducts.find((entry) => Number(entry.id) === Number(item.productId)) || shopProducts.find((entry) => entry.name === item.name);
       const category = product?.categories?.find((entry) => !/promo/i.test(`${entry.slug} ${entry.name}`))?.name || 'Altri';
-      categories.set(category, (categories.get(category) || 0) + quantity);
+      addDashboardProductSale(categories, category, item);
       const isPromotion = /promo|pacchett/i.test(item.name) || product?.categories?.some((entry) => /promo|pacchett/i.test(`${entry.slug} ${entry.name}`));
-      if (isPromotion) promotionSales.set(item.name, (promotionSales.get(item.name) || 0) + quantity);
+      if (isPromotion) addDashboardProductSale(promotionSales, item.name, item);
     });
   });
-  const topRows = (map, limit = 5) => [...map.entries()].map(([label, value]) => ({ label, value })).sort((a, b) => b.value - a.value).slice(0, limit);
-  byId('admin-products-chart').innerHTML = dashboardBarRows(topRows(products), (value) => `${value} pz`);
-  byId('admin-category-chart').innerHTML = dashboardBarRows(topRows(categories, 7), (value) => `${value} pz`);
-  byId('admin-promotions-chart').innerHTML = dashboardBarRows(topRows(promotionSales), (value) => `${value} pz`);
+  const topRows = (map, limit = 5) => [...map.entries()].map(([label, value]) => ({ label, ...value })).sort((a, b) => b.value - a.value).slice(0, limit);
+  byId('admin-products-chart').innerHTML = dashboardBarRows(topRows(products));
+  byId('admin-category-chart').innerHTML = dashboardBarRows(topRows(categories, 7));
+  byId('admin-promotions-chart').innerHTML = dashboardBarRows(topRows(promotionSales));
   byId('admin-agents-chart').innerHTML = dashboardBarRows(topRows(channels));
-  const channelTotal = [...channels.values()].reduce((sum, value) => sum + value, 0);
-  byId('admin-channel-total').textContent = `Totale canali ${money(channelTotal)} · ${Math.abs(channelTotal - total) < 0.01 ? 'corrisponde al fatturato totale' : 'da verificare'}`;
+  const channelTotal = [...channels.values()].reduce((sum, value) => sum + value.value, 0);
+  byId('admin-channel-total').textContent = `Imponibile canali ${money(channelTotal)} · ${Math.abs(channelTotal - totalTaxable) < 0.01 ? 'corrisponde all’imponibile totale' : 'da verificare'}`;
 }
 
 function dashboardCustomerKey(order) {
@@ -295,8 +313,8 @@ function dashboardOrderDetailRows(orders) {
     <td>${escapeHtml(order.date || '-')}</td>
     <td><strong>${escapeHtml(order.customer || '-')}</strong>${order.customerEmail ? `<br><small>${escapeHtml(order.customerEmail)}</small>` : ''}</td>
     <td>${dashboardOrderPieces(order).toLocaleString('it-IT')}</td>
-    <td><strong>${money(order.amount)}</strong></td>
     <td><strong>${money(dashboardOrderTaxable(order))}</strong></td>
+    <td><small>${money(order.amount)}</small></td>
     <td>${money(order.taxAmount)}</td>
     <td>${money(order.shippingAmount)}</td>
     <td><span class="state ${orderStatusClass(order.status)}">${escapeHtml(orderStatusLabel(order.status))}</span></td>
@@ -328,23 +346,22 @@ function openDashboardDetail(type) {
         breakdown.set(label, current);
       });
       title = 'Agenti e distributori';
-      headers = '<tr><th>Canale</th><th>Ordini</th><th>Fatturato lordo</th><th>Imponibile prodotti</th></tr>';
-      rows = [...breakdown.entries()].sort((a, b) => b[1].amount - a[1].amount).map(([label, value]) => `<tr><td><strong>${escapeHtml(label)}</strong></td><td>${value.quantity}</td><td><strong>${money(value.amount)}</strong></td><td><strong>${money(value.taxable)}</strong></td></tr>`).join('');
-      summary = `${periodLabel} · ${breakdown.size} canali · Lordo ${money([...breakdown.values()].reduce((sum, value) => sum + value.amount, 0))} · Imponibile ${money([...breakdown.values()].reduce((sum, value) => sum + value.taxable, 0))}`;
+      headers = '<tr><th>Canale</th><th>Ordini</th><th>Imponibile prodotti</th><th>Totale lordo</th></tr>';
+      rows = [...breakdown.entries()].sort((a, b) => b[1].taxable - a[1].taxable).map(([label, value]) => `<tr><td><strong>${escapeHtml(label)}</strong></td><td>${value.quantity}</td><td><strong>${money(value.taxable)}</strong></td><td><small>${money(value.amount)}</small></td></tr>`).join('');
+      summary = `${periodLabel} · ${breakdown.size} canali · Imponibile ${money([...breakdown.values()].reduce((sum, value) => sum + value.taxable, 0))} · Totale lordo ${money([...breakdown.values()].reduce((sum, value) => sum + value.amount, 0))}`;
     } else {
       orders.forEach((order) => (order.items || []).forEach((item) => {
-        const quantity = Number(item.quantity) || 0;
-        const product = shopProducts.find((entry) => Number(entry.id) === Number(item.productId)) || shopProducts.find((entry) => entry.name === item.name);
+          const product = shopProducts.find((entry) => Number(entry.id) === Number(item.productId)) || shopProducts.find((entry) => entry.name === item.name);
         const isPromotion = /promo|pacchett/i.test(item.name) || product?.categories?.some((entry) => /promo|pacchett/i.test(`${entry.slug} ${entry.name}`));
         let label = item.name;
         if (type === 'category-sales') label = product?.categories?.find((entry) => !/promo/i.test(`${entry.slug} ${entry.name}`))?.name || 'Altri';
         if (type === 'promotion-sales' && !isPromotion) return;
-        breakdown.set(label, (breakdown.get(label) || 0) + quantity);
+        addDashboardProductSale(breakdown, label, item);
       }));
       title = type === 'category-sales' ? 'Vendite per categoria' : type === 'promotion-sales' ? 'Vendite promozionali' : 'Vendite per prodotto';
-      headers = `<tr><th>${type === 'category-sales' ? 'Categoria' : type === 'promotion-sales' ? 'Promozione' : 'Prodotto'}</th><th>Pezzi venduti</th></tr>`;
-      rows = [...breakdown.entries()].sort((a, b) => b[1] - a[1]).map(([label, quantity]) => `<tr><td><strong>${escapeHtml(label)}</strong></td><td>${quantity.toLocaleString('it-IT')}</td></tr>`).join('');
-      summary = `${periodLabel} · ${breakdown.size} voci · ${[...breakdown.values()].reduce((sum, value) => sum + value, 0).toLocaleString('it-IT')} pezzi`;
+      headers = `<tr><th>${type === 'category-sales' ? 'Categoria' : type === 'promotion-sales' ? 'Promozione' : 'Prodotto'}</th><th>Imponibile prodotti</th><th>Totale lordo prodotti</th><th>Pezzi venduti</th></tr>`;
+      rows = [...breakdown.entries()].sort((a, b) => b[1].value - a[1].value).map(([label, sale]) => `<tr><td><strong>${escapeHtml(label)}</strong></td><td><strong>${money(sale.value)}</strong></td><td><small>${money(sale.gross)}</small></td><td>${sale.quantity.toLocaleString('it-IT')}</td></tr>`).join('');
+      summary = `${periodLabel} · ${breakdown.size} voci · ${[...breakdown.values()].reduce((sum, value) => sum + value.quantity, 0).toLocaleString('it-IT')} pezzi · Imponibile ${money([...breakdown.values()].reduce((sum, value) => sum + value.value, 0))} · Totale lordo prodotti ${money([...breakdown.values()].reduce((sum, value) => sum + value.gross, 0))}`;
     }
   } else if (['pending', 'working', 'total-revenue', 'distributor-revenue', 'agent-revenue'].includes(type)) {
     const detailOrders = type === 'pending'
@@ -364,8 +381,8 @@ function openDashboardDetail(type) {
         : type === 'distributor-revenue' ? 'Fatturato distributori'
           : type === 'agent-revenue' ? 'Fatturato agenti'
             : 'Totale fatturato';
-    summary = `${periodLabel} · ${detailOrders.length} ordini · ${pieces} pezzi · Lordo ${money(amount)} · Imponibile ${money(taxable)}`;
-    headers = '<tr><th>Ordine</th><th>Data</th><th>Cliente</th><th>Pezzi</th><th>Totale lordo</th><th>Imponibile prodotti</th><th>IVA</th><th>Trasporto</th><th>Stato</th><th>Canale</th></tr>';
+    summary = `${periodLabel} · ${detailOrders.length} ordini · ${pieces} pezzi · Imponibile ${money(taxable)} · Totale lordo ${money(amount)}`;
+    headers = '<tr><th>Ordine</th><th>Data</th><th>Cliente</th><th>Pezzi</th><th>Imponibile prodotti</th><th>Totale lordo</th><th>IVA</th><th>Trasporto</th><th>Stato</th><th>Canale</th></tr>';
     rows = dashboardOrderDetailRows(detailOrders);
   } else if (type === 'new-customers') {
     const { start, end } = dashboardDateRange();
@@ -376,11 +393,11 @@ function openDashboardDetail(type) {
     }).sort((a, b) => String(b.orders[0].date).localeCompare(String(a.orders[0].date)));
     title = 'Nuovi clienti';
     summary = `${periodLabel} · ${customers.length} clienti con un solo acquisto complessivo`;
-    headers = '<tr><th>Cliente</th><th>Ordine</th><th>Importo</th><th>Pezzi</th><th>Provenienza</th></tr>';
+    headers = '<tr><th>Cliente</th><th>Ordine</th><th>Imponibile prodotti</th><th>Totale lordo</th><th>Pezzi</th><th>Provenienza</th></tr>';
     rows = customers.map((customer) => {
       const order = customer.orders[0];
       const origin = dashboardOrderOrigin(order);
-      return `<tr><td><strong>${escapeHtml(customer.customer)}</strong>${customer.email ? `<br><small>${escapeHtml(customer.email)}</small>` : ''}</td><td>${escapeHtml(order.date || '-')}<br><small>${escapeHtml(order.id || '')}</small></td><td><strong>${money(order.amount)}</strong></td><td>${dashboardOrderPieces(order)}</td><td><span class="dashboard-origin ${origin.direct ? 'direct' : ''}">${escapeHtml(origin.label)}</span></td></tr>`;
+      return `<tr><td><strong>${escapeHtml(customer.customer)}</strong>${customer.email ? `<br><small>${escapeHtml(customer.email)}</small>` : ''}</td><td>${escapeHtml(order.date || '-')}<br><small>${escapeHtml(order.id || '')}</small></td><td><strong>${money(dashboardOrderTaxable(order))}</strong></td><td><small>${money(order.amount)}</small></td><td>${dashboardOrderPieces(order)}</td><td><span class="dashboard-origin ${origin.direct ? 'direct' : ''}">${escapeHtml(origin.label)}</span></td></tr>`;
     }).join('');
   } else {
     const periodGroups = dashboardCustomerGroups(orders);
@@ -393,15 +410,15 @@ function openDashboardDetail(type) {
     }
     customers.sort((a, b) => Math.max(...b.orders.map((order) => new Date(order.date).getTime())) - Math.max(...a.orders.map((order) => new Date(order.date).getTime())));
     summary = `${periodLabel} · ${customers.length} clienti`;
-    headers = '<tr><th>Cliente</th><th>Primo ordine</th><th>Ultimo ordine</th><th>Ordini</th><th>Pezzi</th><th>Totale acquistato</th></tr>';
+    headers = '<tr><th>Cliente</th><th>Primo ordine</th><th>Ultimo ordine</th><th>Ordini</th><th>Pezzi</th><th>Imponibile acquistato</th><th>Totale lordo</th></tr>';
     rows = customers.map((customer) => {
       const sorted = [...customer.orders].sort((a, b) => String(a.date).localeCompare(String(b.date)));
       const pieces = sorted.reduce((sum, order) => sum + dashboardOrderPieces(order), 0);
       const amount = sorted.reduce((sum, order) => sum + Number(order.amount || 0), 0);
-      return `<tr><td><strong>${escapeHtml(customer.customer)}</strong>${customer.email ? `<br><small>${escapeHtml(customer.email)}</small>` : ''}</td><td>${escapeHtml(sorted[0]?.date || '-')}<br><small>${escapeHtml(sorted[0]?.id || '')}</small></td><td>${escapeHtml(sorted.at(-1)?.date || '-')}<br><small>${escapeHtml(sorted.at(-1)?.id || '')}</small></td><td>${sorted.length}</td><td>${pieces}</td><td><strong>${money(amount)}</strong></td></tr>`;
+      return `<tr><td><strong>${escapeHtml(customer.customer)}</strong>${customer.email ? `<br><small>${escapeHtml(customer.email)}</small>` : ''}</td><td>${escapeHtml(sorted[0]?.date || '-')}<br><small>${escapeHtml(sorted[0]?.id || '')}</small></td><td>${escapeHtml(sorted.at(-1)?.date || '-')}<br><small>${escapeHtml(sorted.at(-1)?.id || '')}</small></td><td>${sorted.length}</td><td>${pieces}</td><td><strong>${money(sorted.reduce((sum, order) => sum + dashboardOrderTaxable(order), 0))}</strong></td><td><small>${money(amount)}</small></td></tr>`;
     }).join('');
   }
-  byId('dashboard-detail-content').innerHTML = `<div class="dashboard-detail-head"><h2 id="dashboard-detail-title">${escapeHtml(title)}</h2><button class="product-detail-close" type="button" data-dashboard-detail-close aria-label="Chiudi">×</button></div><div class="dashboard-detail-body"><p class="dashboard-detail-summary">${escapeHtml(summary)}</p>${rows ? `<div class="dashboard-detail-table-wrap"><table class="dashboard-detail-table"><thead>${headers}</thead><tbody>${rows}</tbody></table></div>` : '<div class="dashboard-empty">Nessun dato disponibile nel periodo selezionato.</div>'}</div>`;
+  byId('dashboard-detail-content').innerHTML = `<div class="dashboard-detail-head"><h2 id="dashboard-detail-title">${escapeHtml(title)}</h2><button class="product-detail-close" type="button" data-dashboard-detail-close aria-label="Chiudi">×</button></div><div class="dashboard-detail-body"><p class="dashboard-detail-summary">${escapeHtml(summary).replace(/Imponibile ([^·]+)/g, '<strong>Imponibile $1</strong>')}</p>${rows ? `<div class="dashboard-detail-table-wrap"><table class="dashboard-detail-table"><thead>${headers}</thead><tbody>${rows}</tbody></table></div>` : '<div class="dashboard-empty">Nessun dato disponibile nel periodo selezionato.</div>'}</div>`;
   if (!byId('dashboard-detail-dialog').open) byId('dashboard-detail-dialog').showModal();
 }
 
@@ -1346,7 +1363,8 @@ async function applyShopCoupon(options = {}) {
 }
 
 function updateMetrics() {
-  const revenue = reportOrders.reduce((sum, order) => sum + order.amount, 0);
+  const revenue = reportOrders.reduce((sum, order) => sum + dashboardOrderTaxable(order), 0);
+  byId('metric-revenue-gross').textContent = `Totale lordo ${money(reportOrders.reduce((sum, order) => sum + Number(order.amount || 0), 0))}`;
   byId('metric-revenue').textContent = money(revenue);
   byId('metric-codes').textContent = validationCodes.filter((code) => code.active).length;
   byId('metric-network').textContent = networkRows.filter((row) => row.active).length;
@@ -1663,9 +1681,10 @@ function renderNetwork() {
   byId('network-table').innerHTML = rows
     .map((row) => {
       const agentOrders = row.type === 'agent' ? reportOrders.filter((order) => order.agentEntityId === row.id) : [];
-      const agentRevenue = agentOrders
-        .filter((order) => order.paymentStatus === 'paid' && !['cancelled', 'failed', 'refunded'].includes(order.status))
-        .reduce((sum, order) => sum + order.amount, 0);
+      const paidAgentOrders = agentOrders
+        .filter((order) => order.paymentStatus === 'paid' && !['cancelled', 'failed', 'refunded'].includes(order.status));
+      const agentRevenue = paidAgentOrders.reduce((sum, order) => sum + dashboardOrderTaxable(order), 0);
+      const agentGross = paidAgentOrders.reduce((sum, order) => sum + Number(order.amount || 0), 0);
       const agentEarnings = agentOrders.reduce((sum, order) => sum + (order.agentEarning || 0), 0);
       return `
       <tr>
@@ -1674,7 +1693,7 @@ function renderNetwork() {
         <td data-label="Zona">${escapeHtml(row.area || '-')}</td>
         <td data-label="Collegato a">${escapeHtml(row.parentName || '-')}</td>
         <td data-label="Provvigione">${row.type === 'agent' ? `${(Number(row.commission_rate || 0) * 100).toLocaleString('it-IT', { maximumFractionDigits: 2 })}%` : '-'}</td>
-        <td data-label="Fatturato">${row.type === 'agent' ? `<strong>${money(agentRevenue)}</strong><br><small>${agentOrders.length} ordini</small>` : '-'}</td>
+        <td data-label="Imponibile">${row.type === 'agent' ? `<strong>${money(agentRevenue)}</strong><br><small>Totale lordo ${money(agentGross)} · ${agentOrders.length} ordini</small>` : '-'}</td>
         <td data-label="Guadagno agente">${row.type === 'agent' ? `<strong>${money(agentEarnings)}</strong>` : '-'}</td>
         <td data-label="Contatto">${escapeHtml(row.email || row.phone || '-')}</td>
         <td data-label="Account ODR">${escapeHtml(row.accountName || 'Non collegato')}</td>
@@ -1845,13 +1864,13 @@ function renderOrders() {
         <td data-label="Agente">${escapeHtml(order.agent || '-')}</td>
         <td data-label="Distributore">${escapeHtml(order.distributor || '-')}</td>
         <td data-label="Centro">${escapeHtml(order.center || '-')}</td>
-        <td data-label="Importo"><strong>${money(order.amount)}</strong></td>
+        <td data-label="Imponibile"><strong>${money(dashboardOrderTaxable(order))}</strong><br><small>Totale lordo ${money(order.amount)}</small></td>
         <td data-label="Stato WP"><span class="state ${orderStatusClass(order.status)}">${escapeHtml(orderStatusLabel(order.status))}</span></td>
         <td data-label="Dettagli">
           <details class="order-details">
             <summary>Apri ordine</summary>
             <div>
-              <strong>Prodotti</strong>
+              <strong>Prodotti · imponibile</strong>
               ${(order.items || []).map((item) => `<span>${escapeHtml(item.name)} × ${item.quantity} · ${money(item.total)}</span>`).join('') || '<span>Nessun prodotto disponibile</span>'}
               <strong>Spedizione</strong><span>${escapeHtml(order.shippingAddress || '-')}</span>
               <strong>Pagamento</strong><span>${escapeHtml(order.paymentMethod || (order.paymentStatus === 'paid' ? 'Pagato' : 'Non pagato'))}</span>
@@ -1892,20 +1911,21 @@ function orderStatusClass(status) {
 }
 
 function renderReportSummary() {
-  const total = filteredReportOrders.reduce((sum, order) => sum + order.amount, 0);
+  const total = filteredReportOrders.reduce((sum, order) => sum + dashboardOrderTaxable(order), 0);
+  const gross = filteredReportOrders.reduce((sum, order) => sum + Number(order.amount || 0), 0);
   const totalAgentEarnings = filteredReportOrders.reduce((sum, order) => sum + (order.agentEarning || 0), 0);
   const byCoupon = filteredReportOrders.reduce((acc, order) => {
     const key = order.coupon || 'Senza coupon';
-    acc[key] = (acc[key] || 0) + order.amount;
+    acc[key] = (acc[key] || 0) + dashboardOrderTaxable(order);
     return acc;
   }, {});
   const topCoupon = Object.entries(byCoupon).sort((a, b) => b[1] - a[1])[0];
 
   byId('report-summary').innerHTML = `
     <div><span>Ordini visualizzati</span><strong>${filteredReportOrders.length}</strong></div>
-    <div><span>Totale vendite</span><strong>${money(total)}</strong></div>
+    <div><span>Imponibile vendite</span><strong>${money(total)}</strong><small>Totale lordo ${money(gross)}</small></div>
     <div><span>Provvigioni agenti</span><strong>${money(totalAgentEarnings)}</strong></div>
-    <div><span>Coupon principale</span><strong>${topCoupon ? `${topCoupon[0]} · ${money(topCoupon[1])}` : '-'}</strong></div>
+    <div><span>Coupon principale · imponibile</span><strong>${topCoupon ? `${topCoupon[0]} · ${money(topCoupon[1])}` : '-'}</strong></div>
   `;
 }
 
@@ -2731,6 +2751,8 @@ function parseOrderCsv(text) {
       date: row.data || row.date || new Date().toISOString().slice(0, 10),
       customer: row.cliente || row.customer || row.nome || 'Cliente WooCommerce',
       amount: Number(String(row.importo || row.totale || row.amount || '0').replace(',', '.')) || 0,
+      taxAmount: Number(String(row.iva || '0').replace(',', '.')) || 0,
+      shippingNetAmount: Number(String(row.trasporto_netto || '0').replace(',', '.')) || 0,
       coupon: row.coupon || row.codice || '',
       agent: row.agente || '',
       distributor: row.distributore || '',
@@ -2770,7 +2792,7 @@ function importOrdersFile(file) {
 }
 
 function exportReport() {
-  const header = ['ordine', 'data', 'cliente', 'email', 'coupon', 'agente', 'distributore', 'centro', 'importo', 'stato'];
+  const header = ['ordine', 'data', 'cliente', 'email', 'coupon', 'agente', 'distributore', 'centro', 'imponibile', 'importo', 'iva', 'trasporto_netto', 'stato'];
   const lines = filteredReportOrders.map((order) => [
     order.id,
     order.date,
@@ -2780,7 +2802,10 @@ function exportReport() {
     order.agent || '',
     order.distributor || '',
     order.center || '',
-    order.amount.toFixed(2),
+    dashboardOrderTaxable(order).toFixed(2),
+    Number(order.amount || 0).toFixed(2),
+    Number(order.taxAmount || 0).toFixed(2),
+    Number(order.shippingNetAmount || 0).toFixed(2),
     order.status,
   ]);
   const csv = [header, ...lines].map((row) => row.join(';')).join('\n');

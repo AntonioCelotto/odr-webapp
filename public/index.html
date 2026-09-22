@@ -34,6 +34,7 @@
               </button>
             </span>
           </label>
+          <button id="show-password-recovery" class="auth-link-button" type="button">Password dimenticata?</button>
           <button class="primary-action full" type="submit">Entra in ODR</button>
         </form>
 
@@ -83,6 +84,41 @@
           <button class="primary-action full" type="submit">Crea profilo</button>
         </form>
 
+        <form id="password-recovery-form" class="auth-form hidden">
+          <div class="auth-form-heading">
+            <h2>Recupera password</h2>
+            <p>Inserisci l’email usata nell’app ODR. Riceverai un link per scegliere una nuova password.</p>
+          </div>
+          <label>
+            Email
+            <input id="recovery-email" type="email" autocomplete="email" required />
+          </label>
+          <button class="primary-action full" type="submit">Invia link di recupero</button>
+          <button id="back-to-login" class="auth-link-button centered" type="button">Torna all’accesso</button>
+        </form>
+
+        <form id="password-reset-form" class="auth-form hidden">
+          <div class="auth-form-heading">
+            <h2>Scegli la nuova password</h2>
+            <p>La nuova password deve contenere almeno 8 caratteri.</p>
+          </div>
+          <label>
+            Nuova password
+            <span class="password-field">
+              <input id="reset-password" type="password" minlength="8" autocomplete="new-password" required />
+              <button class="password-toggle" type="button" data-password-toggle="reset-password" aria-label="Mostra password" aria-pressed="false">◉</button>
+            </span>
+          </label>
+          <label>
+            Conferma nuova password
+            <span class="password-field">
+              <input id="reset-password-confirm" type="password" minlength="8" autocomplete="new-password" required />
+              <button class="password-toggle" type="button" data-password-toggle="reset-password-confirm" aria-label="Mostra password" aria-pressed="false">◉</button>
+            </span>
+          </label>
+          <button class="primary-action full" type="submit">Salva nuova password</button>
+        </form>
+
         <div id="auth-message" class="auth-message"></div>
       </div>
     </section>
@@ -99,6 +135,7 @@
         <nav class="nav" aria-label="Navigazione principale">
           <a class="active" href="/dashboard" data-route="dashboard">Dashboard</a>
           <a href="/shop" data-route="shop">Shop</a>
+          <a href="/materiale-mkt" data-route="marketing">Materiale MKT</a>
           <a href="/profilo" data-route="profile">Profilo</a>
           <a href="/codici" data-route="access">Codici</a>
           <a id="agent-customers-nav" class="hidden" href="/clienti" data-route="agent-customers">Gestione clienti</a>
@@ -148,23 +185,25 @@
               <h2>Dashboard</h2>
               <p id="dashboard-intro">Controllo rapido di codici, rete commerciale e vendite lette da WooCommerce.</p>
             </div>
-            <label id="admin-dashboard-period-wrap" class="dashboard-period hidden">
-              <span>Periodo</span>
-              <select id="admin-dashboard-period" aria-label="Periodo dashboard">
+            <div id="admin-dashboard-period-wrap" class="dashboard-period hidden">
+              <label><span>Periodo</span><select id="admin-dashboard-period" aria-label="Periodo dashboard">
                 <option value="30">Ultimi 30 giorni</option>
                 <option value="90">Ultimi 90 giorni</option>
                 <option value="365" selected>Ultimi 12 mesi</option>
                 <option value="year">Anno corrente</option>
                 <option value="all">Tutto il periodo</option>
-              </select>
-            </label>
+                <option value="custom">Periodo personalizzato</option>
+              </select></label>
+              <label><span>Da</span><input id="admin-dashboard-date-from" type="date" aria-label="Data iniziale dashboard" /></label>
+              <label><span>A</span><input id="admin-dashboard-date-to" type="date" aria-label="Data finale dashboard" /></label>
+            </div>
           </div>
           <div id="role-dashboard-metrics" class="metrics">
             <div class="metric metric-visual">
               <span class="metric-icon" aria-hidden="true">€</span>
-              <span>Vendite WooCommerce</span>
+              <span>Imponibile WooCommerce</span>
               <strong id="metric-revenue">€ 0,00</strong>
-              <small>ordini WooCommerce aggiornati</small>
+              <small id="metric-revenue-gross">Totale lordo 0,00 €</small>
             </div>
             <div class="metric metric-visual">
               <span class="metric-icon" aria-hidden="true">◇</span>
@@ -187,21 +226,22 @@
           </div>
           <div id="admin-dashboard" class="admin-dashboard hidden">
             <div class="admin-kpis">
-              <article class="admin-kpi"><span>Totale fatturato</span><strong id="admin-kpi-revenue">0,00 €</strong><small>nel periodo selezionato</small></article>
-              <article class="admin-kpi admin-kpi-warning"><span>Ordini in attesa</span><strong id="admin-kpi-pending">0</strong><small id="admin-kpi-pending-detail">0 pezzi · 0,00 €</small></article>
-              <article class="admin-kpi admin-kpi-positive"><span>Ordini in lavorazione</span><strong id="admin-kpi-working">0</strong><small id="admin-kpi-working-detail">0 pezzi · 0,00 €</small></article>
-              <article class="admin-kpi"><span>Fatturato distributori</span><strong id="admin-kpi-distributor-revenue">0,00 €</strong><small>ordini associati ai distributori</small></article>
-              <article class="admin-kpi"><span>Fatturato agenti</span><strong id="admin-kpi-agent-revenue">0,00 €</strong><small>ordini associati agli agenti</small></article>
-              <article class="admin-kpi"><span>Nuovi clienti</span><strong id="admin-kpi-new-customer-count">0</strong><small id="admin-kpi-customers">0 clienti nel periodo</small></article>
-              <article class="admin-kpi"><span>Clienti con riordino</span><strong id="admin-kpi-repeat-customers">0</strong><small>almeno due ordini effettuati</small></article>
+              <article class="admin-kpi"><span id="dashboard-revenue-label">Imponibile totale</span><strong id="admin-kpi-revenue">0,00 €</strong><small id="admin-kpi-revenue-taxable">Totale lordo 0,00 €</small><button class="admin-kpi-detail" type="button" data-dashboard-detail="total-revenue">Vedi dettagli</button></article>
+              <article class="admin-kpi admin-kpi-warning"><span>Ordini in attesa</span><strong id="admin-kpi-pending">0</strong><small id="admin-kpi-pending-detail">0 pezzi · 0,00 €</small><button class="admin-kpi-detail" type="button" data-dashboard-detail="pending">Vedi dettagli</button></article>
+              <article class="admin-kpi admin-kpi-positive"><span>Ordini in lavorazione</span><strong id="admin-kpi-working">0</strong><small id="admin-kpi-working-detail">0 pezzi · 0,00 €</small><button class="admin-kpi-detail" type="button" data-dashboard-detail="working">Vedi dettagli</button></article>
+              <article class="admin-kpi" data-admin-dashboard-only><span>Imponibile distributori</span><strong id="admin-kpi-distributor-revenue">0,00 €</strong><small id="admin-kpi-distributor-taxable">Totale lordo 0,00 €</small><button class="admin-kpi-detail" type="button" data-dashboard-detail="distributor-revenue">Vedi dettagli</button></article>
+              <article class="admin-kpi" data-admin-dashboard-only><span>Imponibile agenti</span><strong id="admin-kpi-agent-revenue">0,00 €</strong><small id="admin-kpi-agent-taxable">Totale lordo 0,00 €</small><button class="admin-kpi-detail" type="button" data-dashboard-detail="agent-revenue">Vedi dettagli</button></article>
+              <article class="admin-kpi"><span>Clienti</span><strong id="admin-kpi-new-customer-count">0</strong><small id="admin-kpi-customers">clienti nel periodo selezionato</small><button class="admin-kpi-detail" type="button" data-dashboard-detail="customers">Vedi dettagli</button></article>
+              <article class="admin-kpi admin-kpi-new"><span>Nuovi clienti</span><strong id="admin-new-customers-total">0</strong><small>un solo acquisto complessivo</small><button class="admin-kpi-detail" type="button" data-dashboard-detail="new-customers">Vedi dettagli</button></article>
+              <article class="admin-kpi"><span>Clienti con riordino</span><strong id="admin-kpi-repeat-customers">0</strong><small>almeno due ordini effettuati</small><button class="admin-kpi-detail" type="button" data-dashboard-detail="repeat-customers">Vedi dettagli</button></article>
             </div>
             <div class="admin-dashboard-grid">
-              <article class="dashboard-card dashboard-card-wide"><div class="dashboard-card-heading"><div><span>Vendite</span><h3>Andamento mensile</h3></div><strong id="admin-sales-total">0,00 €</strong></div><div id="admin-sales-chart" class="dashboard-chart"></div></article>
-              <article class="dashboard-card"><div class="dashboard-card-heading"><div><span>Territorio</span><h3>Vendite in Italia</h3></div></div><div id="admin-italy-chart" class="dashboard-italy"></div></article>
-              <article class="dashboard-card"><div class="dashboard-card-heading"><div><span>Catalogo</span><h3>Vendite per categoria</h3></div></div><div id="admin-category-chart" class="dashboard-bars"></div></article>
-              <article class="dashboard-card"><div class="dashboard-card-heading"><div><span>Promozioni</span><h3>Vendite promozionali</h3></div></div><div id="admin-promotions-chart" class="dashboard-bars"></div></article>
-              <article class="dashboard-card"><div class="dashboard-card-heading"><div><span>Prodotti</span><h3>Vendite per prodotto</h3></div></div><div id="admin-products-chart" class="dashboard-bars"></div></article>
-              <article class="dashboard-card"><div class="dashboard-card-heading"><div><span>Canali</span><h3>Agenti e distributori</h3></div></div><div id="admin-agents-chart" class="dashboard-bars"></div><p id="admin-channel-total" class="dashboard-total-check"></p></article>
+              <article class="dashboard-card dashboard-card-wide"><div class="dashboard-card-heading"><div><span>Vendite · imponibile</span><h3>Andamento mensile</h3></div><div class="dashboard-sales-values"><strong id="admin-sales-total">0,00 €</strong><small id="admin-sales-gross">Totale lordo 0,00 €</small></div></div><div id="admin-sales-chart" class="dashboard-chart"></div></article>
+              <article class="dashboard-card"><div class="dashboard-card-heading"><div><span>Territorio · imponibile</span><h3>Vendite in Italia</h3></div></div><div id="admin-italy-chart" class="dashboard-italy"></div></article>
+              <article class="dashboard-card"><div class="dashboard-card-heading"><div><span>Catalogo · imponibile</span><h3>Vendite per categoria</h3></div><button class="dashboard-card-detail" type="button" data-dashboard-detail="category-sales">Vedi dettagli</button></div><div id="admin-category-chart" class="dashboard-bars"></div></article>
+              <article class="dashboard-card"><div class="dashboard-card-heading"><div><span>Promozioni · imponibile</span><h3>Vendite promozionali</h3></div><button class="dashboard-card-detail" type="button" data-dashboard-detail="promotion-sales">Vedi dettagli</button></div><div id="admin-promotions-chart" class="dashboard-bars"></div></article>
+              <article class="dashboard-card"><div class="dashboard-card-heading"><div><span>Prodotti · imponibile</span><h3>Vendite per prodotto</h3></div><button class="dashboard-card-detail" type="button" data-dashboard-detail="product-sales">Vedi dettagli</button></div><div id="admin-products-chart" class="dashboard-bars"></div></article>
+              <article class="dashboard-card"><div class="dashboard-card-heading"><div><span>Canali · imponibile</span><h3>Agenti e distributori</h3></div><button class="dashboard-card-detail" type="button" data-dashboard-detail="channel-sales">Vedi dettagli</button></div><div id="admin-agents-chart" class="dashboard-bars"></div><p id="admin-channel-total" class="dashboard-total-check"></p></article>
             </div>
           </div>
         </section>
@@ -318,6 +358,51 @@
             </div>
           </aside>
           <div id="shop-products" class="product-grid"></div>
+        </section>
+
+        <section id="marketing" class="workspace route-screen">
+          <div class="section-heading">
+            <div>
+              <p class="eyebrow">Documenti commerciali</p>
+              <h2>Materiale MKT</h2>
+              <p>PDF marketing disponibili per il tuo profilo.</p>
+            </div>
+          </div>
+
+          <form id="marketing-upload-form" class="marketing-upload panel hidden">
+            <div class="panel-title">
+              <div>
+                <p class="eyebrow">Amministrazione</p>
+                <h3>Carica un nuovo PDF</h3>
+              </div>
+            </div>
+            <div class="marketing-form-grid">
+              <label>Titolo
+                <input name="title" maxlength="160" required placeholder="Es. Brochure linea viso" />
+              </label>
+              <label>Destinatari
+                <select name="audience" required>
+                  <option value="all">Tutti gli account</option>
+                  <option value="agent">Solo agenti</option>
+                  <option value="distributor">Solo distributori</option>
+                  <option value="center">Solo centri benessere</option>
+                </select>
+              </label>
+              <label class="wide">Descrizione
+                <textarea name="description" rows="3" maxlength="600" placeholder="Breve descrizione del materiale"></textarea>
+              </label>
+              <label class="wide">File PDF
+                <input name="pdf" type="file" accept="application/pdf,.pdf" required />
+              </label>
+            </div>
+            <div class="marketing-upload-actions">
+              <button class="primary-action" type="submit">Carica materiale</button>
+              <span id="marketing-upload-message" class="auth-message"></span>
+            </div>
+          </form>
+
+          <div id="marketing-message" class="auth-message">Caricamento materiali...</div>
+          <div id="marketing-list" class="marketing-grid"></div>
         </section>
 
         <section id="access" class="split route-screen">
@@ -552,7 +637,7 @@
                   <th>Zona</th>
                   <th>Collegato a</th>
                   <th>Provvigione</th>
-                  <th>Fatturato</th>
+                  <th>Imponibile / lordo</th>
                   <th>Guadagno agente</th>
                   <th>Contatto</th>
                   <th>Account ODR</th>
@@ -646,7 +731,7 @@
                   <th>Agente</th>
                   <th>Distributore</th>
                   <th>Centro</th>
-                  <th>Importo</th>
+                  <th>Imponibile / lordo</th>
                   <th>Stato</th>
                   <th>Dettagli</th>
                 </tr>
@@ -727,6 +812,12 @@
         </section>
       </main>
     </div>
+    <dialog id="product-detail-dialog" class="product-detail-dialog" aria-labelledby="product-detail-title">
+      <div id="product-detail-content"></div>
+    </dialog>
+    <dialog id="dashboard-detail-dialog" class="dashboard-detail-dialog" aria-labelledby="dashboard-detail-title">
+      <div id="dashboard-detail-content"></div>
+    </dialog>
     <script src="/config.js"></script>
     <script src="/app.js"></script>
   </body>

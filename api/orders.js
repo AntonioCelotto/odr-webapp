@@ -192,6 +192,7 @@ export default async function handler(request, response) {
             name: line.name || 'Prodotto',
             quantity: Number(line.quantity) || 0,
             total: Number(line.total) || 0,
+            taxAmount: Number(line.total_tax) || 0,
           })),
           shippingAddress: [
             order.shipping?.address_1 || order.billing?.address_1,

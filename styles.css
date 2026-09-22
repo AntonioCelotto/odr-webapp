@@ -3410,3 +3410,8 @@ body .shop-cart-thumb img {
     grid-template-columns: 1fr;
   }
 }
+
+/* Monetary dashboard hierarchy */
+.dashboard-sales-values { display: grid; gap: 4px; text-align: right; }
+.dashboard-sales-values small, .dashboard-bar-row > small, .report-summary small { color: var(--muted, #657067); font-size: 12px; font-weight: 400; }
+#admin-kpi-pending-detail b, #admin-kpi-working-detail b { color: var(--ink, #26332b); }
