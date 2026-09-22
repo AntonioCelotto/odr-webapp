@@ -281,18 +281,20 @@ function renderAdminDashboard() {
     channelValue.gross += Number(order.amount) || 0;
     channels.set(channel, channelValue);
     (order.items || []).forEach((item) => {
-      addDashboardProductSale(products, item.name, item);
       const product = shopProducts.find((entry) => Number(entry.id) === Number(item.productId)) || shopProducts.find((entry) => entry.name === item.name);
       const category = product?.categories?.find((entry) => !/promo/i.test(`${entry.slug} ${entry.name}`))?.name || 'Altri';
       addDashboardProductSale(categories, category, item);
       const isPromotion = /promo|pacchett/i.test(item.name) || product?.categories?.some((entry) => /promo|pacchett/i.test(`${entry.slug} ${entry.name}`));
       if (isPromotion) addDashboardProductSale(promotionSales, item.name, item);
+      else addDashboardProductSale(products, item.name, item);
     });
   });
   const topRows = (map, limit = 5) => [...map.entries()].map(([label, value]) => ({ label, ...value })).sort((a, b) => b.value - a.value).slice(0, limit);
-  byId('admin-products-chart').innerHTML = dashboardBarRows(topRows(products));
-  byId('admin-category-chart').innerHTML = dashboardBarRows(topRows(categories, 7));
-  byId('admin-promotions-chart').innerHTML = dashboardBarRows(topRows(promotionSales));
+  const pieceRows = map => [...map.entries()].map(([label, sale]) => ({label, value: sale.quantity})).sort((a,b) => b.value - a.value);
+  const piecesLabel = value => `${value.toLocaleString('it-IT')} pz`;
+  byId('admin-products-chart').innerHTML = dashboardBarRows(pieceRows(products), piecesLabel);
+  byId('admin-category-chart').innerHTML = dashboardBarRows(pieceRows(categories), piecesLabel);
+  byId('admin-promotions-chart').innerHTML = dashboardBarRows(pieceRows(promotionSales), piecesLabel);
   const channelRows = topRows(channels, Infinity);
   const agentRows = channelRows.filter(row => row.label.startsWith('Agente · ')).map(row => ({...row, label: row.label.slice(9)}));
   const distributorRows = channelRows.filter(row => row.label.startsWith('Distributore · ')).map(row => ({...row, label: row.label.slice(15)}));
@@ -370,12 +372,13 @@ function openDashboardDetail(type) {
         let label = item.name;
         if (type === 'category-sales') label = product?.categories?.find((entry) => !/promo/i.test(`${entry.slug} ${entry.name}`))?.name || 'Altri';
         if (type === 'promotion-sales' && !isPromotion) return;
+        if (type === 'product-sales' && isPromotion) return;
         addDashboardProductSale(breakdown, label, item);
       }));
       title = type === 'category-sales' ? 'Vendite per categoria' : type === 'promotion-sales' ? 'Vendite promozionali' : 'Vendite per prodotto';
-      headers = `<tr><th>${type === 'category-sales' ? 'Categoria' : type === 'promotion-sales' ? 'Promozione' : 'Prodotto'}</th><th>Imponibile prodotti</th><th>Totale lordo prodotti</th><th>Pezzi venduti</th></tr>`;
-      rows = [...breakdown.entries()].sort((a, b) => b[1].value - a[1].value).map(([label, sale]) => `<tr><td><strong>${escapeHtml(label)}</strong></td><td><strong>${money(sale.value)}</strong></td><td><small>${money(sale.gross)}</small></td><td>${sale.quantity.toLocaleString('it-IT')}</td></tr>`).join('');
-      summary = `${periodLabel} · ${breakdown.size} voci · ${[...breakdown.values()].reduce((sum, value) => sum + value.quantity, 0).toLocaleString('it-IT')} pezzi · Imponibile ${money([...breakdown.values()].reduce((sum, value) => sum + value.value, 0))} · Totale lordo prodotti ${money([...breakdown.values()].reduce((sum, value) => sum + value.gross, 0))}`;
+      headers = `<tr><th>${type === 'category-sales' ? 'Categoria' : type === 'promotion-sales' ? 'Promozione' : 'Prodotto'}</th><th>Pezzi venduti</th></tr>`;
+      rows = [...breakdown.entries()].sort((a, b) => b[1].quantity - a[1].quantity).map(([label, sale]) => `<tr><td><strong>${escapeHtml(label)}</strong></td><td><strong>${sale.quantity.toLocaleString('it-IT')}</strong></td></tr>`).join('');
+      summary = `${periodLabel} · ${breakdown.size} voci · ${[...breakdown.values()].reduce((sum, value) => sum + value.quantity, 0).toLocaleString('it-IT')} pezzi venduti`;
     }
   } else if (['pending', 'working', 'total-revenue', 'distributor-revenue', 'agent-revenue'].includes(type)) {
     const detailOrders = type === 'pending'

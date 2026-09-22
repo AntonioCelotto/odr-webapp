@@ -25,12 +25,20 @@ for (const role of ['admin','agent','distributor']) {
  assert.match(content('admin-kpi-working-detail'), /<b>Imponibile 100,00 €<\/b>/);
  assert.match(content('admin-italy-chart'), /50%/);
  assert.match(content('admin-sales-chart'), /Imponibile: 200,00 € · Totale lordo: 244,20 €/);
- assert.match(content('admin-products-chart'), /Totale lordo 122,00 € · 2 pz/);
+ assert.match(content('admin-promotions-chart'), /2 pz/);
+ assert(!content('admin-products-chart').includes('Pacchetto promo'));
+ for(const id of ['admin-products-chart','admin-category-chart','admin-promotions-chart']) assert(!content(id).includes('€'));
  assert.match(text('admin-channel-total'),/Imponibile canali 200,00 €/);
  for(const type of ['pending','working','total-revenue','agent-revenue','distributor-revenue','category-sales','promotion-sales','product-sales','channel-sales','customers','repeat-customers']) {
   run(`openDashboardDetail('${type}')`);
-  assert.match(content('dashboard-detail-content'), /Imponibile/, `${role}/${type}`);
-  assert.match(content('dashboard-detail-content'), /lordo/, `${role}/${type}`);
+  if (['category-sales','promotion-sales','product-sales'].includes(type)) {
+   assert.match(content('dashboard-detail-content'), /Pezzi venduti/);
+   assert(!content('dashboard-detail-content').includes('€'));
+   if(type==='product-sales') assert(!content('dashboard-detail-content').includes('Pacchetto promo'));
+  } else {
+   assert.match(content('dashboard-detail-content'), /Imponibile/, `${role}/${type}`);
+   assert.match(content('dashboard-detail-content'), /lordo/, `${role}/${type}`);
+  }
   assert(!content('dashboard-detail-content').includes('NaN'));
  }
 }
