@@ -146,7 +146,7 @@ function renderAdminSalesChart(orders) {
   }
   orders.forEach((order) => {
     const month = months.find((item) => item.key === String(order.date).slice(0, 7));
-    if (month) month.value += Number(order.amount) || 0;
+    if (month) month.value += dashboardOrderTaxable(order);
   });
   const width = 760; const height = 250; const insetX = 72; const insetRight = 20; const insetTop = 18; const insetBottom = 28;
   const rawMax = Math.max(...months.map((item) => item.value), 1);
@@ -165,7 +165,7 @@ function renderAdminSalesChart(orders) {
     return `<line x1="${insetX}" y1="${y}" x2="${width - insetRight}" y2="${y}" class="dashboard-grid-line"/><text x="${insetX - 9}" y="${y + 4}" text-anchor="end" class="dashboard-axis-label">${label}</text>`;
   }).join('');
   const area = `${insetX},${insetTop + chartHeight} ${points.map((item) => `${item.x},${item.y}`).join(' ')} ${width - insetRight},${insetTop + chartHeight}`;
-  byId('admin-sales-chart').innerHTML = `<svg viewBox="0 0 ${width} ${height}" role="img" aria-label="Andamento vendite mensili con griglia valori"><defs><linearGradient id="salesFill" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#58735c" stop-opacity=".32"/><stop offset="1" stop-color="#58735c" stop-opacity=".02"/></linearGradient></defs>${grid}<line x1="${insetX}" y1="${insetTop}" x2="${insetX}" y2="${insetTop + chartHeight}" class="dashboard-axis"/><polygon points="${area}" fill="url(#salesFill)"/><polyline points="${points.map((item) => `${item.x},${item.y}`).join(' ')}" class="dashboard-line"/>${points.map((item) => `<circle cx="${item.x}" cy="${item.y}" r="4" class="dashboard-point"><title>${item.label}: ${money(item.value)}</title></circle><text x="${item.x}" y="${height - 6}" text-anchor="middle">${item.label}</text>`).join('')}</svg>`;
+  byId('admin-sales-chart').innerHTML = `<svg viewBox="0 0 ${width} ${height}" role="img" aria-label="Andamento mensile dell'imponibile con griglia valori"><defs><linearGradient id="salesFill" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#58735c" stop-opacity=".32"/><stop offset="1" stop-color="#58735c" stop-opacity=".02"/></linearGradient></defs>${grid}<line x1="${insetX}" y1="${insetTop}" x2="${insetX}" y2="${insetTop + chartHeight}" class="dashboard-axis"/><polygon points="${area}" fill="url(#salesFill)"/><polyline points="${points.map((item) => `${item.x},${item.y}`).join(' ')}" class="dashboard-line"/>${points.map((item) => `<circle cx="${item.x}" cy="${item.y}" r="4" class="dashboard-point"><title>${item.label} · Imponibile: ${money(item.value)}</title></circle><text x="${item.x}" y="${height - 6}" text-anchor="middle">${item.label}</text>`).join('')}</svg>`;
 }
 
 const dashboardAreaProvinces = {
@@ -233,8 +233,8 @@ function renderAdminDashboard() {
   const totalTaxable = orders.reduce((sum, order) => sum + dashboardOrderTaxable(order), 0);
   const distributorTaxable = orders.filter((order) => !order.agent && order.distributor).reduce((sum, order) => sum + dashboardOrderTaxable(order), 0);
   const agentTaxable = orders.filter((order) => order.agent).reduce((sum, order) => sum + dashboardOrderTaxable(order), 0);
-  byId('admin-kpi-revenue').textContent = money(total);
-  byId('admin-kpi-revenue-taxable').textContent = `Imponibile ${money(totalTaxable)}`;
+  byId('admin-kpi-revenue').textContent = money(totalTaxable);
+  byId('admin-kpi-revenue-taxable').textContent = `Totale lordo ${money(total)}`;
   byId('admin-kpi-pending').textContent = pendingOrders.length.toLocaleString('it-IT');
   byId('admin-kpi-pending-detail').textContent = `${pendingSummary.pieces} pezzi · ${money(pendingSummary.amount)}`;
   byId('admin-kpi-working').textContent = workingOrders.length.toLocaleString('it-IT');
@@ -247,7 +247,7 @@ function renderAdminDashboard() {
   byId('admin-kpi-customers').textContent = 'clienti nel periodo selezionato';
   byId('admin-kpi-repeat-customers').textContent = repeatCustomers.toLocaleString('it-IT');
   byId('admin-new-customers-total').textContent = newCustomerOrders.length.toLocaleString('it-IT');
-  byId('admin-sales-total').textContent = money(total);
+  byId('admin-sales-total').textContent = money(totalTaxable);
   renderAdminSalesChart(orders);
   renderItalyChart(orders);
 
@@ -1972,7 +1972,7 @@ function applyModuleVisibility(rows) {
     element.classList.toggle('hidden', role !== 'admin');
   });
   if (byId('dashboard-revenue-label')) {
-    byId('dashboard-revenue-label').textContent = role === 'admin' ? 'Totale fatturato' : 'Il tuo fatturato';
+    byId('dashboard-revenue-label').textContent = role === 'admin' ? 'Imponibile totale' : 'Il tuo imponibile';
   }
   if (byId('dashboard-intro')) {
     byId('dashboard-intro').textContent = role === 'agent'
