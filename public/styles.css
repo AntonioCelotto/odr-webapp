@@ -3448,3 +3448,6 @@ body .shop-cart-thumb img {
 .customer-report-table td { vertical-align:top; }
 .customer-turnover { font-weight:700; white-space:nowrap; }
 .customer-monthly-chart { max-height:420px; overflow:auto; padding:8px 0; }
+
+.dashboard-sales-expand { margin-top: 14px; }
+.dashboard-sales-expand[hidden] { display: none !important; }

@@ -227,6 +227,18 @@ function renderItalyChart(orders) {
     <div class="dashboard-area-list">${rows.length ? rows.map(([label, value]) => `<span><i></i>${escapeHtml(label)}<b>${total ? Math.round((value.taxable / total) * 100) : 0}%</b><small><strong>Imponibile ${money(value.taxable)}</strong><br>Totale lordo ${money(value.gross)}</small></span>`).join('') : '<div class="dashboard-empty">Nessuna area disponibile.</div>'}</div>`;
 }
 
+const dashboardSalesExpanded = { products: false, promotions: false };
+
+function renderExpandableSales(kind, rows, formatter) {
+  const limited = currentUser?.role === 'admin';
+  const expanded = limited && dashboardSalesExpanded[kind];
+  byId(`admin-${kind}-chart`).innerHTML = dashboardBarRows(limited && !expanded ? rows.slice(0, 10) : rows, formatter);
+  const button = byId(`admin-${kind}-expand`);
+  button.hidden = !limited || rows.length <= 10;
+  button.textContent = expanded ? 'Mostra meno' : `Mostra tutti (${rows.length})`;
+  button.ariaExpanded = String(Boolean(expanded));
+}
+
 function renderAdminDashboard() {
   if (!['admin', 'agent', 'distributor'].includes(currentUser?.role) || !byId('admin-dashboard')) return;
   const orders = dashboardFilteredOrders();
@@ -293,9 +305,9 @@ function renderAdminDashboard() {
   const topRows = (map, limit = 5) => [...map.entries()].map(([label, value]) => ({ label, ...value })).sort((a, b) => b.value - a.value).slice(0, limit);
   const pieceRows = map => [...map.entries()].map(([label, sale]) => ({label, value: sale.quantity})).sort((a,b) => b.value - a.value);
   const piecesLabel = value => `${value.toLocaleString('it-IT')} pz`;
-  byId('admin-products-chart').innerHTML = dashboardBarRows(pieceRows(products), piecesLabel);
+  renderExpandableSales('products', pieceRows(products), piecesLabel);
   byId('admin-category-chart').innerHTML = dashboardBarRows(pieceRows(categories), piecesLabel);
-  byId('admin-promotions-chart').innerHTML = dashboardBarRows(pieceRows(promotionSales), piecesLabel);
+  renderExpandableSales('promotions', pieceRows(promotionSales), piecesLabel);
   const channelRows = topRows(channels, Infinity);
   const agentRows = channelRows.filter(row => row.label.startsWith('Agente · ')).map(row => ({...row, label: row.label.slice(9)}));
   const distributorRows = channelRows.filter(row => row.label.startsWith('Distributore · ')).map(row => ({...row, label: row.label.slice(15)}));
@@ -2244,6 +2256,8 @@ async function enterAuthenticatedApp(user) {
 
 function enterApp(user) {
   currentUser = user;
+  dashboardSalesExpanded.products = false;
+  dashboardSalesExpanded.promotions = false;
   byId('auth-screen').classList.add('hidden');
   byId('app-shell').classList.remove('hidden');
   byId('role').value = user.role;
@@ -3321,4 +3335,12 @@ byId('customer-report-refresh').addEventListener('click', () => loadAdminCustome
 byId('customer-report-table').addEventListener('click', event => {
   const button = event.target.closest('[data-customer-turnover]');
   if (button) openCustomerTurnover(Number(button.dataset.customerTurnover));
+});
+
+['products', 'promotions'].forEach(kind => {
+  byId(`admin-${kind}-expand`).addEventListener('click', () => {
+    if (currentUser?.role !== 'admin') return;
+    dashboardSalesExpanded[kind] = !dashboardSalesExpanded[kind];
+    renderAdminDashboard();
+  });
 });
