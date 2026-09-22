@@ -288,7 +288,15 @@ function renderAdminDashboard() {
   byId('admin-products-chart').innerHTML = dashboardBarRows(topRows(products));
   byId('admin-category-chart').innerHTML = dashboardBarRows(topRows(categories, 7));
   byId('admin-promotions-chart').innerHTML = dashboardBarRows(topRows(promotionSales));
-  byId('admin-agents-chart').innerHTML = dashboardBarRows(topRows(channels));
+  const channelRows = topRows(channels, Infinity);
+  const agentRows = channelRows.filter(row => row.label.startsWith('Agente · ')).map(row => ({...row, label: row.label.slice(9)}));
+  const distributorRows = channelRows.filter(row => row.label.startsWith('Distributore · ')).map(row => ({...row, label: row.label.slice(15)}));
+  byId('admin-agents-chart').innerHTML = dashboardBarRows(agentRows);
+  byId('admin-distributors-chart').innerHTML = dashboardBarRows(distributorRows);
+  byId('admin-channel-agents-total').textContent = money(agentRows.reduce((sum, row) => sum + row.value, 0));
+  byId('admin-channel-distributors-total').textContent = money(distributorRows.reduce((sum, row) => sum + row.value, 0));
+  const unassignedRows = channelRows.filter(row => row.label === 'Non associato alla rete');
+  byId('admin-channel-unassigned').innerHTML = unassignedRows.length ? dashboardBarRows(unassignedRows) : '';
   const channelTotal = [...channels.values()].reduce((sum, value) => sum + value.value, 0);
   byId('admin-channel-total').textContent = `Imponibile canali ${money(channelTotal)} · ${Math.abs(channelTotal - totalTaxable) < 0.01 ? 'corrisponde all’imponibile totale' : 'da verificare'}`;
 }

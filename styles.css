@@ -3421,3 +3421,10 @@ body .shop-cart-thumb img {
 .order-assignment select { width: 100%; min-width: 0; padding: 8px; border: 1px solid var(--line, #ddd); border-radius: 8px; background: #fff; }
 .order-assignment small, .order-assignment [role="status"] { white-space: normal; font-size: 12px; }
 .order-assignment button { padding: 8px; border-radius: 8px; cursor: pointer; }
+
+.dashboard-channel-columns { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 28px; }
+.dashboard-channel-columns h4 { margin: 0; }
+.dashboard-channel-columns > section { min-width: 0; }
+.dashboard-channel-card .dashboard-bar-row span { white-space: normal; overflow-wrap: anywhere; }
+#admin-channel-unassigned:has(.dashboard-bar-row) { margin-top: 24px; padding-top: 18px; border-top: 1px solid var(--border, #e5e1dc); }
+@media (max-width: 700px) { .dashboard-channel-columns { grid-template-columns: 1fr; } }

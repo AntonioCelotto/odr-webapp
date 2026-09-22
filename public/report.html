@@ -241,7 +241,15 @@
               <article class="dashboard-card"><div class="dashboard-card-heading"><div><span>Catalogo · imponibile</span><h3>Vendite per categoria</h3></div><button class="dashboard-card-detail" type="button" data-dashboard-detail="category-sales">Vedi dettagli</button></div><div id="admin-category-chart" class="dashboard-bars"></div></article>
               <article class="dashboard-card"><div class="dashboard-card-heading"><div><span>Promozioni · imponibile</span><h3>Vendite promozionali</h3></div><button class="dashboard-card-detail" type="button" data-dashboard-detail="promotion-sales">Vedi dettagli</button></div><div id="admin-promotions-chart" class="dashboard-bars"></div></article>
               <article class="dashboard-card"><div class="dashboard-card-heading"><div><span>Prodotti · imponibile</span><h3>Vendite per prodotto</h3></div><button class="dashboard-card-detail" type="button" data-dashboard-detail="product-sales">Vedi dettagli</button></div><div id="admin-products-chart" class="dashboard-bars"></div></article>
-              <article class="dashboard-card"><div class="dashboard-card-heading"><div><span>Canali · imponibile</span><h3>Agenti e distributori</h3></div><button class="dashboard-card-detail" type="button" data-dashboard-detail="channel-sales">Vedi dettagli</button></div><div id="admin-agents-chart" class="dashboard-bars"></div><p id="admin-channel-total" class="dashboard-total-check"></p></article>
+              <article class="dashboard-card dashboard-card-wide dashboard-channel-card">
+                <div class="dashboard-card-heading"><div><span>Canali · imponibile</span><h3>Agenti e distributori</h3></div><button class="dashboard-card-detail" type="button" data-dashboard-detail="channel-sales">Vedi dettagli</button></div>
+                <div class="dashboard-channel-columns">
+                  <section aria-labelledby="channel-agents-heading"><div class="dashboard-card-heading"><h4 id="channel-agents-heading">Agenti</h4><strong id="admin-channel-agents-total">0,00 €</strong></div><div id="admin-agents-chart" class="dashboard-bars"></div></section>
+                  <section aria-labelledby="channel-distributors-heading"><div class="dashboard-card-heading"><h4 id="channel-distributors-heading">Distributori</h4><strong id="admin-channel-distributors-total">0,00 €</strong></div><div id="admin-distributors-chart" class="dashboard-bars"></div></section>
+                </div>
+                <div id="admin-channel-unassigned" class="dashboard-bars"></div>
+                <p id="admin-channel-total" class="dashboard-total-check"></p>
+              </article>
             </div>
           </div>
         </section>
