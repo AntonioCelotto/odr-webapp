@@ -47,6 +47,7 @@ const moduleLabels = {
 const appRoutes = {
   dashboard: { path: '/dashboard', title: 'Dashboard' },
   shop: { path: '/shop', title: 'Shop' },
+  marketing: { path: '/materiale-mkt', title: 'Materiale MKT' },
   profile: { path: '/profilo', title: 'Il mio profilo' },
   access: { path: '/codici', title: 'Codici e convenzioni' },
   promotions: { path: '/promozioni', title: 'Promozioni' },
@@ -62,8 +63,11 @@ const appRoutes = {
 let validatedCode = null;
 let currentUser = null;
 let authBusy = false;
+let passwordRecoveryActive = window.location.pathname === '/recupera-password'
+  || window.location.hash.includes('type=recovery');
 let shopProducts = [];
 let packageDocuments = [];
+let marketingMaterials = [];
 let shopCategory = 'all';
 let shopOpening = false;
 let shopCart = [];
@@ -95,11 +99,32 @@ function dashboardPeriodStart(period) {
   return start;
 }
 
+function dashboardDateValue(date) {
+  return date ? new Date(`${date}T00:00:00`) : null;
+}
+
+function dashboardDateRange() {
+  const period = byId('admin-dashboard-period')?.value || '365';
+  const customFrom = dashboardDateValue(byId('admin-dashboard-date-from')?.value);
+  const customTo = dashboardDateValue(byId('admin-dashboard-date-to')?.value);
+  if (period === 'custom') return { start: customFrom, end: customTo };
+  return { start: dashboardPeriodStart(period), end: new Date() };
+}
+
+function syncDashboardDateInputs() {
+  const period = byId('admin-dashboard-period')?.value || '365';
+  if (period === 'custom') return;
+  const start = dashboardPeriodStart(period);
+  byId('admin-dashboard-date-from').value = start ? start.toISOString().slice(0, 10) : '';
+  byId('admin-dashboard-date-to').value = new Date().toISOString().slice(0, 10);
+}
+
 function dashboardFilteredOrders() {
-  const start = dashboardPeriodStart(byId('admin-dashboard-period')?.value || '365');
+  const { start, end } = dashboardDateRange();
   return reportOrders.filter((order) => {
     if (['cancelled', 'failed', 'refunded', 'trash'].includes(String(order.status).toLowerCase())) return false;
-    return !start || new Date(`${order.date}T00:00:00`) >= start;
+    const orderDate = dashboardDateValue(order.date);
+    return (!start || orderDate >= start) && (!end || orderDate <= end);
   });
 }
 
@@ -121,13 +146,26 @@ function renderAdminSalesChart(orders) {
   }
   orders.forEach((order) => {
     const month = months.find((item) => item.key === String(order.date).slice(0, 7));
-    if (month) month.value += Number(order.amount) || 0;
+    if (month) month.value += dashboardOrderTaxable(order);
   });
-  const width = 720; const height = 220; const insetX = 30; const insetY = 22;
-  const max = Math.max(...months.map((item) => item.value), 1);
-  const points = months.map((item, index) => ({ ...item, x: insetX + (index * (width - insetX * 2)) / 11, y: height - insetY - ((item.value / max) * (height - insetY * 2)) }));
-  const area = `${insetX},${height - insetY} ${points.map((item) => `${item.x},${item.y}`).join(' ')} ${width - insetX},${height - insetY}`;
-  byId('admin-sales-chart').innerHTML = `<svg viewBox="0 0 ${width} ${height}" role="img" aria-label="Andamento vendite ultimi dodici mesi"><defs><linearGradient id="salesFill" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#58735c" stop-opacity=".32"/><stop offset="1" stop-color="#58735c" stop-opacity=".02"/></linearGradient></defs><line x1="${insetX}" y1="${height - insetY}" x2="${width - insetX}" y2="${height - insetY}" class="dashboard-axis"/><polygon points="${area}" fill="url(#salesFill)"/><polyline points="${points.map((item) => `${item.x},${item.y}`).join(' ')}" class="dashboard-line"/>${points.map((item) => `<circle cx="${item.x}" cy="${item.y}" r="4" class="dashboard-point"><title>${item.label}: ${money(item.value)}</title></circle><text x="${item.x}" y="${height - 4}" text-anchor="middle">${item.label}</text>`).join('')}</svg>`;
+  const width = 760; const height = 250; const insetX = 72; const insetRight = 20; const insetTop = 18; const insetBottom = 28;
+  const rawMax = Math.max(...months.map((item) => item.value), 1);
+  const roughStep = rawMax / 4;
+  const magnitude = 10 ** Math.floor(Math.log10(Math.max(roughStep, 1)));
+  const normalizedStep = roughStep / magnitude;
+  const step = (normalizedStep <= 1 ? 1 : normalizedStep <= 2 ? 2 : normalizedStep <= 5 ? 5 : 10) * magnitude;
+  const max = step * 4;
+  const chartHeight = height - insetTop - insetBottom;
+  const chartWidth = width - insetX - insetRight;
+  const points = months.map((item, index) => ({ ...item, x: insetX + (index * chartWidth) / 11, y: insetTop + chartHeight - ((item.value / max) * chartHeight) }));
+  const grid = Array.from({ length: 5 }, (_, index) => {
+    const value = step * index;
+    const y = insetTop + chartHeight - ((value / max) * chartHeight);
+    const label = value >= 1000 ? `${Number((value / 1000).toFixed(value % 1000 ? 1 : 0)).toLocaleString('it-IT')} mila €` : money(value).replace(',00', '');
+    return `<line x1="${insetX}" y1="${y}" x2="${width - insetRight}" y2="${y}" class="dashboard-grid-line"/><text x="${insetX - 9}" y="${y + 4}" text-anchor="end" class="dashboard-axis-label">${label}</text>`;
+  }).join('');
+  const area = `${insetX},${insetTop + chartHeight} ${points.map((item) => `${item.x},${item.y}`).join(' ')} ${width - insetRight},${insetTop + chartHeight}`;
+  byId('admin-sales-chart').innerHTML = `<svg viewBox="0 0 ${width} ${height}" role="img" aria-label="Andamento mensile dell'imponibile con griglia valori"><defs><linearGradient id="salesFill" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#58735c" stop-opacity=".32"/><stop offset="1" stop-color="#58735c" stop-opacity=".02"/></linearGradient></defs>${grid}<line x1="${insetX}" y1="${insetTop}" x2="${insetX}" y2="${insetTop + chartHeight}" class="dashboard-axis"/><polygon points="${area}" fill="url(#salesFill)"/><polyline points="${points.map((item) => `${item.x},${item.y}`).join(' ')}" class="dashboard-line"/>${points.map((item) => `<circle cx="${item.x}" cy="${item.y}" r="4" class="dashboard-point"><title>${item.label} · Imponibile: ${money(item.value)}</title></circle><text x="${item.x}" y="${height - 6}" text-anchor="middle">${item.label}</text>`).join('')}</svg>`;
 }
 
 const dashboardAreaProvinces = {
@@ -140,6 +178,16 @@ const dashboardAreaProvinces = {
 
 function dashboardOrderPieces(order) {
   return (order.items || []).reduce((sum, item) => sum + (Number(item.quantity) || 0), 0);
+}
+
+function dashboardOrderTaxable(order) {
+  const amount = Number(order.amount) || 0;
+  const tax = Number(order.taxAmount) || 0;
+  const shippingNet = Number(order.shippingNetAmount) || 0;
+  const taxableProducts = amount - tax - shippingNet;
+  if (amount || tax || shippingNet) return Math.max(0, taxableProducts);
+  if (order.commissionBase !== undefined && order.commissionBase !== null) return Number(order.commissionBase) || 0;
+  return (order.items || []).reduce((sum, item) => sum + (Number(item.total) || 0), 0);
 }
 
 function dashboardOrderArea(order) {
@@ -158,17 +206,17 @@ function renderItalyChart(orders) {
 }
 
 function renderAdminDashboard() {
-  if (currentUser?.role !== 'admin' || !byId('admin-dashboard')) return;
+  if (!['admin', 'agent', 'distributor'].includes(currentUser?.role) || !byId('admin-dashboard')) return;
   const orders = dashboardFilteredOrders();
   const total = orders.reduce((sum, order) => sum + (Number(order.amount) || 0), 0);
   const customerKeys = new Set(orders.map((order) => String(order.customerEmail || order.customer).toLowerCase()).filter(Boolean));
-  const earliestOrder = new Map();
-  reportOrders.forEach((order) => {
-    const key = String(order.customerEmail || order.customer).toLowerCase();
-    if (key && (!earliestOrder.has(key) || order.date < earliestOrder.get(key))) earliestOrder.set(key, order.date);
-  });
-  const start = dashboardPeriodStart(byId('admin-dashboard-period')?.value || '365');
-  const newCustomers = [...customerKeys].filter((key) => !start || new Date(`${earliestOrder.get(key)}T00:00:00`) >= start).length;
+  const validHistoricalOrders = reportOrders.filter((order) => !['cancelled', 'failed', 'refunded', 'trash'].includes(String(order.status).toLowerCase()));
+  const { start, end } = dashboardDateRange();
+  const historicalCustomerGroups = dashboardCustomerGroups(validHistoricalOrders);
+  const newCustomerOrders = [...historicalCustomerGroups.values()].filter((customer) => customer.orders.length === 1).map((customer) => customer.orders[0]).filter((order) => {
+    const orderDate = dashboardDateValue(order.date);
+    return (!start || orderDate >= start) && (!end || orderDate <= end);
+  }).sort((a, b) => String(b.date).localeCompare(String(a.date)));
   const orderCountByCustomer = new Map();
   orders.forEach((order) => {
     const key = String(order.customerEmail || order.customer).toLowerCase();
@@ -182,17 +230,24 @@ function renderAdminDashboard() {
   const workingSummary = summarizeOrders(workingOrders);
   const distributorRevenue = orders.filter((order) => !order.agent && order.distributor).reduce((sum, order) => sum + Number(order.amount || 0), 0);
   const agentRevenue = orders.filter((order) => order.agent).reduce((sum, order) => sum + Number(order.amount || 0), 0);
-  byId('admin-kpi-revenue').textContent = money(total);
+  const totalTaxable = orders.reduce((sum, order) => sum + dashboardOrderTaxable(order), 0);
+  const distributorTaxable = orders.filter((order) => !order.agent && order.distributor).reduce((sum, order) => sum + dashboardOrderTaxable(order), 0);
+  const agentTaxable = orders.filter((order) => order.agent).reduce((sum, order) => sum + dashboardOrderTaxable(order), 0);
+  byId('admin-kpi-revenue').textContent = money(totalTaxable);
+  byId('admin-kpi-revenue-taxable').textContent = `Totale lordo ${money(total)}`;
   byId('admin-kpi-pending').textContent = pendingOrders.length.toLocaleString('it-IT');
   byId('admin-kpi-pending-detail').textContent = `${pendingSummary.pieces} pezzi · ${money(pendingSummary.amount)}`;
   byId('admin-kpi-working').textContent = workingOrders.length.toLocaleString('it-IT');
   byId('admin-kpi-working-detail').textContent = `${workingSummary.pieces} pezzi · ${money(workingSummary.amount)}`;
   byId('admin-kpi-distributor-revenue').textContent = money(distributorRevenue);
   byId('admin-kpi-agent-revenue').textContent = money(agentRevenue);
-  byId('admin-kpi-new-customer-count').textContent = newCustomers.toLocaleString('it-IT');
-  byId('admin-kpi-customers').textContent = `${customerKeys.size} clienti nel periodo`;
+  byId('admin-kpi-distributor-taxable').textContent = `Imponibile ${money(distributorTaxable)}`;
+  byId('admin-kpi-agent-taxable').textContent = `Imponibile ${money(agentTaxable)}`;
+  byId('admin-kpi-new-customer-count').textContent = customerKeys.size.toLocaleString('it-IT');
+  byId('admin-kpi-customers').textContent = 'clienti nel periodo selezionato';
   byId('admin-kpi-repeat-customers').textContent = repeatCustomers.toLocaleString('it-IT');
-  byId('admin-sales-total').textContent = money(total);
+  byId('admin-new-customers-total').textContent = newCustomerOrders.length.toLocaleString('it-IT');
+  byId('admin-sales-total').textContent = money(totalTaxable);
   renderAdminSalesChart(orders);
   renderItalyChart(orders);
 
@@ -217,6 +272,137 @@ function renderAdminDashboard() {
   byId('admin-agents-chart').innerHTML = dashboardBarRows(topRows(channels));
   const channelTotal = [...channels.values()].reduce((sum, value) => sum + value, 0);
   byId('admin-channel-total').textContent = `Totale canali ${money(channelTotal)} · ${Math.abs(channelTotal - total) < 0.01 ? 'corrisponde al fatturato totale' : 'da verificare'}`;
+}
+
+function dashboardCustomerKey(order) {
+  return String(order.customerEmail || order.customer || '').trim().toLowerCase();
+}
+
+function dashboardCustomerGroups(orders) {
+  const groups = new Map();
+  orders.forEach((order) => {
+    const key = dashboardCustomerKey(order);
+    if (!key) return;
+    if (!groups.has(key)) groups.set(key, { key, customer: order.customer || '-', email: order.customerEmail || '', orders: [] });
+    groups.get(key).orders.push(order);
+  });
+  return groups;
+}
+
+function dashboardOrderDetailRows(orders) {
+  return orders.map((order) => `<tr>
+    <td><strong>${escapeHtml(order.id)}</strong></td>
+    <td>${escapeHtml(order.date || '-')}</td>
+    <td><strong>${escapeHtml(order.customer || '-')}</strong>${order.customerEmail ? `<br><small>${escapeHtml(order.customerEmail)}</small>` : ''}</td>
+    <td>${dashboardOrderPieces(order).toLocaleString('it-IT')}</td>
+    <td><strong>${money(order.amount)}</strong></td>
+    <td><strong>${money(dashboardOrderTaxable(order))}</strong></td>
+    <td>${money(order.taxAmount)}</td>
+    <td>${money(order.shippingAmount)}</td>
+    <td><span class="state ${orderStatusClass(order.status)}">${escapeHtml(orderStatusLabel(order.status))}</span></td>
+    <td>${escapeHtml(order.agent || order.distributor || order.center || '-')}</td>
+  </tr>`).join('');
+}
+
+function dashboardOrderOrigin(order) {
+  if (order.agent) return { label: `Agente · ${order.agent}`, direct: false };
+  if (order.distributor) return { label: `Distributore · ${order.distributor}`, direct: false };
+  if (order.center) return { label: `Centro · ${order.center}`, direct: false };
+  return { label: 'Acquisto diretto', direct: true };
+}
+
+function openDashboardDetail(type) {
+  if (!['admin', 'agent', 'distributor'].includes(currentUser?.role)) return;
+  const orders = dashboardFilteredOrders();
+  const periodLabel = byId('admin-dashboard-period')?.selectedOptions?.[0]?.textContent || 'Periodo selezionato';
+  let title = ''; let summary = ''; let headers = ''; let rows = '';
+  if (['category-sales', 'promotion-sales', 'product-sales', 'channel-sales'].includes(type)) {
+    const breakdown = new Map();
+    if (type === 'channel-sales') {
+      orders.forEach((order) => {
+        const label = order.agent ? `Agente · ${order.agent}` : order.distributor ? `Distributore · ${order.distributor}` : order.center ? `Centro · ${order.center}` : 'Acquisto diretto / non associato';
+        const current = breakdown.get(label) || { quantity: 0, amount: 0, taxable: 0 };
+        current.quantity += 1;
+        current.amount += Number(order.amount || 0);
+        current.taxable += dashboardOrderTaxable(order);
+        breakdown.set(label, current);
+      });
+      title = 'Agenti e distributori';
+      headers = '<tr><th>Canale</th><th>Ordini</th><th>Fatturato lordo</th><th>Imponibile prodotti</th></tr>';
+      rows = [...breakdown.entries()].sort((a, b) => b[1].amount - a[1].amount).map(([label, value]) => `<tr><td><strong>${escapeHtml(label)}</strong></td><td>${value.quantity}</td><td><strong>${money(value.amount)}</strong></td><td><strong>${money(value.taxable)}</strong></td></tr>`).join('');
+      summary = `${periodLabel} · ${breakdown.size} canali · Lordo ${money([...breakdown.values()].reduce((sum, value) => sum + value.amount, 0))} · Imponibile ${money([...breakdown.values()].reduce((sum, value) => sum + value.taxable, 0))}`;
+    } else {
+      orders.forEach((order) => (order.items || []).forEach((item) => {
+        const quantity = Number(item.quantity) || 0;
+        const product = shopProducts.find((entry) => Number(entry.id) === Number(item.productId)) || shopProducts.find((entry) => entry.name === item.name);
+        const isPromotion = /promo|pacchett/i.test(item.name) || product?.categories?.some((entry) => /promo|pacchett/i.test(`${entry.slug} ${entry.name}`));
+        let label = item.name;
+        if (type === 'category-sales') label = product?.categories?.find((entry) => !/promo/i.test(`${entry.slug} ${entry.name}`))?.name || 'Altri';
+        if (type === 'promotion-sales' && !isPromotion) return;
+        breakdown.set(label, (breakdown.get(label) || 0) + quantity);
+      }));
+      title = type === 'category-sales' ? 'Vendite per categoria' : type === 'promotion-sales' ? 'Vendite promozionali' : 'Vendite per prodotto';
+      headers = `<tr><th>${type === 'category-sales' ? 'Categoria' : type === 'promotion-sales' ? 'Promozione' : 'Prodotto'}</th><th>Pezzi venduti</th></tr>`;
+      rows = [...breakdown.entries()].sort((a, b) => b[1] - a[1]).map(([label, quantity]) => `<tr><td><strong>${escapeHtml(label)}</strong></td><td>${quantity.toLocaleString('it-IT')}</td></tr>`).join('');
+      summary = `${periodLabel} · ${breakdown.size} voci · ${[...breakdown.values()].reduce((sum, value) => sum + value, 0).toLocaleString('it-IT')} pezzi`;
+    }
+  } else if (['pending', 'working', 'total-revenue', 'distributor-revenue', 'agent-revenue'].includes(type)) {
+    const detailOrders = type === 'pending'
+      ? orders.filter((order) => ['pending', 'on-hold'].includes(String(order.status).toLowerCase()))
+      : type === 'working'
+        ? orders.filter((order) => String(order.status).toLowerCase() === 'processing')
+        : type === 'distributor-revenue'
+          ? orders.filter((order) => !order.agent && order.distributor)
+          : type === 'agent-revenue'
+            ? orders.filter((order) => order.agent)
+            : orders;
+    const pieces = detailOrders.reduce((sum, order) => sum + dashboardOrderPieces(order), 0);
+    const amount = detailOrders.reduce((sum, order) => sum + Number(order.amount || 0), 0);
+    const taxable = detailOrders.reduce((sum, order) => sum + dashboardOrderTaxable(order), 0);
+    title = type === 'pending' ? 'Ordini in attesa'
+      : type === 'working' ? 'Ordini in lavorazione'
+        : type === 'distributor-revenue' ? 'Fatturato distributori'
+          : type === 'agent-revenue' ? 'Fatturato agenti'
+            : 'Totale fatturato';
+    summary = `${periodLabel} · ${detailOrders.length} ordini · ${pieces} pezzi · Lordo ${money(amount)} · Imponibile ${money(taxable)}`;
+    headers = '<tr><th>Ordine</th><th>Data</th><th>Cliente</th><th>Pezzi</th><th>Totale lordo</th><th>Imponibile prodotti</th><th>IVA</th><th>Trasporto</th><th>Stato</th><th>Canale</th></tr>';
+    rows = dashboardOrderDetailRows(detailOrders);
+  } else if (type === 'new-customers') {
+    const { start, end } = dashboardDateRange();
+    const historicalOrders = reportOrders.filter((order) => !['cancelled', 'failed', 'refunded', 'trash'].includes(String(order.status).toLowerCase()));
+    const customers = [...dashboardCustomerGroups(historicalOrders).values()].filter((customer) => customer.orders.length === 1).filter((customer) => {
+      const orderDate = dashboardDateValue(customer.orders[0].date);
+      return (!start || orderDate >= start) && (!end || orderDate <= end);
+    }).sort((a, b) => String(b.orders[0].date).localeCompare(String(a.orders[0].date)));
+    title = 'Nuovi clienti';
+    summary = `${periodLabel} · ${customers.length} clienti con un solo acquisto complessivo`;
+    headers = '<tr><th>Cliente</th><th>Ordine</th><th>Importo</th><th>Pezzi</th><th>Provenienza</th></tr>';
+    rows = customers.map((customer) => {
+      const order = customer.orders[0];
+      const origin = dashboardOrderOrigin(order);
+      return `<tr><td><strong>${escapeHtml(customer.customer)}</strong>${customer.email ? `<br><small>${escapeHtml(customer.email)}</small>` : ''}</td><td>${escapeHtml(order.date || '-')}<br><small>${escapeHtml(order.id || '')}</small></td><td><strong>${money(order.amount)}</strong></td><td>${dashboardOrderPieces(order)}</td><td><span class="dashboard-origin ${origin.direct ? 'direct' : ''}">${escapeHtml(origin.label)}</span></td></tr>`;
+    }).join('');
+  } else {
+    const periodGroups = dashboardCustomerGroups(orders);
+    let customers = [...periodGroups.values()];
+    if (type === 'customers') {
+      title = 'Clienti';
+    } else {
+      title = 'Clienti con riordino';
+      customers = customers.filter((customer) => customer.orders.length > 1);
+    }
+    customers.sort((a, b) => Math.max(...b.orders.map((order) => new Date(order.date).getTime())) - Math.max(...a.orders.map((order) => new Date(order.date).getTime())));
+    summary = `${periodLabel} · ${customers.length} clienti`;
+    headers = '<tr><th>Cliente</th><th>Primo ordine</th><th>Ultimo ordine</th><th>Ordini</th><th>Pezzi</th><th>Totale acquistato</th></tr>';
+    rows = customers.map((customer) => {
+      const sorted = [...customer.orders].sort((a, b) => String(a.date).localeCompare(String(b.date)));
+      const pieces = sorted.reduce((sum, order) => sum + dashboardOrderPieces(order), 0);
+      const amount = sorted.reduce((sum, order) => sum + Number(order.amount || 0), 0);
+      return `<tr><td><strong>${escapeHtml(customer.customer)}</strong>${customer.email ? `<br><small>${escapeHtml(customer.email)}</small>` : ''}</td><td>${escapeHtml(sorted[0]?.date || '-')}<br><small>${escapeHtml(sorted[0]?.id || '')}</small></td><td>${escapeHtml(sorted.at(-1)?.date || '-')}<br><small>${escapeHtml(sorted.at(-1)?.id || '')}</small></td><td>${sorted.length}</td><td>${pieces}</td><td><strong>${money(amount)}</strong></td></tr>`;
+    }).join('');
+  }
+  byId('dashboard-detail-content').innerHTML = `<div class="dashboard-detail-head"><h2 id="dashboard-detail-title">${escapeHtml(title)}</h2><button class="product-detail-close" type="button" data-dashboard-detail-close aria-label="Chiudi">×</button></div><div class="dashboard-detail-body"><p class="dashboard-detail-summary">${escapeHtml(summary)}</p>${rows ? `<div class="dashboard-detail-table-wrap"><table class="dashboard-detail-table"><thead>${headers}</thead><tbody>${rows}</tbody></table></div>` : '<div class="dashboard-empty">Nessun dato disponibile nel periodo selezionato.</div>'}</div>`;
+  if (!byId('dashboard-detail-dialog').open) byId('dashboard-detail-dialog').showModal();
 }
 
 function escapeHtml(value) {
@@ -321,10 +507,11 @@ function openProductDetail(productId) {
   const bundleItems = Array.isArray(product?.bundleItems) ? product.bundleItems : [];
   if (!product || !bundleItems.length) return;
 
-  const imageUrl = productCatalogImage(product);
   const theoreticalValue = bundleItems.reduce((total, item) => (
     total + ((Number(item.price) || 0) * (Number(item.quantity) || 0))
   ), 0);
+  const packagePrice = Number(product.price) || 0;
+  const totalSavings = Math.max(0, theoreticalValue - packagePrice);
   const cartQuantity = shopCart.find((item) => item.productId === product.id)?.quantity || 0;
   const description = product.description || product.shortDescription || 'Composizione e dettagli del pacchetto promozionale.';
   byId('product-detail-content').innerHTML = `
@@ -333,9 +520,6 @@ function openProductDetail(productId) {
       <button type="button" class="product-detail-close" data-product-detail-close aria-label="Chiudi scheda">×</button>
     </div>
     <div class="product-detail-layout">
-      <div class="product-detail-image">
-        ${imageUrl ? `<img src="${escapeHtml(imageUrl)}" alt="${escapeHtml(product.name)}" />` : '<div class="product-placeholder">ODR</div>'}
-      </div>
       <div class="product-detail-copy">
         <small>${escapeHtml(product.sku || 'Prodotto ODR')}</small>
         <h2 id="product-detail-title">${escapeHtml(product.name)}</h2>
@@ -352,8 +536,9 @@ function openProductDetail(productId) {
             </div>`).join('')}
         </div>
         <div class="product-detail-totals">
-          ${theoreticalValue ? `<p><span>Valore totale dei prodotti</span><strong>${money(theoreticalValue)}</strong></p>` : ''}
-          <p><span>Prezzo pacchetto</span><strong>${productPrice(product)}</strong></p>
+          ${theoreticalValue ? `<p><span>Valore totale promozione</span><strong>${money(theoreticalValue)}</strong></p>` : ''}
+          ${totalSavings ? `<p class="product-detail-savings"><span>Risparmio totale</span><strong>${money(totalSavings)}</strong></p>` : ''}
+          <p class="product-detail-offer"><span>Totale offerta</span><strong>${productPrice(product)}</strong></p>
         </div>
         <div class="product-detail-actions">
           <span class="stock ${product.inStock ? 'ok' : 'off'}">${product.inStock ? 'Disponibile' : 'Esaurito'}</span>
@@ -802,6 +987,187 @@ async function deletePackageDocument(documentId) {
   if (error) return window.alert(error.message || 'Eliminazione non riuscita.');
   await loadPackageDocuments();
   renderShopProducts();
+}
+
+const marketingAudienceRoles = {
+  all: ['agent', 'distributor', 'center', 'patient'],
+  agent: ['agent'],
+  distributor: ['distributor'],
+  center: ['center'],
+};
+
+function marketingAudienceLabel(roles = []) {
+  if (marketingAudienceRoles.all.every((role) => roles.includes(role))) return 'Tutti gli account';
+  if (roles.length === 1) return {
+    agent: 'Solo agenti',
+    distributor: 'Solo distributori',
+    center: 'Solo centri benessere',
+    patient: 'Solo pazienti',
+  }[roles[0]] || roleLabels[roles[0]] || roles[0];
+  return roles.map((role) => roleLabels[role] || role).join(', ');
+}
+
+function renderMarketingMaterials() {
+  const container = byId('marketing-list');
+  const message = byId('marketing-message');
+  if (!container || !message) return;
+  message.classList.toggle('hidden', marketingMaterials.length > 0);
+  message.textContent = marketingMaterials.length ? '' : 'Nessun materiale disponibile per il tuo profilo.';
+  container.innerHTML = marketingMaterials.map((material) => `
+    <article class="marketing-card">
+      <div class="marketing-card-icon">PDF</div>
+      <div class="marketing-card-copy">
+        <div class="marketing-card-head">
+          <div>
+            <span class="marketing-audience">${escapeHtml(marketingAudienceLabel(material.audience_roles || []))}</span>
+            <h3>${escapeHtml(material.title)}</h3>
+          </div>
+          <small>${new Date(material.created_at).toLocaleDateString('it-IT')}</small>
+        </div>
+        ${material.description ? `<p>${escapeHtml(material.description)}</p>` : ''}
+        <small>${escapeHtml(material.file_name)} · ${Math.max(1, Math.round((Number(material.file_size) || 0) / 1024))} KB</small>
+        <div class="marketing-card-actions">
+          <button class="secondary-action" type="button" data-marketing-download="${material.id}">Scarica</button>
+          <button class="secondary-action" type="button" data-marketing-share="${material.id}">Condividi</button>
+          ${currentUser?.role === 'admin' ? `<button class="danger-action" type="button" data-marketing-delete="${material.id}">Elimina</button>` : ''}
+        </div>
+      </div>
+    </article>
+  `).join('');
+}
+
+async function loadMarketingMaterials() {
+  if (!supabase || !currentUser) return;
+  const { data, error } = await supabase
+    .from('marketing_materials')
+    .select('id,title,description,file_name,file_size,storage_path,audience_roles,created_at')
+    .order('created_at', { ascending: false });
+  if (error) {
+    byId('marketing-message').classList.remove('hidden');
+    byId('marketing-message').textContent = 'Non è stato possibile caricare il materiale marketing.';
+    return;
+  }
+  marketingMaterials = data || [];
+  renderMarketingMaterials();
+}
+
+async function uploadMarketingMaterial(event) {
+  event.preventDefault();
+  if (currentUser?.role !== 'admin' || !supabase) return;
+  const form = event.currentTarget;
+  const file = form.elements.pdf.files?.[0];
+  const title = form.elements.title.value.trim();
+  const description = form.elements.description.value.trim();
+  const roles = marketingAudienceRoles[form.elements.audience.value] || marketingAudienceRoles.all;
+  const message = byId('marketing-upload-message');
+  if (!file || !title) return;
+  if (file.type !== 'application/pdf' && !file.name.toLowerCase().endsWith('.pdf')) {
+    message.textContent = 'Seleziona un file PDF valido.';
+    return;
+  }
+  if (file.size > 20 * 1024 * 1024) {
+    message.textContent = 'Il PDF non può superare 20 MB.';
+    return;
+  }
+  const button = form.querySelector('button[type="submit"]');
+  button.disabled = true;
+  message.textContent = 'Caricamento in corso...';
+  const uniqueId = globalThis.crypto?.randomUUID?.() || `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+  const storagePath = `${new Date().getFullYear()}/${uniqueId}-${safePdfName(file.name)}`;
+  try {
+    const { error: uploadError } = await supabase.storage
+      .from('marketing-materials')
+      .upload(storagePath, file, { contentType: 'application/pdf', upsert: false });
+    if (uploadError) throw uploadError;
+    const { data: userData } = await supabase.auth.getUser();
+    const { error: insertError } = await supabase.from('marketing_materials').insert({
+      title,
+      description: description || null,
+      file_name: file.name,
+      file_size: file.size,
+      storage_path: storagePath,
+      audience_roles: roles,
+      created_by: userData.user?.id,
+    });
+    if (insertError) {
+      await supabase.storage.from('marketing-materials').remove([storagePath]);
+      throw insertError;
+    }
+    form.reset();
+    message.textContent = 'Materiale caricato correttamente.';
+    await loadMarketingMaterials();
+  } catch (error) {
+    message.textContent = error.message || 'Caricamento non riuscito.';
+  } finally {
+    button.disabled = false;
+  }
+}
+
+async function marketingMaterialBlob(material) {
+  const { data, error } = await supabase.storage.from('marketing-materials').download(material.storage_path);
+  if (error) throw error;
+  return data;
+}
+
+async function downloadMarketingMaterial(materialId, trigger) {
+  const material = marketingMaterials.find((entry) => entry.id === materialId);
+  if (!material || !supabase) return;
+  const original = trigger.textContent;
+  trigger.disabled = true;
+  trigger.textContent = 'Scarico...';
+  try {
+    const blob = await marketingMaterialBlob(material);
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = material.file_name || `${material.title}.pdf`;
+    link.click();
+    window.setTimeout(() => URL.revokeObjectURL(url), 30000);
+  } catch (error) {
+    window.alert(error.message || 'Download non riuscito.');
+  } finally {
+    trigger.disabled = false;
+    trigger.textContent = original;
+  }
+}
+
+async function shareMarketingMaterial(materialId, trigger) {
+  const material = marketingMaterials.find((entry) => entry.id === materialId);
+  if (!material || !supabase) return;
+  const original = trigger.textContent;
+  trigger.disabled = true;
+  trigger.textContent = 'Preparo...';
+  try {
+    const blob = await marketingMaterialBlob(material);
+    const file = new File([blob], material.file_name || `${material.title}.pdf`, { type: 'application/pdf' });
+    if (navigator.share && (!navigator.canShare || navigator.canShare({ files: [file] }))) {
+      await navigator.share({ title: material.title, text: material.description || material.title, files: [file] });
+      return;
+    }
+    const { data, error } = await supabase.storage.from('marketing-materials').createSignedUrl(material.storage_path, 600);
+    if (error) throw error;
+    if (navigator.share) await navigator.share({ title: material.title, text: material.description || material.title, url: data.signedUrl });
+    else {
+      await navigator.clipboard.writeText(data.signedUrl);
+      window.alert('Link valido per 10 minuti copiato negli appunti.');
+    }
+  } catch (error) {
+    if (error?.name !== 'AbortError') window.alert(error.message || 'Condivisione non riuscita.');
+  } finally {
+    trigger.disabled = false;
+    trigger.textContent = original;
+  }
+}
+
+async function deleteMarketingMaterial(materialId) {
+  if (currentUser?.role !== 'admin' || !supabase) return;
+  const material = marketingMaterials.find((entry) => entry.id === materialId);
+  if (!material || !window.confirm(`Eliminare il materiale “${material.title}”?`)) return;
+  const { error: storageError } = await supabase.storage.from('marketing-materials').remove([material.storage_path]);
+  if (storageError) return window.alert(storageError.message || 'Eliminazione del file non riuscita.');
+  const { error } = await supabase.from('marketing_materials').delete().eq('id', material.id);
+  if (error) return window.alert(error.message || 'Eliminazione non riuscita.');
+  await loadMarketingMaterials();
 }
 
 async function openWooSession(destination, trigger, items = [], coupon = '', options = {}) {
@@ -1598,17 +1964,27 @@ function applyModuleVisibility(rows) {
   byId('agent-customers')?.classList.toggle('module-denied', !agentCustomerAllowed);
   byId('agent-customers-nav')?.classList.toggle('hidden', !agentCustomerAllowed);
   byId('metric-network-card')?.classList.toggle('hidden', role === 'agent');
-  byId('admin-dashboard')?.classList.toggle('hidden', role !== 'admin');
-  byId('admin-dashboard-period-wrap')?.classList.toggle('hidden', role !== 'admin');
-  byId('role-dashboard-metrics')?.classList.toggle('hidden', role === 'admin');
+  const hasSalesDashboard = ['admin', 'agent', 'distributor'].includes(role);
+  byId('admin-dashboard')?.classList.toggle('hidden', !hasSalesDashboard);
+  byId('admin-dashboard-period-wrap')?.classList.toggle('hidden', !hasSalesDashboard);
+  byId('role-dashboard-metrics')?.classList.toggle('hidden', hasSalesDashboard);
+  document.querySelectorAll('[data-admin-dashboard-only]').forEach((element) => {
+    element.classList.toggle('hidden', role !== 'admin');
+  });
+  if (byId('dashboard-revenue-label')) {
+    byId('dashboard-revenue-label').textContent = role === 'admin' ? 'Imponibile totale' : 'Il tuo imponibile';
+  }
   if (byId('dashboard-intro')) {
     byId('dashboard-intro').textContent = role === 'agent'
-      ? 'Controllo rapido di clienti, ordini e vendite WooCommerce.'
-      : 'Controllo rapido di codici, rete commerciale e vendite lette da WooCommerce.';
+      ? 'La tua dashboard: clienti, ordini e vendite WooCommerce collegati al tuo account agente.'
+      : role === 'distributor'
+        ? 'La tua dashboard: clienti, ordini e vendite WooCommerce collegati al tuo account distributore.'
+        : 'Controllo rapido di codici, rete commerciale e vendite lette da WooCommerce.';
   }
   document.querySelectorAll('[data-route="setup"]').forEach((link) => {
     link.classList.toggle('hidden', role !== 'admin');
   });
+  if (hasSalesDashboard) renderAdminDashboard();
   showRoute(routeFromPath(window.location.pathname), { push: false });
 }
 
@@ -1690,14 +2066,26 @@ async function validateCode() {
 
 function setAuthMode(mode) {
   const loginActive = mode === 'login';
+  const registerActive = mode === 'register';
+  const recoveryActive = mode === 'recovery';
+  const resetActive = mode === 'reset';
+  byId('auth-screen').classList.remove('hidden');
+  byId('app-shell').classList.add('hidden');
+  byId('auth-screen').classList.toggle('auth-reset-mode', recoveryActive || resetActive);
   byId('show-login').classList.toggle('active', loginActive);
-  byId('show-register').classList.toggle('active', !loginActive);
+  byId('show-register').classList.toggle('active', registerActive);
+  byId('show-login').disabled = resetActive;
+  byId('show-register').disabled = resetActive;
   byId('login-form').classList.toggle('hidden', !loginActive);
-  byId('register-form').classList.toggle('hidden', loginActive);
+  byId('register-form').classList.toggle('hidden', !registerActive);
+  byId('password-recovery-form').classList.toggle('hidden', !recoveryActive);
+  byId('password-reset-form').classList.toggle('hidden', !resetActive);
   showAuthMessage(
     loginActive
       ? ''
-      : 'Il paziente viene attivato subito; gli altri profili richiedono approvazione.',
+      : registerActive
+        ? 'Il paziente viene attivato subito; gli altri profili richiedono approvazione.'
+        : '',
   );
 }
 
@@ -1709,7 +2097,7 @@ function showAuthMessage(message, type = '') {
 
 function setAuthBusy(busy) {
   authBusy = busy;
-  document.querySelectorAll('#login-form button, #register-form button').forEach((button) => {
+  document.querySelectorAll('#login-form button, #register-form button, #password-recovery-form button, #password-reset-form button').forEach((button) => {
     button.disabled = busy;
   });
 }
@@ -1765,6 +2153,7 @@ function enterApp(user) {
   const isAdmin = user.role === 'admin';
   byId('admin-code-manager').classList.toggle('hidden', !isAdmin);
   byId('new-promotion-button').classList.toggle('hidden', !isAdmin);
+  byId('marketing-upload-form').classList.toggle('hidden', !isAdmin);
   byId('admin-users-nav').classList.toggle('hidden', !isAdmin);
   byId('admin-users').classList.remove('hidden');
   byId('admin-users').classList.toggle('module-denied', !isAdmin);
@@ -1782,6 +2171,7 @@ function enterApp(user) {
   loadActivePromoCode();
   loadPermissions();
   loadShop();
+  loadMarketingMaterials();
   loadWooOrders();
   if (user.role === 'agent') loadAgentCustomers();
   loadNetwork();
@@ -2228,6 +2618,62 @@ async function submitRegistration(event) {
   }
 }
 
+async function submitPasswordRecovery(event) {
+  event.preventDefault();
+  if (authBusy || !supabase) return;
+
+  const email = byId('recovery-email').value.trim();
+  setAuthBusy(true);
+  showAuthMessage('Invio del link in corso...');
+  const { error } = await supabase.auth.resetPasswordForEmail(email, {
+    redirectTo: `${window.location.origin}/recupera-password`,
+  });
+  setAuthBusy(false);
+
+  if (error) {
+    showAuthMessage('Non è stato possibile inviare il link. Riprova tra qualche minuto.', 'error');
+    return;
+  }
+
+  showAuthMessage(
+    'Se l’indirizzo è associato a un account ODR, riceverai a breve un’email con il link per reimpostare la password.',
+    'success',
+  );
+}
+
+async function submitPasswordReset(event) {
+  event.preventDefault();
+  if (authBusy || !supabase) return;
+
+  const password = byId('reset-password').value;
+  const confirmation = byId('reset-password-confirm').value;
+  if (password.length < 8) {
+    showAuthMessage('La nuova password deve contenere almeno 8 caratteri.', 'error');
+    return;
+  }
+  if (password !== confirmation) {
+    showAuthMessage('Le due password non coincidono.', 'error');
+    return;
+  }
+
+  setAuthBusy(true);
+  showAuthMessage('Aggiornamento della password in corso...');
+  const { error } = await supabase.auth.updateUser({ password });
+  if (error) {
+    setAuthBusy(false);
+    showAuthMessage('Il link non è più valido o è scaduto. Richiedine uno nuovo.', 'error');
+    return;
+  }
+
+  await supabase.auth.signOut();
+  passwordRecoveryActive = false;
+  window.history.replaceState({}, '', '/');
+  setAuthMode('login');
+  byId('password-reset-form').reset();
+  setAuthBusy(false);
+  showAuthMessage('Password aggiornata. Ora puoi accedere con la nuova password.', 'success');
+}
+
 async function submitLogout() {
   if (!supabase) return;
   await supabase.auth.signOut();
@@ -2362,6 +2808,11 @@ async function restoreSession() {
   const { data } = await supabase.auth.getSession();
   if (!data.session?.user) return;
 
+  if (passwordRecoveryActive) {
+    setAuthMode('reset');
+    return;
+  }
+
   try {
     await enterAuthenticatedApp(data.session.user);
   } catch {
@@ -2372,6 +2823,11 @@ async function restoreSession() {
 
 byId('show-login').addEventListener('click', () => setAuthMode('login'));
 byId('show-register').addEventListener('click', () => setAuthMode('register'));
+byId('show-password-recovery').addEventListener('click', () => {
+  byId('recovery-email').value = byId('login-email').value.trim();
+  setAuthMode('recovery');
+});
+byId('back-to-login').addEventListener('click', () => setAuthMode('login'));
 byId('toggle-login-password').addEventListener('click', () => {
   const input = byId('login-password');
   const button = byId('toggle-login-password');
@@ -2387,6 +2843,12 @@ byId('change-password-form').addEventListener('click', (event) => {
 byId('change-password-form').addEventListener('submit', changePassword);
 byId('login-form').addEventListener('submit', submitLogin);
 byId('register-form').addEventListener('submit', submitRegistration);
+byId('password-recovery-form').addEventListener('submit', submitPasswordRecovery);
+byId('password-reset-form').addEventListener('submit', submitPasswordReset);
+byId('password-reset-form').addEventListener('click', (event) => {
+  const toggle = event.target.closest('[data-password-toggle]');
+  if (toggle) togglePasswordField(toggle);
+});
 byId('logout-button').addEventListener('click', submitLogout);
 byId('refresh-users').addEventListener('click', loadAdminUsers);
 byId('admin-users-table').addEventListener('click', handleAdminUserAction);
@@ -2430,7 +2892,14 @@ byId('report-payment').addEventListener('change', renderOrders);
 byId('report-date-from').addEventListener('change', renderOrders);
 byId('report-date-to').addEventListener('change', renderOrders);
 byId('refresh-report').addEventListener('click', loadWooOrders);
-byId('admin-dashboard-period').addEventListener('change', renderAdminDashboard);
+byId('admin-dashboard-period').addEventListener('change', () => {
+  syncDashboardDateInputs();
+  renderAdminDashboard();
+});
+['admin-dashboard-date-from', 'admin-dashboard-date-to'].forEach((id) => byId(id).addEventListener('change', () => {
+  byId('admin-dashboard-period').value = 'custom';
+  renderAdminDashboard();
+}));
 byId('orders-table').addEventListener('click', (event) => {
   const button = event.target.closest('[data-order-payment]');
   if (button) registerOrderPayment(button);
@@ -2484,6 +2953,13 @@ byId('product-detail-dialog').addEventListener('click', (event) => {
   if (quantityButton.dataset.detailQuantity === 'increase') addToShopCart(productId);
   else updateShopCartItem(productId, 'decrease');
   openProductDetail(productId);
+});
+byId('admin-dashboard').addEventListener('click', (event) => {
+  const button = event.target.closest('[data-dashboard-detail]');
+  if (button) openDashboardDetail(button.dataset.dashboardDetail);
+});
+byId('dashboard-detail-dialog').addEventListener('click', (event) => {
+  if (event.target === event.currentTarget || event.target.closest('[data-dashboard-detail-close]')) event.currentTarget.close();
 });
 byId('shop-products').addEventListener('submit', (event) => {
   const form = event.target.closest('[data-package-document-form]');
@@ -2548,12 +3024,37 @@ byId('shop-categories').addEventListener('change', (event) => {
   shopCategory = event.currentTarget.value;
   renderShopProducts();
 });
+byId('marketing-upload-form').addEventListener('submit', uploadMarketingMaterial);
+byId('marketing-list').addEventListener('click', (event) => {
+  const downloadButton = event.target.closest('[data-marketing-download]');
+  if (downloadButton) {
+    downloadMarketingMaterial(downloadButton.dataset.marketingDownload, downloadButton);
+    return;
+  }
+  const shareButton = event.target.closest('[data-marketing-share]');
+  if (shareButton) {
+    shareMarketingMaterial(shareButton.dataset.marketingShare, shareButton);
+    return;
+  }
+  const deleteButton = event.target.closest('[data-marketing-delete]');
+  if (deleteButton) deleteMarketingMaterial(deleteButton.dataset.marketingDelete);
+});
 
+syncDashboardDateInputs();
 initSupabaseStatus();
 initRouting();
+if (supabase) {
+  supabase.auth.onAuthStateChange((event) => {
+    if (event !== 'PASSWORD_RECOVERY') return;
+    passwordRecoveryActive = true;
+    setAuthMode('reset');
+    showAuthMessage('Link verificato. Scegli ora la nuova password.', 'success');
+  });
+}
 renderCodes();
 renderPromotions();
 renderNetwork();
 renderOrders();
 updateMetrics();
+if (passwordRecoveryActive) setAuthMode('reset');
 restoreSession();
