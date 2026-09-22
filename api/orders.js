@@ -107,6 +107,10 @@ export default async function handler(request, response) {
           date: order.date_created?.slice(0, 10) || '',
           customer: `${order.billing?.first_name || ''} ${order.billing?.last_name || ''}`.trim() || order.billing?.email || 'Cliente',
           customerEmail: order.billing?.email || '',
+          ...(profile.role === 'admin' ? {
+            customerId: Number(order.customer_id) || 0, customerReference,
+            customerBilling: order.billing || {},
+          } : {}),
           amount: Number(order.total) || 0,
           taxAmount: Number(order.total_tax) || 0,
           shippingNetAmount: Number(order.shipping_total) || 0,

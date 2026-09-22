@@ -1,7 +1,7 @@
 import { access, readFile } from 'node:fs/promises';
 
 const requiredFiles = ['index.html', 'styles.css', 'app.js', 'odr-logo.svg'];
-const requiredRoutes = ['dashboard', 'shop', 'clienti', 'ordini', 'report'];
+const requiredRoutes = ['dashboard', 'shop', 'clienti', 'clienti-fatturato', 'ordini', 'report'];
 
 for (const file of requiredFiles) {
   await access(file);

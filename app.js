@@ -53,6 +53,7 @@ const appRoutes = {
   access: { path: '/codici', title: 'Codici e convenzioni' },
   promotions: { path: '/promozioni', title: 'Promozioni' },
   network: { path: '/rete', title: 'Rete commerciale' },
+  'admin-customers': { path: '/clienti-fatturato', title: 'Clienti e fatturato' },
   'agent-customers': { path: '/clienti', title: 'Gestione clienti' },
   wordpress: { path: '/wordpress', title: 'WordPress e WooCommerce' },
   reports: { path: '/ordini', title: 'Ordini' },
@@ -502,6 +503,7 @@ function showRoute(routeId, options = {}) {
     link.classList.toggle('active', link.dataset.route === activeRoute);
   });
 
+  if (activeRoute === 'admin-customers') loadAdminCustomerReport();
   const route = appRoutes[activeRoute];
   byId('page-title').textContent = route.title;
   document.title = `${route.title} · ODR`;
@@ -2064,6 +2066,8 @@ function applyModuleVisibility(rows) {
     });
   });
   byId('setup')?.classList.toggle('module-denied', role !== 'admin');
+  byId('admin-customers')?.classList.toggle('module-denied', role !== 'admin');
+  byId('admin-customers-nav')?.classList.toggle('hidden', role !== 'admin');
   const agentCustomerAllowed = role === 'agent';
   byId('agent-customers')?.classList.toggle('module-denied', !agentCustomerAllowed);
   byId('agent-customers-nav')?.classList.toggle('hidden', !agentCustomerAllowed);
@@ -2782,6 +2786,10 @@ async function submitLogout() {
   if (!supabase) return;
   await supabase.auth.signOut();
   currentUser = null;
+  adminCustomerReport = null;
+  byId('customer-report-table').innerHTML = '';
+  byId('dashboard-detail-dialog').close();
+  byId('dashboard-detail-content').innerHTML = '';
   validatedCode = null;
   shopAddressLoaded = false;
   byId('app-shell').classList.add('hidden');
@@ -2928,6 +2936,141 @@ async function restoreSession() {
     await supabase.auth.signOut();
     showAuthMessage('La sessione non può essere associata a un profilo ODR.', 'error');
   }
+}
+
+let adminCustomerReport = null;
+let adminCustomerReportLoading = false;
+
+// Stable customer IDs take precedence; email merges only unambiguous records across sources.
+function buildCustomerReport(masters, orders) {
+  const groups = new Map(masters.map(c => [c.id, { ...c, orders: [], aliases: [c.id] }]));
+  const emailKey = value => String(value || '').trim().toLowerCase();
+  const emails = new Map();
+  for (const group of groups.values()) {
+    const email = emailKey(group.email);
+    if (email) emails.set(email, [...(emails.get(email) || []), group]);
+  }
+  for (const candidates of emails.values()) {
+    if (candidates.length === 2 && candidates[0].id.startsWith('app-') !== candidates[1].id.startsWith('app-')) {
+      const [target, other] = candidates;
+      target.aliases.push(other.id);
+      for (const [key, value] of Object.entries(other)) if (!target[key] && value) target[key] = value;
+      groups.set(other.id, target);
+    }
+  }
+  const seenOrders = new Set();
+  for (const order of orders) {
+    if (seenOrders.has(order.id)) continue;
+    seenOrders.add(order.id);
+    const reference = String(order.customerReference || '');
+    const id = reference || (order.customerId ? `wc-${order.customerId}` : '');
+    let group = groups.get(id);
+    const email = emailKey(order.customerEmail);
+    const matches = [...new Set((emails.get(email) || []).map(c => groups.get(c.id)))];
+    if (!group && matches.length === 1 && (!id || matches[0].aliases.includes(id))) group = matches[0];
+    if (!group) {
+      const key = id || (matches.length === 0 && email ? `guest-${email}` : `order-${order.id}`);
+      group = groups.get(key);
+      if (!group) {
+        const b = order.customerBilling || {};
+        group = { id: key, aliases: [key], name: order.customer, email: order.customerEmail, company: b.company || '', phone: b.phone || '',
+          address: [b.address_1,b.address_2,b.postcode,b.city,b.state,b.country].filter(Boolean).join(', '), orders: [] };
+        groups.set(key, group);
+      }
+    }
+    group.orders.push(order);
+  }
+  return [...new Set(groups.values())];
+}
+
+function customerPeriodOrders(orders, from, to) {
+  return orders.filter(o => !['cancelled','failed','refunded','trash'].includes(o.status)
+    && (!from || o.date >= from) && (!to || o.date <= to));
+}
+
+function customerMonthlySeries(orders, from, to) {
+  const dates = orders.map(o => o.date).filter(Boolean).sort();
+  const start = (from || dates[0] || to || '').slice(0,7);
+  const end = (to || dates.at(-1) || from || '').slice(0,7);
+  if (!start || !end || start > end) return [];
+  const totals = new Map();
+  for (const o of orders) {
+    const key = o.date.slice(0,7);
+    totals.set(key, (totals.get(key) || 0) + Math.round(dashboardOrderTaxable(o) * 100));
+  }
+  const series = [];
+  let [year, month] = start.split('-').map(Number);
+  while (`${String(year).padStart(4,'0')}-${String(month).padStart(2,'0')}` <= end) {
+    const key = `${String(year).padStart(4,'0')}-${String(month).padStart(2,'0')}`;
+    series.push({ label: key, value: (totals.get(key) || 0) / 100 });
+    month++; if (month === 13) { month = 1; year++; }
+  }
+  return series;
+}
+
+async function loadAdminCustomerReport(force = false) {
+  if (currentUser?.role !== 'admin' || adminCustomerReportLoading) return;
+  if (!force && adminCustomerReport?.userId === currentUser.id) { renderAdminCustomerReport(); return; }
+  const userId = currentUser.id;
+  adminCustomerReportLoading = true;
+  adminCustomerReport = null;
+  byId('customer-report-table').innerHTML = '';
+  byId('customer-report-summary').textContent = '';
+  byId('customer-report-message').textContent = 'Caricamento anagrafica e ordini…';
+  byId('customer-report-refresh').disabled = true;
+  try {
+    const { data } = await supabase.auth.getSession();
+    const headers = { Authorization: `Bearer ${data.session?.access_token || ''}` };
+    const [customerResponse, orderResponse] = await Promise.all([
+      fetch('/api/admin-customers', { headers }), fetch('/api/orders', { headers }),
+    ]);
+    const [customers, orders] = await Promise.all([customerResponse.json(), orderResponse.json()]);
+    if (!customerResponse.ok || !orderResponse.ok) throw new Error(customers.error || orders.error || 'Dati non disponibili. Riprova.');
+    if (currentUser?.role !== 'admin' || currentUser.id !== userId) return;
+    adminCustomerReport = { userId, groups: buildCustomerReport(customers.customers || [], orders.orders || []), warnings: orders.warnings || [] };
+    renderAdminCustomerReport();
+  } catch (error) {
+    if (currentUser?.id === userId) byId('customer-report-message').textContent = error.message || 'Caricamento non riuscito. Riprova.';
+  } finally {
+    adminCustomerReportLoading = false;
+    byId('customer-report-refresh').disabled = false;
+  }
+}
+
+function renderAdminCustomerReport() {
+  if (currentUser?.role !== 'admin' || !adminCustomerReport || adminCustomerReport.userId !== currentUser.id) return;
+  const from = byId('customer-report-from').value;
+  const to = byId('customer-report-to').value;
+  byId('customer-report-table').innerHTML = '';
+  byId('customer-report-summary').textContent = '';
+  if (from && to && from > to) { byId('customer-report-message').textContent = 'La data iniziale deve precedere quella finale.'; return; }
+  const query = byId('customer-report-search').value.trim().toLowerCase();
+  const rows = adminCustomerReport.groups.map((c,index) => {
+    const orders = customerPeriodOrders(c.orders, from, to);
+    return { c, index, orders, cents: orders.reduce((sum,o) => sum + Math.round(dashboardOrderTaxable(o)*100),0) };
+  }).filter(({c}) => [c.name,c.company,c.email,c.phone].some(v => String(v || '').toLowerCase().includes(query)))
+    .sort((a,b) => b.cents-a.cents || String(a.c.name).localeCompare(String(b.c.name),'it'));
+  byId('customer-report-message').textContent = `${rows.length} clienti · ${from || 'Inizio storico'} — ${to || 'Ultimo ordine'}. Ordini annullati, falliti e rimborsati esclusi. ${adminCustomerReport.warnings.join(' ')}`;
+  byId('customer-report-summary').textContent = `Imponibile ${money(rows.reduce((sum,r) => sum+r.cents,0)/100)} · ${rows.reduce((sum,r) => sum+r.orders.length,0)} ordini`;
+  byId('customer-report-table').innerHTML = rows.map(({c,index,orders,cents}) => {
+    const owners = [...new Set(orders.map(o => o.agent || o.distributor).filter(Boolean))];
+    const details = [c.company,c.email,c.phone,c.address,c.vatNumber && `P. IVA ${c.vatNumber}`,c.taxCode && `Codice fiscale ${c.taxCode}`,c.pec && `PEC ${c.pec}`,c.sdiCode && `SDI ${c.sdiCode}`].filter(Boolean);
+    return `<tr><td><strong>${escapeHtml(c.name || c.email || 'Cliente')}</strong>${details.map(v=>`<small>${escapeHtml(v)}</small>`).join('')}</td><td>${escapeHtml(owners.join(', ') || '—')}</td><td>${orders.length}</td><td><button class="secondary customer-turnover" type="button" data-customer-turnover="${index}" aria-label="Andamento acquisti di ${escapeHtml(c.name || c.email || 'Cliente')}">${money(cents/100)}</button><small>Lordo ${money(orders.reduce((sum,o)=>sum+Number(o.amount || 0),0))}</small></td></tr>`;
+  }).join('') || '<tr><td colspan="4">Nessun cliente trovato.</td></tr>';
+}
+
+function openCustomerTurnover(index) {
+  if (currentUser?.role !== 'admin' || !adminCustomerReport || adminCustomerReport.userId !== currentUser.id) return;
+  const customer = adminCustomerReport.groups[index];
+  if (!customer) return;
+  const from = byId('customer-report-from').value, to = byId('customer-report-to').value;
+  if (from && to && from > to) return;
+  const orders = customerPeriodOrders(customer.orders,from,to).sort((a,b)=>b.date.localeCompare(a.date));
+  const series = customerMonthlySeries(orders,from,to);
+  const maximum = Math.max(...series.map(row => row.value), 1);
+  const chart = series.length ? series.map(row => `<div class="dashboard-bar-row"><div><span>${escapeHtml(row.label)}</span><strong>${money(row.value)}</strong></div><div class="dashboard-bar-track"><i style="width:${row.value / maximum * 100}%"></i></div></div>`).join('') : '<p>Nessun acquisto nel periodo.</p>';
+  byId('dashboard-detail-content').innerHTML = `<div class="dashboard-detail-head"><h2 id="dashboard-detail-title">Acquisti · ${escapeHtml(customer.name || customer.email || 'Cliente')}</h2><button class="product-detail-close" type="button" data-dashboard-detail-close aria-label="Chiudi">×</button></div><div class="dashboard-detail-body"><p>${escapeHtml(from || 'Inizio storico')} — ${escapeHtml(to || 'Ultimo ordine')} · ${orders.length} ordini · Imponibile ${money(orders.reduce((sum,o)=>sum+Math.round(dashboardOrderTaxable(o)*100),0)/100)}</p><h3>Andamento mensile · imponibile</h3><div class="dashboard-bars customer-monthly-chart">${chart}</div><h3>Ordini del periodo</h3><div class="dashboard-detail-table-wrap"><table class="dashboard-detail-table"><thead><tr><th>Ordine</th><th>Data</th><th>Imponibile</th><th>Totale lordo</th><th>Stato</th></tr></thead><tbody>${orders.map(o=>`<tr><td>${escapeHtml(o.id)}</td><td>${escapeHtml(o.date)}</td><td>${money(dashboardOrderTaxable(o))}</td><td>${money(o.amount)}</td><td>${escapeHtml(o.status)}</td></tr>`).join('') || '<tr><td colspan="5">Nessun ordine.</td></tr>'}</tbody></table></div></div>`;
+  if (!byId('dashboard-detail-dialog').open) byId('dashboard-detail-dialog').showModal();
 }
 
 byId('show-login').addEventListener('click', () => setAuthMode('login'));
@@ -3169,3 +3312,13 @@ renderOrders();
 updateMetrics();
 if (passwordRecoveryActive) setAuthMode('reset');
 restoreSession();
+
+['customer-report-search','customer-report-from','customer-report-to'].forEach(id => byId(id).addEventListener('input',renderAdminCustomerReport));
+byId('customer-report-all').addEventListener('click', () => {
+  byId('customer-report-from').value = ''; byId('customer-report-to').value = ''; renderAdminCustomerReport();
+});
+byId('customer-report-refresh').addEventListener('click', () => loadAdminCustomerReport(true));
+byId('customer-report-table').addEventListener('click', event => {
+  const button = event.target.closest('[data-customer-turnover]');
+  if (button) openCustomerTurnover(Number(button.dataset.customerTurnover));
+});

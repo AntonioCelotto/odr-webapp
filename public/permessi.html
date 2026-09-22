@@ -142,6 +142,7 @@
           <a href="/promozioni" data-route="promotions">Promozioni</a>
           <a href="/rete" data-route="network">Rete</a>
           <a href="/ordini" data-route="reports">Ordini</a>
+          <a id="admin-customers-nav" class="hidden" href="/clienti-fatturato" data-route="admin-customers">Clienti e fatturato</a>
           <a id="admin-users-nav" class="hidden" href="/utenti" data-route="admin-users">Gestione utenti</a>
           <a href="/permessi" data-route="permissions">Permessi</a>
           <a href="/impostazioni" data-route="setup">Impostazioni</a>
@@ -487,7 +488,20 @@
           </div>
         </section>
 
-        <section id="agent-customers" class="workspace route-screen module-denied">
+  <section id="admin-customers" class="workspace route-screen module-denied">
+          <div class="section-heading"><div><h2>Clienti e fatturato</h2><p>Anagrafica completa e acquisti nel periodo. Clicca sull’imponibile per vedere l’andamento.</p></div></div>
+          <div class="customer-report-filters">
+            <label>Cerca cliente<input id="customer-report-search" type="search" placeholder="Nome, azienda, email o telefono"></label>
+            <label>Dal<input id="customer-report-from" type="date"></label>
+            <label>Al<input id="customer-report-to" type="date"></label>
+            <button id="customer-report-all" type="button" class="secondary">Tutto il periodo</button>
+            <button id="customer-report-refresh" type="button" class="secondary">Aggiorna</button>
+          </div>
+          <p id="customer-report-message" role="status"></p>
+          <p id="customer-report-summary"></p>
+          <div class="dashboard-detail-table-wrap"><table class="dashboard-detail-table customer-report-table"><thead><tr><th>Cliente e anagrafica</th><th>Rete degli ordini</th><th>Ordini</th><th>Fatturato · imponibile</th></tr></thead><tbody id="customer-report-table"></tbody></table></div>
+        </section>
+              <section id="agent-customers" class="workspace route-screen module-denied">
           <div class="section-heading">
             <div>
               <p class="eyebrow">Ordini per conto dei centri</p>

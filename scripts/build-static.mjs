@@ -11,6 +11,7 @@ const appRouteFiles = [
   'promozioni',
   'rete',
   'clienti',
+  'clienti-fatturato',
   'ordini',
   'wordpress',
   'report',

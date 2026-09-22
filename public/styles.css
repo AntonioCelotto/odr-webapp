@@ -3439,3 +3439,12 @@ body .shop-cart-thumb img {
 @media (max-width: 520px) { .dashboard-overview .admin-kpis { grid-template-columns: 1fr; } }
 
 .dashboard-channel-card [hidden] { display: none !important; }
+
+/* Anagrafica e fatturato amministratore */
+.customer-report-filters { display:flex; flex-wrap:wrap; gap:12px; align-items:end; margin:16px 0; }
+.customer-report-filters label { display:grid; gap:6px; }
+.customer-report-filters label:first-child { flex:1; min-width:220px; }
+.customer-report-table small { display:block; margin-top:4px; color:var(--muted, #666); }
+.customer-report-table td { vertical-align:top; }
+.customer-turnover { font-weight:700; white-space:nowrap; }
+.customer-monthly-chart { max-height:420px; overflow:auto; padding:8px 0; }
