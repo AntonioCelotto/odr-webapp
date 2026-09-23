@@ -1,5 +1,10 @@
 import { createClient } from '@supabase/supabase-js';
 
+// Capture the recovery route before Supabase consumes the URL fragment.
+const initialRecoveryRoute = window.location.pathname === '/recupera-password'
+  || window.location.hash.includes('type=recovery')
+  || window.location.hash.includes('error=');
+
 const runtimeConfig = window.__ODR_CONFIG__ || {};
 const config = {
   supabaseUrl: runtimeConfig.supabaseUrl || '',
@@ -65,8 +70,7 @@ const appRoutes = {
 let validatedCode = null;
 let currentUser = null;
 let authBusy = false;
-let passwordRecoveryActive = window.location.pathname === '/recupera-password'
-  || window.location.hash.includes('type=recovery');
+let passwordRecoveryActive = initialRecoveryRoute;
 let shopProducts = [];
 let packageDocuments = [];
 let marketingMaterials = [];
@@ -542,7 +546,8 @@ function initRouting() {
     open ? closeMobileMenu() : openMobileMenu();
   });
   byId('mobile-nav-backdrop').addEventListener('click', closeMobileMenu);
-  showRoute(routeFromPath(window.location.pathname), { push: false });
+  // Let Supabase consume recovery credentials before any URL rewriting.
+  if (!passwordRecoveryActive) showRoute(routeFromPath(window.location.pathname), { push: false });
 }
 
 function buildShopUrl(code) {
@@ -2533,18 +2538,21 @@ async function registerOrderPayment(button) {
 }
 
 function renderAdminUsers(users, wordpressAccounts = [], adminMembers = [], canManageAdmins = false) {
+  const normalizeAccountEmail = value => String(value || '').trim().toLowerCase();
+  const registeredEmails = new Set(users.map(user => normalizeAccountEmail(user.email)));
+  const unregisteredAccounts = wordpressAccounts.filter(account => !account.connected_profile_id && !registeredEmails.has(normalizeAccountEmail(account.email)));
   const registeredRows = users
     .map((user) => {
       const membership = adminMembers.find((member) => member.profile_id === user.id);
       const wordpressAccount = wordpressAccounts.find((account) => (
-        account.email.toLowerCase() === user.email.toLowerCase()
+        normalizeAccountEmail(account.email) === normalizeAccountEmail(user.email)
       ));
       const approvalRole = wordpressAccount?.mapped_role || user.requested_role;
-      const pendingActions = user.approval_status === 'pending' ? `
+      const pendingActions = ['pending', 'rejected'].includes(user.approval_status) ? `
         <button class="approve" type="button" data-user-action="approve" data-user-id="${user.id}">
-          Approva come ${escapeHtml(roleLabels[approvalRole] || approvalRole)}
+          ${user.approval_status === 'rejected' ? 'Riattiva e associa come' : 'Approva come'} ${escapeHtml(roleLabels[approvalRole] || approvalRole)}
         </button>
-        <button class="reject" type="button" data-user-action="reject" data-user-id="${user.id}">Rifiuta</button>
+${user.approval_status === 'pending' ? `<button class="reject" type="button" data-user-action="reject" data-user-id="${user.id}">Rifiuta</button>` : ''}
       ` : '';
       const adminActions = canManageAdmins && user.approval_status === 'approved'
         ? membership?.level === 'owner'
@@ -2565,6 +2573,8 @@ function renderAdminUsers(users, wordpressAccounts = [], adminMembers = [], canM
               <button class="delete" type="button" data-user-action="delete_user" data-user-id="${user.id}" data-user-label="${escapeHtml(user.full_name || user.email)}">Elimina account</button>
             `
         : '';
+      const inactiveDelete = canManageAdmins && user.approval_status !== 'approved' && membership?.level !== 'owner'
+        ? `<button class="delete" type="button" data-user-action="delete_user" data-user-id="${user.id}" data-user-label="${escapeHtml(user.full_name || user.email)}">Elimina account</button>` : '';
       return `
       <tr>
         <td data-label="Utente">
@@ -2580,15 +2590,15 @@ function renderAdminUsers(users, wordpressAccounts = [], adminMembers = [], canM
           <div class="user-actions">
             ${pendingActions}
             ${adminActions}
-            ${!pendingActions && !adminActions ? '-' : ''}
+            ${inactiveDelete}
+            ${!pendingActions && !adminActions && !inactiveDelete ? '-' : ''}
           </div>
         </td>
       </tr>
     `;
     })
     .join('');
-  const importedRows = wordpressAccounts
-    .filter((account) => !account.connected_profile_id)
+  const importedRows = unregisteredAccounts
     .map((account) => `
       <tr>
         <td data-label="Utente">
@@ -2604,7 +2614,7 @@ function renderAdminUsers(users, wordpressAccounts = [], adminMembers = [], canM
   byId('admin-users-table').innerHTML = registeredRows + importedRows;
 
   const pending = users.filter((user) => user.approval_status === 'pending').length;
-  const unlinked = wordpressAccounts.filter((account) => !account.connected_profile_id).length;
+  const unlinked = unregisteredAccounts.length;
   byId('admin-users-message').textContent =
     `${pending} richieste in attesa · ${unlinked} account WordPress da collegare.`;
 }
@@ -2740,27 +2750,33 @@ async function submitRegistration(event) {
   }
 }
 
+function passwordRecoveryErrorMessage(error) {
+  if (error?.status === 429 || ['over_email_send_rate_limit', 'over_request_rate_limit'].includes(error?.code)) {
+    return 'Hai richiesto più link in poco tempo. Attendi qualche minuto e usa solo l’ultima email ricevuta.';
+  }
+  if (error?.code === 'same_password') return 'Scegli una password diversa da quella attuale.';
+  if (error?.code === 'weak_password') return 'La password non soddisfa i requisiti di sicurezza. Scegline una più lunga e meno comune.';
+  if (['session_not_found', 'refresh_token_not_found', 'otp_expired'].includes(error?.code)) return 'Il link è scaduto o è già stato usato. Richiedi un nuovo link di recupero.';
+  return 'Operazione non riuscita. Controlla la connessione e riprova; se il problema continua, contatta l’amministratore.';
+}
+
 async function submitPasswordRecovery(event) {
   event.preventDefault();
   if (authBusy || !supabase) return;
-
   const email = byId('recovery-email').value.trim();
   setAuthBusy(true);
   showAuthMessage('Invio del link in corso...');
-  const { error } = await supabase.auth.resetPasswordForEmail(email, {
-    redirectTo: `${window.location.origin}/recupera-password`,
-  });
-  setAuthBusy(false);
-
-  if (error) {
-    showAuthMessage('Non è stato possibile inviare il link. Riprova tra qualche minuto.', 'error');
-    return;
+  try {
+    const { error } = await supabase.auth.resetPasswordForEmail(email, {
+      redirectTo: `${window.location.origin}/recupera-password`,
+    });
+    if (error) { showAuthMessage(passwordRecoveryErrorMessage(error), 'error'); return; }
+    showAuthMessage('Se l’indirizzo è associato a un account ODR, riceverai un’email. Controlla anche lo spam e apri solo il link dell’ultima email per scegliere e salvare la nuova password.', 'success');
+  } catch {
+    showAuthMessage('Connessione non disponibile. Riprova tra poco.', 'error');
+  } finally {
+    setAuthBusy(false);
   }
-
-  showAuthMessage(
-    'Se l’indirizzo è associato a un account ODR, riceverai a breve un’email con il link per reimpostare la password.',
-    'success',
-  );
 }
 
 async function submitPasswordReset(event) {
@@ -2780,20 +2796,25 @@ async function submitPasswordReset(event) {
 
   setAuthBusy(true);
   showAuthMessage('Aggiornamento della password in corso...');
-  const { error } = await supabase.auth.updateUser({ password });
-  if (error) {
+  try {
+    const { data: sessionData, error: sessionError } = await supabase.auth.getSession();
+    if (sessionError || !sessionData.session) {
+      showAuthMessage('Sessione di recupero assente o scaduta. Premi “Richiedi un nuovo link”.', 'error');
+      return;
+    }
+    const { error } = await supabase.auth.updateUser({ password });
+    if (error) { showAuthMessage(passwordRecoveryErrorMessage(error), 'error'); return; }
+    await supabase.auth.signOut();
+    passwordRecoveryActive = false;
+    window.history.replaceState({}, '', '/');
+    setAuthMode('login');
+    byId('password-reset-form').reset();
+    showAuthMessage('Password aggiornata. Ora accedi con la nuova password dell’app ODR.', 'success');
+  } catch {
+    showAuthMessage('Non è stato possibile completare la richiesta. Controlla la connessione e riprova.', 'error');
+  } finally {
     setAuthBusy(false);
-    showAuthMessage('Il link non è più valido o è scaduto. Richiedine uno nuovo.', 'error');
-    return;
   }
-
-  await supabase.auth.signOut();
-  passwordRecoveryActive = false;
-  window.history.replaceState({}, '', '/');
-  setAuthMode('login');
-  byId('password-reset-form').reset();
-  setAuthBusy(false);
-  showAuthMessage('Password aggiornata. Ora puoi accedere con la nuova password.', 'success');
 }
 
 async function submitLogout() {
@@ -2936,19 +2957,26 @@ function initSupabaseStatus() {
 
 async function restoreSession() {
   if (!supabase) return;
-  const { data } = await supabase.auth.getSession();
-  if (!data.session?.user) return;
-
-  if (passwordRecoveryActive) {
-    setAuthMode('reset');
-    return;
-  }
-
   try {
+    const initialized = await supabase.auth.initialize();
+    const { data, error } = await supabase.auth.getSession();
+    if (passwordRecoveryActive) {
+      if (initialized.error || error || !data.session?.user) {
+        passwordRecoveryActive = false;
+        window.history.replaceState({}, '', '/recupera-password');
+        setAuthMode('recovery');
+        showAuthMessage('Il link di recupero manca, è scaduto o è già stato usato. Inserisci la tua email per riceverne uno nuovo.', 'error');
+        return;
+      }
+      setAuthMode('reset');
+      showAuthMessage('Link verificato. Scegli e salva una nuova password per l’app ODR.', 'success');
+      return;
+    }
+    if (!data.session?.user) return;
     await enterAuthenticatedApp(data.session.user);
   } catch {
-    await supabase.auth.signOut();
-    showAuthMessage('La sessione non può essere associata a un profilo ODR.', 'error');
+    setAuthMode(passwordRecoveryActive ? 'recovery' : 'login');
+    showAuthMessage('Impossibile verificare la sessione. Controlla la connessione e riprova.', 'error');
   }
 }
 
@@ -3343,4 +3371,10 @@ byId('customer-report-table').addEventListener('click', event => {
     dashboardSalesExpanded[kind] = !dashboardSalesExpanded[kind];
     renderAdminDashboard();
   });
+});
+
+byId('request-new-recovery-link').addEventListener('click', () => {
+  passwordRecoveryActive = false;
+  window.history.replaceState({}, '', '/recupera-password');
+  setAuthMode('recovery');
 });
