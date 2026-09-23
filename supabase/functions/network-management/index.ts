@@ -67,7 +67,18 @@ Deno.serve(async (request) => {
         .select("id,email,full_name,role,network_entity_id").in("role", types)
         .eq("approval_status", "approved").order("full_name");
       if (accountsError) return json({ error: accountsError.message }, 500);
-      accounts = data || [];
+
+      const { data: authData, error: authError } = await admin.auth.admin.listUsers({
+        page: 1,
+        perPage: 1000,
+      });
+      if (authError) return json({ error: authError.message }, 500);
+      const authById = new Map((authData?.users || []).map((user) => [user.id, user]));
+
+      accounts = (data || []).map((account) => ({
+        ...account,
+        last_sign_in_at: authById.get(account.id)?.last_sign_in_at || null,
+      }));
     }
     return json({ entities, accounts, canManage: profile.role === "admin" });
   }
