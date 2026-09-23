@@ -89,6 +89,17 @@ function money(value) {
   return Number(value || 0).toLocaleString('it-IT', { style: 'currency', currency: 'EUR' });
 }
 
+function formatLastAccess(value) {
+  if (!value) return 'Mai effettuato';
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return 'Mai effettuato';
+  return new Intl.DateTimeFormat('it-IT', {
+    dateStyle: 'short',
+    timeStyle: 'short',
+    timeZone: 'Europe/Rome',
+  }).format(date);
+}
+
 const dashboardMonthFormatter = new Intl.DateTimeFormat('it-IT', { month: 'short' });
 
 function dashboardOrderPaidAmount(order) {
@@ -1756,6 +1767,9 @@ function renderNetwork() {
         <td data-label="Guadagno agente">${row.type === 'agent' ? `<strong>${money(agentEarnings)}</strong>` : '-'}</td>
         <td data-label="Contatto">${escapeHtml(row.email || row.phone || '-')}</td>
         <td data-label="Account ODR">${escapeHtml(row.accountName || 'Non collegato')}</td>
+        <td data-label="Ultimo accesso">${['agent', 'distributor'].includes(row.type)
+          ? (row.accountId ? escapeHtml(formatLastAccess(row.accountLastSignIn)) : 'Account non collegato')
+          : '-'}</td>
         <td data-label="Stato"><span class="state ${row.active ? 'ok' : 'off'}">${row.active ? 'Attivo' : 'Spento'}</span></td>
         <td data-label="Azioni">${canManageNetwork ? `<div class="user-actions">
           <button type="button" data-network-edit="${row.id}">Modifica</button>
@@ -1778,6 +1792,7 @@ function normalizeNetworkRows(entities = [], accounts = []) {
       parentName: byEntity.get(entity.parent_id)?.name || '',
       accountId: account?.id || '',
       accountName: account ? (account.full_name || account.email) : '',
+      accountLastSignIn: account?.last_sign_in_at || null,
     };
   });
 }
