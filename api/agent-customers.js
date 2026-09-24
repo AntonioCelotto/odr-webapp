@@ -22,7 +22,7 @@ async function authenticate(req) {
   const user = await auth.json();
   const result = await fetch(`${base}/rest/v1/profiles?id=eq.${user.id}&select=id,full_name,role,approval_status,network_entity_id,wordpress_user_id`, { headers });
   const [profile] = result.ok ? await result.json() : [];
-  return profile?.approval_status === 'approved' && ['agent', 'admin'].includes(profile.role)
+  return profile?.approval_status === 'approved' && ['agent', 'distributor', 'admin'].includes(profile.role)
     ? { ...profile, email: user.email, headers }
     : null;
 }
@@ -68,7 +68,7 @@ export default async function handler(req, res) {
   if (!['GET', 'POST', 'PUT', 'DELETE'].includes(req.method)) return json(res, 405, { error: 'Metodo non consentito' });
   try {
     const profile = await authenticate(req);
-    if (!profile) return json(res, 403, { error: 'Funzione riservata agli agenti' });
+    if (!profile) return json(res, 403, { error: 'Funzione riservata ad agenti e distributori' });
     const parentId = profile.network_entity_id || null;
     const base = process.env.SUPABASE_URL;
     const customerHeaders = { ...profile.headers, 'Content-Type': 'application/json' };
@@ -88,7 +88,75 @@ export default async function handler(req, res) {
       return json(res, 200, { deleted: true });
     }
 
-    if (req.method === 'GET') {
+    if (req.method === 'GET') return json(res, 200, { customers: await listManagedCustomers(profile) });
+
+    const body = req.body || {};
+    const email = clean(body.email, 200).toLowerCase();
+    const name = clean(body.name);
+    if (!name || !email || !/^\S+@\S+\.\S+$/.test(email)) return json(res, 400, { error: 'Nome ed email validi sono obbligatori' });
+    const editingId = clean(body.customerId, 80).replace(/^app-/, '');
+    const duplicateUrl = new URL('/rest/v1/agent_app_customers', base);
+    duplicateUrl.searchParams.set('agent_profile_id', `eq.${profile.id}`);
+    duplicateUrl.searchParams.set('email', `eq.${email}`);
+    duplicateUrl.searchParams.set('select', 'id');
+    const duplicate = await fetch(duplicateUrl, { headers: customerHeaders });
+    const duplicates = await duplicate.json();
+    if (duplicates.some((row) => row.id !== editingId)) return json(res, 409, { error: 'Questo cliente è già presente' });
+
+    const parts = name.split(/\s+/);
+    const firstName = parts.shift() || name;
+    const lastName = parts.join(' ');
+    const saveUrl = new URL('/rest/v1/agent_app_customers', base);
+    if (req.method === 'PUT') {
+      if (!editingId) return json(res, 400, { error: 'Cliente non valido' });
+      saveUrl.searchParams.set('id', `eq.${editingId}`);
+      saveUrl.searchParams.set('agent_profile_id', `eq.${profile.id}`);
+    }
+    const terms = Array.isArray(body.paymentTerms) ? body.paymentTerms.map(Number).filter((n) => [30, 60, 90, 120].includes(n)) : [];
+    const create = await fetch(saveUrl, {
+      method: req.method === 'PUT' ? 'PATCH' : 'POST',
+      headers: { ...customerHeaders, Prefer: 'return=representation' },
+      body: JSON.stringify({
+        agent_profile_id: profile.id,
+        name,
+        company: clean(body.company) || null,
+        email,
+        phone: clean(body.phone, 60) || null,
+        address_1: clean(body.address1, 160) || null,
+        postcode: clean(body.postcode, 20) || null,
+        city: clean(body.city, 100) || null,
+        state: clean(body.state, 10).toUpperCase() || null,
+        country: 'IT',
+        tax_code: clean(body.taxCode, 32) || null, vat_number: clean(body.vatNumber, 32) || null,
+        pec: clean(body.pec, 200) || null, sdi_code: clean(body.sdiCode, 20) || null,
+        shipping_name: clean(body.shippingName) || null, shipping_company: clean(body.shippingCompany) || null,
+        shipping_address_1: clean(body.shippingAddress1, 160) || null, shipping_postcode: clean(body.shippingPostcode, 20) || null,
+        shipping_city: clean(body.shippingCity, 100) || null,
+        shipping_state: clean(body.shippingState, 10).toUpperCase() || null, shipping_country: 'IT',
+        payment_terms: terms.length ? terms : [30], notes: clean(body.notes, 1000) || null,
+        updated_at: new Date().toISOString(),
+      }),
+    });
+    const [saved] = create.ok ? await create.json() : [];
+    if (!saved) throw new Error('Salvataggio cliente nell’app non riuscito');
+    return json(res, req.method === 'PUT' ? 200 : 201, { customer: {
+      id: `app-${saved.id}`, name, email, phone: clean(body.phone, 60), area: clean(body.city, 100), source: 'app',
+      address: {
+        firstName, lastName, company: clean(body.company), address1: clean(body.address1, 160),
+        address2: '', postcode: clean(body.postcode, 20), city: clean(body.city, 100),
+        state: clean(body.state, 10).toUpperCase(), country: 'IT',
+        phone: clean(body.phone, 60), email,
+      }
+    } });
+  } catch (error) {
+    console.error('agent_customers_error', error instanceof Error ? error.message : error);
+    return json(res, 502, { error: error instanceof Error ? error.message : 'Operazione non riuscita' });
+  }
+}
+
+export async function listManagedCustomers(profile) {
+  const base = process.env.SUPABASE_URL;
+  const customerHeaders = { ...profile.headers, 'Content-Type': 'application/json' };
       const attributionIndex = await loadAttributionIndex(wooHeaders().Authorization, profile);
       const customers = new Map();
       const assignedWooCustomerIds = new Set();
@@ -240,69 +308,5 @@ export default async function handler(req, res) {
         }
         if (orders.length < 100) break;
       }
-      return json(res, 200, { customers: [...customers.values()] });
-    }
-
-    const body = req.body || {};
-    const email = clean(body.email, 200).toLowerCase();
-    const name = clean(body.name);
-    if (!name || !email || !/^\S+@\S+\.\S+$/.test(email)) return json(res, 400, { error: 'Nome ed email validi sono obbligatori' });
-    const editingId = clean(body.customerId, 80).replace(/^app-/, '');
-    const duplicateUrl = new URL('/rest/v1/agent_app_customers', base);
-    duplicateUrl.searchParams.set('agent_profile_id', `eq.${profile.id}`);
-    duplicateUrl.searchParams.set('email', `eq.${email}`);
-    duplicateUrl.searchParams.set('select', 'id');
-    const duplicate = await fetch(duplicateUrl, { headers: customerHeaders });
-    const duplicates = await duplicate.json();
-    if (duplicates.some((row) => row.id !== editingId)) return json(res, 409, { error: 'Questo cliente è già presente' });
-
-    const parts = name.split(/\s+/);
-    const firstName = parts.shift() || name;
-    const lastName = parts.join(' ');
-    const saveUrl = new URL('/rest/v1/agent_app_customers', base);
-    if (req.method === 'PUT') {
-      if (!editingId) return json(res, 400, { error: 'Cliente non valido' });
-      saveUrl.searchParams.set('id', `eq.${editingId}`);
-      saveUrl.searchParams.set('agent_profile_id', `eq.${profile.id}`);
-    }
-    const terms = Array.isArray(body.paymentTerms) ? body.paymentTerms.map(Number).filter((n) => [30, 60, 90, 120].includes(n)) : [];
-    const create = await fetch(saveUrl, {
-      method: req.method === 'PUT' ? 'PATCH' : 'POST',
-      headers: { ...customerHeaders, Prefer: 'return=representation' },
-      body: JSON.stringify({
-        agent_profile_id: profile.id,
-        name,
-        company: clean(body.company) || null,
-        email,
-        phone: clean(body.phone, 60) || null,
-        address_1: clean(body.address1, 160) || null,
-        postcode: clean(body.postcode, 20) || null,
-        city: clean(body.city, 100) || null,
-        state: clean(body.state, 10).toUpperCase() || null,
-        country: 'IT',
-        tax_code: clean(body.taxCode, 32) || null, vat_number: clean(body.vatNumber, 32) || null,
-        pec: clean(body.pec, 200) || null, sdi_code: clean(body.sdiCode, 20) || null,
-        shipping_name: clean(body.shippingName) || null, shipping_company: clean(body.shippingCompany) || null,
-        shipping_address_1: clean(body.shippingAddress1, 160) || null, shipping_postcode: clean(body.shippingPostcode, 20) || null,
-        shipping_city: clean(body.shippingCity, 100) || null,
-        shipping_state: clean(body.shippingState, 10).toUpperCase() || null, shipping_country: 'IT',
-        payment_terms: terms.length ? terms : [30], notes: clean(body.notes, 1000) || null,
-        updated_at: new Date().toISOString(),
-      }),
-    });
-    const [saved] = create.ok ? await create.json() : [];
-    if (!saved) throw new Error('Salvataggio cliente nell’app non riuscito');
-    return json(res, req.method === 'PUT' ? 200 : 201, { customer: {
-      id: `app-${saved.id}`, name, email, phone: clean(body.phone, 60), area: clean(body.city, 100), source: 'app',
-      address: {
-        firstName, lastName, company: clean(body.company), address1: clean(body.address1, 160),
-        address2: '', postcode: clean(body.postcode, 20), city: clean(body.city, 100),
-        state: clean(body.state, 10).toUpperCase(), country: 'IT',
-        phone: clean(body.phone, 60), email,
-      }
-    } });
-  } catch (error) {
-    console.error('agent_customers_error', error instanceof Error ? error.message : error);
-    return json(res, 502, { error: error instanceof Error ? error.message : 'Operazione non riuscita' });
-  }
+      return [...customers.values()];
 }

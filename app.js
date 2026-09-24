@@ -738,7 +738,7 @@ function fillShopAddress(address = {}) {
   Object.entries(shippingFieldIds).forEach(([key, id]) => {
     if (address[key] !== undefined && address[key] !== null) byId(id).value = address[key];
   });
-  byId('shipping-email').value = currentUser?.role === 'agent' && selectedAgentCustomer
+  byId('shipping-email').value = ['agent', 'distributor'].includes(currentUser?.role) && selectedAgentCustomer
     ? (address.email || selectedAgentCustomer.email || '')
     : (currentUser?.email || address.email || '');
 }
@@ -832,7 +832,7 @@ function cartProduct(productId) {
 }
 
 function renderShopCart() {
-  if (currentUser?.role === 'agent' && selectedAgentCustomer?.address) {
+  if (['agent', 'distributor'].includes(currentUser?.role) && selectedAgentCustomer?.address) {
     fillShopAddress(selectedAgentCustomer.address);
     byId('shop-address-status').textContent = `Dati di ${selectedAgentCustomer.name}`;
   }
@@ -1342,7 +1342,7 @@ async function openWooSession(destination, trigger, items = [], coupon = '', opt
       showRoute('agent-customers', { push: true });
       throw new Error('Seleziona prima il cliente per cui stai effettuando l’ordine');
     }
-    const agentCheckout = currentUser?.role === 'agent' && options.checkout;
+    const agentCheckout = options.checkout && (currentUser?.role === 'agent' || (currentUser?.role === 'distributor' && Boolean(selectedAgentCustomer)));
     const response = await fetch(agentCheckout ? '/api/agent-order' : '/api/shop-session', {
       method: 'POST',
       headers: {
@@ -2180,7 +2180,7 @@ function applyModuleVisibility(rows) {
   byId('setup')?.classList.toggle('module-denied', role !== 'admin');
   byId('admin-customers')?.classList.toggle('module-denied', role !== 'admin');
   byId('admin-customers-nav')?.classList.toggle('hidden', role !== 'admin');
-  const agentCustomerAllowed = role === 'agent';
+  const agentCustomerAllowed = ['agent', 'distributor'].includes(role);
   byId('agent-customers')?.classList.toggle('module-denied', !agentCustomerAllowed);
   byId('agent-customers-nav')?.classList.toggle('hidden', !agentCustomerAllowed);
   byId('metric-network-card')?.classList.toggle('hidden', role === 'agent');
@@ -2366,12 +2366,12 @@ function enterApp(user) {
   byId('code-input').value = user.code || '';
   renderCurrentProfile(user);
   try {
-    selectedAgentCustomer = user.role === 'agent'
-      ? JSON.parse(localStorage.getItem('odr-agent-customer') || 'null')
+    selectedAgentCustomer = ['agent', 'distributor'].includes(user.role)
+      ? JSON.parse(localStorage.getItem(`odr-agent-customer-${currentUser.id}`) || 'null')
       : null;
   } catch {
     selectedAgentCustomer = null;
-    localStorage.removeItem('odr-agent-customer');
+    localStorage.removeItem(`odr-agent-customer-${currentUser.id}`);
   }
   const isAdmin = user.role === 'admin';
   byId('admin-code-manager').classList.toggle('hidden', !isAdmin);
@@ -2396,7 +2396,7 @@ function enterApp(user) {
   loadShop();
   loadMarketingMaterials();
   loadWooOrders();
-  if (user.role === 'agent') loadAgentCustomers();
+  if (['agent', 'distributor'].includes(user.role)) loadAgentCustomers();
   loadNetwork();
   updateMetrics();
 }
@@ -2452,7 +2452,8 @@ function renderAgentCustomers() {
     selected.innerHTML = `<strong>Ordine per: ${escapeHtml(selectedAgentCustomer.name)}</strong><span>${escapeHtml(selectedAgentCustomer.email || '')}</span><button id="clear-agent-customer" type="button">Cambia cliente</button>`;
     byId('clear-agent-customer').addEventListener('click', () => {
       selectedAgentCustomer = null;
-      localStorage.removeItem('odr-agent-customer');
+      localStorage.removeItem(`odr-agent-customer-${currentUser.id}`);
+      loadShopAddress();
       renderAgentCustomers();
     });
   } else {
@@ -2479,7 +2480,7 @@ function renderAgentCustomers() {
 }
 
 async function loadAgentCustomers() {
-  if (!supabase || !['agent', 'admin'].includes(currentUser?.role)) return;
+  if (!supabase || !['agent', 'distributor', 'admin'].includes(currentUser?.role)) return;
   byId('agent-customer-message').textContent = 'Caricamento clienti...';
   const { data } = await supabase.auth.getSession();
   try {
@@ -2491,11 +2492,11 @@ async function loadAgentCustomers() {
       const refreshedCustomer = agentCustomers.find((item) => item.id === selectedAgentCustomer.id);
       if (refreshedCustomer) {
         selectedAgentCustomer = refreshedCustomer;
-        localStorage.setItem('odr-agent-customer', JSON.stringify(refreshedCustomer));
+        localStorage.setItem(`odr-agent-customer-${currentUser.id}`, JSON.stringify(refreshedCustomer));
         fillShopAddress(refreshedCustomer.address || {});
       } else {
         selectedAgentCustomer = null;
-        localStorage.removeItem('odr-agent-customer');
+        localStorage.removeItem(`odr-agent-customer-${currentUser.id}`);
       }
     }
     renderAgentCustomers();
@@ -2563,7 +2564,7 @@ async function deleteAgentCustomer(button) {
     if (!response.ok) throw new Error(payload.error || 'Eliminazione non riuscita');
     if (selectedAgentCustomer?.id === customer.id) {
       selectedAgentCustomer = null;
-      localStorage.removeItem('odr-agent-customer');
+      localStorage.removeItem(`odr-agent-customer-${currentUser.id}`);
     }
     await loadAgentCustomers();
     byId('agent-customer-message').textContent = 'Cliente eliminato. Gli ordini restano conservati.';
@@ -2610,7 +2611,7 @@ function handleAgentCustomerClick(event) {
   if (!button) return;
   selectedAgentCustomer = agentCustomers.find((item) => item.id === button.dataset.agentCustomer) || null;
   if (!selectedAgentCustomer) return;
-  localStorage.setItem('odr-agent-customer', JSON.stringify(selectedAgentCustomer));
+  localStorage.setItem(`odr-agent-customer-${currentUser.id}`, JSON.stringify(selectedAgentCustomer));
   fillShopAddress(selectedAgentCustomer.address || {});
   byId('shop-address-status').textContent = `Dati di ${selectedAgentCustomer.name}`;
   renderAgentCustomers();

@@ -1,4 +1,5 @@
 import { Buffer } from 'node:buffer';
+import { listManagedCustomers } from './agent-customers.js';
 
 function json(res, status, body) {
   res.status(status);
@@ -15,21 +16,26 @@ async function authenticate(req) {
   const auth = token && await fetch(`${base}/auth/v1/user`, { headers });
   if (!auth?.ok) return null;
   const user = await auth.json();
-  const result = await fetch(`${base}/rest/v1/profiles?id=eq.${user.id}&select=id,role,approval_status,network_entity_id,full_name`, { headers });
+  const result = await fetch(`${base}/rest/v1/profiles?id=eq.${user.id}&select=id,role,approval_status,network_entity_id,full_name,wordpress_user_id`, { headers });
   const [profile] = result.ok ? await result.json() : [];
-  return profile?.role === 'agent' && profile.approval_status === 'approved' ? { ...profile, headers } : null;
+  return ['agent', 'distributor'].includes(profile?.role) && profile.approval_status === 'approved' ? { ...profile, email: user.email, headers } : null;
 }
 
 export default async function handler(req, res) {
   if (req.method !== 'POST') return json(res, 405, { error: 'Metodo non consentito' });
   try {
     const profile = await authenticate(req);
-    if (!profile) return json(res, 403, { error: 'Agente non autorizzato' });
+    if (!profile) return json(res, 403, { error: 'Profilo non autorizzato' });
     const customerId = String(req.body?.customerId || '');
     const items = Array.isArray(req.body?.items) ? req.body.items.slice(0, 50)
       .map((item) => ({ product_id: Number(item.productId), quantity: Math.max(1, Math.min(99, Number(item.quantity) || 1)) }))
       .filter((item) => Number.isInteger(item.product_id) && item.product_id > 0) : [];
     if (!customerId || !items.length) return json(res, 400, { error: 'Seleziona cliente e prodotti' });
+
+    if (!customerId.startsWith('app-')) {
+      const allowed = await listManagedCustomers(profile);
+      if (!allowed.some(customer => customer.id === customerId)) return json(res, 403, { error: 'Cliente non associato al tuo profilo' });
+    }
 
     const key = process.env.WOOCOMMERCE_CONSUMER_KEY;
     const secret = process.env.WOOCOMMERCE_CONSUMER_SECRET;
@@ -89,7 +95,7 @@ export default async function handler(req, res) {
         status: 'pending', customer_id: wooCustomerId, billing: customer.billing,
         shipping: customer.shipping, line_items: items,
         coupon_lines: req.body?.coupon ? [{ code: String(req.body.coupon).trim().toLowerCase() }] : [],
-        created_via: 'odr-agent-app',
+        created_via: profile.role === 'distributor' ? 'odr-distributor-app' : 'odr-agent-app',
         meta_data: [
           { key: '_odr_agent_profile_id', value: profile.id },
           { key: '_odr_agent_entity_id', value: profile.network_entity_id || '' },
