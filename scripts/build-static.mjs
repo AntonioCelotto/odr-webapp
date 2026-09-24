@@ -45,6 +45,8 @@ for (const directory of outputDirectories) {
   for (const file of ['index.html', 'styles.css', 'odr-logo.svg', 'auth-molecule-bg.webp', 'italy-map.svg']) {
     await copyFile(file, `${directory}/${file}`);
   }
+  await copyFile('manifest.webmanifest', `${directory}/manifest.webmanifest`);
+  await cp('app-icons', `${directory}/app-icons`, { recursive: true });
   await cp('product-images', `${directory}/product-images`, { recursive: true });
   for (const route of appRouteFiles) {
     await copyFile('index.html', `${directory}/${route}.html`);
