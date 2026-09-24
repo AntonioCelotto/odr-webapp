@@ -1,0 +1,17 @@
+import assert from 'node:assert/strict';
+import {parseExcelRows,validate,safeUrl,identity} from '../store-locator/model.js';
+const header=['Nome','tipo','Indirizzo','CAP','CITTA','Stato','AGENTE/DISTRIBUTORE','Instagram','Sito Web','Latitudine','Longitudine'];
+const row=['Centro A','Centro Estetico','Via Roma 1','00100','Roma','Italia','Agenti','Profilo da completare','www.example.com','',''];
+const parsed=parseExcelRows([header,row,row]);
+assert.equal(parsed[0].errors.length,0);assert.equal(parsed[1].duplicate,true);
+assert.equal(parsed[0].row.postcode,'00100');assert.equal(parsed[0].row.approved,false);
+assert.equal(parsed[0].row.website,'https://www.example.com');assert.match(parsed[0].internal.notes,/Profilo da completare/);
+assert.equal(parseExcelRows([header,row],[parsed[0].row])[0].duplicate,true);
+assert(validate({...parsed[0].row,latitude:45,longitude:null}).length);
+assert(validate({...parsed[0].row,latitude:91,longitude:10}).length);
+assert.equal(validate({...parsed[0].row,latitude:0,longitude:0}).length,0);
+assert.equal(safeUrl('javascript:alert(1)'),'');
+assert.equal(parseExcelRows([header,['B','Centro estetico oncologico e pelli problematiche','Via 1','','Paris','Francia']])[0].row.categories.length,3);
+assert.throws(()=>parseExcelRows([['foo']]));
+assert.equal(identity(parsed[0].row),identity({...parsed[0].row,name:' CENTRO A '}));
+console.log('PASS Store Locator: import, duplicates, CAP, categories, foreign country, notes preserved, safe URLs, coordinate validation, draft defaults.');

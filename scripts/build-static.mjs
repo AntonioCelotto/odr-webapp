@@ -5,6 +5,7 @@ const requiredFiles = ['index.html', 'styles.css', 'app.js', 'odr-logo.svg', 'au
 const outputDirectories = ['dist', 'public'];
 const appRouteFiles = [
   'dashboard',
+  'gestione-store-locator',
   'shop',
   'profilo',
   'codici',
@@ -58,6 +59,12 @@ for (const directory of outputDirectories) {
     platform: 'browser',
     target: ['es2020'],
   });
+
+  await copyFile('store-locator/public.html', `${directory}/store-locator.html`);
+  await build({entryPoints:['store-locator/public.js'],bundle:true,format:'iife',minify:true,outfile:`${directory}/locator-public.js`,platform:'browser',target:['es2020']});
+  const mapCss = await Promise.all(['node_modules/leaflet/dist/leaflet.css','node_modules/leaflet.markercluster/dist/MarkerCluster.css','node_modules/leaflet.markercluster/dist/MarkerCluster.Default.css','store-locator/styles.css'].map(path=>readFile(path,'utf8')));
+  await writeFile(`${directory}/locator.css`,mapCss.join('\n'));
+  await cp('node_modules/leaflet/dist/images',`${directory}/images`,{recursive:true});
 
   await writeFile(
     `${directory}/config.js`,

@@ -5,7 +5,8 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>ODR</title>
     <link rel="stylesheet" href="/styles.css" />
-  </head>
+  <link rel="stylesheet" href="/locator.css">
+</head>
   <body>
     <section id="auth-screen" class="auth-screen">
       <div class="auth-visual">
@@ -136,6 +137,7 @@
         <nav class="nav" aria-label="Navigazione principale">
           <a class="active" href="/dashboard" data-route="dashboard">Dashboard</a>
           <a href="/shop" data-route="shop">Shop</a>
+          <a id="store-management-nav" class="hidden" href="/gestione-store-locator" data-route="store-management">Store Locator</a>
           <a href="/materiale-mkt" data-route="marketing">Materiale MKT</a>
           <a href="/profilo" data-route="profile">Profilo</a>
           <a href="/codici" data-route="access">Codici</a>
@@ -380,6 +382,7 @@
           <div id="shop-products" class="product-grid"></div>
         </section>
 
+        <section id="store-management" class="workspace route-screen module-denied"><div id="store-management-content"></div></section>
         <section id="marketing" class="workspace route-screen">
           <div class="section-heading">
             <div>

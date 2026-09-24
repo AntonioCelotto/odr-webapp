@@ -53,6 +53,7 @@ const moduleLabels = {
 const appRoutes = {
   dashboard: { path: '/dashboard', title: 'Dashboard' },
   shop: { path: '/shop', title: 'Shop' },
+  'store-management': { path: '/gestione-store-locator', title: 'Store Locator' },
   marketing: { path: '/materiale-mkt', title: 'Materiale MKT' },
   profile: { path: '/profilo', title: 'Il mio profilo' },
   access: { path: '/codici', title: 'Codici e convenzioni' },
@@ -80,6 +81,22 @@ let shopCart = [];
 let shopCoupon = '';
 let shopQuote = null;
 let shopAddressLoaded = false;
+
+let disposeStoreLocator = null;
+let storeLocatorLoading = false;
+async function openStoreManagement() {
+ if (currentUser?.role !== 'admin' || !supabase || storeLocatorLoading) return;
+ const userId=currentUser.id;
+ storeLocatorLoading=true;
+ try {
+  disposeStoreLocator?.(); disposeStoreLocator=null;
+  const {mountLocator}=await import('./store-locator/view.js');
+  if(currentUser?.role!=='admin'||currentUser.id!==userId)return;
+  const cleanup=await mountLocator(byId('store-management-content'),supabase,true,networkRows);
+  if(currentUser?.role!=='admin'||currentUser.id!==userId)cleanup();else disposeStoreLocator=cleanup;
+ } catch {byId('store-management-content').textContent='Store Locator non disponibile. Riapri la sezione per riprovare.';}
+ finally {storeLocatorLoading=false;}
+}
 
 function byId(id) {
   return document.getElementById(id);
@@ -581,6 +598,7 @@ function showRoute(routeId, options = {}) {
     link.classList.toggle('active', link.dataset.route === activeRoute);
   });
 
+  if (activeRoute === 'store-management') openStoreManagement();
   if (activeRoute === 'admin-customers') loadAdminCustomerReport();
   const route = appRoutes[activeRoute];
   byId('page-title').textContent = route.title;
@@ -2155,6 +2173,8 @@ function applyModuleVisibility(rows) {
       link.classList.toggle('hidden', !allowed);
     });
   });
+  byId('store-management')?.classList.toggle('module-denied', role !== 'admin');
+  byId('store-management-nav')?.classList.toggle('hidden', role !== 'admin');
   byId('setup')?.classList.toggle('module-denied', role !== 'admin');
   byId('admin-customers')?.classList.toggle('module-denied', role !== 'admin');
   byId('admin-customers-nav')?.classList.toggle('hidden', role !== 'admin');
@@ -2894,6 +2914,7 @@ async function submitPasswordReset(event) {
 async function submitLogout() {
   if (!supabase) return;
   await supabase.auth.signOut();
+  disposeStoreLocator?.(); disposeStoreLocator = null;
   currentUser = null;
   adminCustomerReport = null;
   byId('customer-report-table').innerHTML = '';
