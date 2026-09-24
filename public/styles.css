@@ -3451,3 +3451,9 @@ body .shop-cart-thumb img {
 
 .dashboard-sales-expand { margin-top: 14px; }
 .dashboard-sales-expand[hidden] { display: none !important; }
+
+.dashboard-profile-picker { display:flex; flex-wrap:wrap; align-items:end; gap:12px; margin:0 0 18px; padding:16px; border:1px solid var(--border, #ddd); border-radius:16px; background:#fff; }
+.dashboard-profile-picker[hidden] { display:none; }
+.dashboard-profile-picker label { display:grid; gap:6px; flex:1 1 220px; }
+.dashboard-profile-picker input, .dashboard-profile-picker select { width:100%; min-height:42px; }
+.dashboard-profile-picker p { flex-basis:100%; margin:0; font-weight:600; }

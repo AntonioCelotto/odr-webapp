@@ -200,6 +200,12 @@
               <label><span>A</span><input id="admin-dashboard-date-to" type="date" aria-label="Data finale dashboard" /></label>
             </div>
           </div>
+          <div id="dashboard-profile-wrap" class="dashboard-profile-picker" hidden>
+            <label>Cerca agente o distributore<input id="dashboard-profile-search" type="search" placeholder="Nome o email"></label>
+            <label>Visualizza dati di<select id="dashboard-profile-select"><option value="">Tutta la rete</option></select></label>
+            <button id="dashboard-profile-reset" type="button" class="secondary">Tutta la rete</button>
+            <p id="dashboard-profile-status" role="status">Stai visualizzando: tutta la rete</p>
+          </div>
           <div id="role-dashboard-metrics" class="metrics">
             <div class="metric metric-visual">
               <span class="metric-icon" aria-hidden="true">€</span>
@@ -668,6 +674,7 @@
                   <th>Guadagno agente</th>
                   <th>Contatto</th>
                   <th>Account ODR</th>
+                  <th>Ultimo accesso</th>
                   <th>Stato WP</th>
                   <th></th>
                 </tr>

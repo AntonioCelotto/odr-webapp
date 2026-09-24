@@ -141,9 +141,59 @@ function syncDashboardDateInputs() {
   byId('admin-dashboard-date-to').value = dashboardLocalDate(new Date());
 }
 
+let dashboardProfileId = '';
+
+function dashboardProfiles() {
+  return networkRows.filter(row => row.active && ['agent', 'distributor'].includes(row.type));
+}
+
+function dashboardSelectedProfile() {
+  return currentUser?.role === 'admin' && dashboardProfileId
+    ? dashboardProfiles().find(row => row.id === dashboardProfileId) || null : null;
+}
+
+function dashboardScopedOrders() {
+  if (currentUser?.role !== 'admin' || !dashboardProfileId) return reportOrders;
+  const profile = dashboardSelectedProfile();
+  if (!profile) return [];
+  const emails = networkAccounts.filter(account => account.network_entity_id === profile.id)
+    .map(account => String(account.email || '').trim().toLowerCase()).filter(Boolean);
+  return reportOrders.filter(order =>
+    (profile.type === 'agent' ? order.agentEntityId === profile.id : order.distributorEntityId === profile.id)
+    || emails.includes(String(order.customerEmail || '').trim().toLowerCase()));
+}
+
+function renderDashboardProfilePicker() {
+  const wrap = byId('dashboard-profile-wrap');
+  if (!wrap) return;
+  wrap.hidden = currentUser?.role !== 'admin';
+  const query = (byId('dashboard-profile-search').value || '').trim().toLowerCase();
+  const profiles = dashboardProfiles();
+  const options = profiles.filter(row => row.id === dashboardProfileId
+    || [row.name, row.email, row.accountName].join(' ').toLowerCase().includes(query));
+  byId('dashboard-profile-select').innerHTML = '<option value="">Tutta la rete</option>'
+    + ['agent', 'distributor'].map(type => `<optgroup label="${type === 'agent' ? 'Agenti' : 'Distributori'}">${options.filter(row => row.type === type).sort((a,b) => a.name.localeCompare(b.name, 'it')).map(row => `<option value="${escapeHtml(row.id)}" ${row.id === dashboardProfileId ? 'selected' : ''}>${escapeHtml(row.name)}</option>`).join('')}</optgroup>`).join('');
+  const selected = dashboardSelectedProfile();
+  byId('dashboard-profile-status').textContent = selected
+    ? `Stai visualizzando: ${selected.name} — ${roleLabels[selected.type]}`
+    : dashboardProfileId ? 'Profilo non più disponibile. Seleziona un altro profilo.' : 'Stai visualizzando: tutta la rete';
+}
+
+function selectDashboardProfile(id) {
+  if (currentUser?.role !== 'admin') return;
+  if (id && !dashboardProfiles().some(row => row.id === id)) return;
+  dashboardProfileId = id;
+  byId('dashboard-profile-search').value = '';
+  byId('dashboard-detail-dialog')?.close();
+  dashboardSalesExpanded.products = false;
+  dashboardSalesExpanded.promotions = false;
+  renderDashboardProfilePicker();
+  renderAdminDashboard();
+}
+
 function dashboardFilteredOrders() {
   const { start, end } = dashboardDateRange();
-  return reportOrders.filter((order) => {
+  return dashboardScopedOrders().filter((order) => {
     if (['cancelled', 'failed', 'refunded', 'trash'].includes(String(order.status).toLowerCase())) return false;
     const orderDate = dashboardDateValue(order.date);
     return (!start || orderDate >= start) && (!end || orderDate <= end);
@@ -256,10 +306,11 @@ function renderExpandableSales(kind, rows, formatter) {
 
 function renderAdminDashboard() {
   if (!['admin', 'agent', 'distributor'].includes(currentUser?.role) || !byId('admin-dashboard')) return;
+  renderDashboardProfilePicker();
   const orders = dashboardFilteredOrders();
   const total = orders.reduce((sum, order) => sum + (Number(order.amount) || 0), 0);
   const customerKeys = new Set(orders.map((order) => String(order.customerEmail || order.customer).toLowerCase()).filter(Boolean));
-  const validHistoricalOrders = reportOrders.filter((order) => !['cancelled', 'failed', 'refunded', 'trash'].includes(String(order.status).toLowerCase()));
+  const validHistoricalOrders = dashboardScopedOrders().filter((order) => !['cancelled', 'failed', 'refunded', 'trash'].includes(String(order.status).toLowerCase()));
   const { start, end } = dashboardDateRange();
   const historicalCustomerGroups = dashboardCustomerGroups(validHistoricalOrders);
   const newCustomerOrders = [...historicalCustomerGroups.values()].filter((customer) => customer.orders.length === 1).map((customer) => customer.orders[0]).filter((order) => {
@@ -332,7 +383,7 @@ function renderAdminDashboard() {
   byId('admin-channel-distributors-total').textContent = money(distributorRows.reduce((sum, row) => sum + row.value, 0));
   const unassignedRows = channelRows.filter(row => row.label === 'Non associato alla rete');
   byId('admin-channel-unassigned').innerHTML = unassignedRows.length ? dashboardBarRows(unassignedRows) : '';
-  const customerView = currentUser.role !== 'admin';
+  const customerView = currentUser.role !== 'admin' || Boolean(dashboardProfileId);
   byId('dashboard-channel-label').textContent = customerView ? 'Clienti · imponibile' : 'Canali · imponibile';
   byId('dashboard-channel-title').textContent = customerView ? 'I miei clienti' : 'Agenti e distributori';
   byId('dashboard-network-channels').hidden = customerView;
@@ -392,7 +443,7 @@ function openDashboardDetail(type) {
   let title = ''; let summary = ''; let headers = ''; let rows = '';
   if (['category-sales', 'promotion-sales', 'product-sales', 'channel-sales'].includes(type)) {
     const breakdown = new Map();
-    if (type === 'channel-sales' && currentUser.role !== 'admin') {
+    if (type === 'channel-sales' && (currentUser.role !== 'admin' || Boolean(dashboardProfileId))) {
       const customers = [...dashboardCustomerGroups(orders).values()].map(customer => ({...customer,
         taxable: customer.orders.reduce((sum, order) => sum + dashboardOrderTaxable(order), 0),
         gross: customer.orders.reduce((sum, order) => sum + (Number(order.amount) || 0), 0),
@@ -452,7 +503,7 @@ function openDashboardDetail(type) {
     rows = dashboardOrderDetailRows(detailOrders);
   } else if (type === 'new-customers') {
     const { start, end } = dashboardDateRange();
-    const historicalOrders = reportOrders.filter((order) => !['cancelled', 'failed', 'refunded', 'trash'].includes(String(order.status).toLowerCase()));
+    const historicalOrders = dashboardScopedOrders().filter((order) => !['cancelled', 'failed', 'refunded', 'trash'].includes(String(order.status).toLowerCase()));
     const customers = [...dashboardCustomerGroups(historicalOrders).values()].filter((customer) => customer.orders.length === 1).filter((customer) => {
       const orderDate = dashboardDateValue(customer.orders[0].date);
       return (!start || orderDate >= start) && (!end || orderDate <= end);
@@ -1772,6 +1823,7 @@ function renderNetwork() {
           : '-'}</td>
         <td data-label="Stato"><span class="state ${row.active ? 'ok' : 'off'}">${row.active ? 'Attivo' : 'Spento'}</span></td>
         <td data-label="Azioni">${canManageNetwork ? `<div class="user-actions">
+          ${currentUser?.role === 'admin' && row.active && ['agent', 'distributor'].includes(row.type) ? `<button type="button" data-network-dashboard="${row.id}">Vedi dashboard</button>` : ''}
           <button type="button" data-network-edit="${row.id}">Modifica</button>
           <button type="button" data-network-toggle="${row.id}" data-network-active="${row.active ? 'false' : 'true'}">${row.active ? 'Disattiva' : 'Attiva'}</button>
         </div>` : '-'}</td>
@@ -1894,6 +1946,12 @@ async function saveNetworkEntity(event) {
 }
 
 async function handleNetworkAction(event) {
+  const dashboard = event.target.closest('[data-network-dashboard]');
+  if (dashboard && currentUser?.role === 'admin') {
+    selectDashboardProfile(dashboard.dataset.networkDashboard);
+    showRoute('dashboard');
+    return;
+  }
   const edit = event.target.closest('[data-network-edit]');
   if (edit) {
     openNetworkForm(networkRows.find((row) => row.id === edit.dataset.networkEdit));
@@ -2276,6 +2334,7 @@ async function enterAuthenticatedApp(user) {
 
 function enterApp(user) {
   currentUser = user;
+  dashboardProfileId = '';
   dashboardSalesExpanded.products = false;
   dashboardSalesExpanded.promotions = false;
   byId('auth-screen').classList.add('hidden');
@@ -3393,3 +3452,7 @@ byId('request-new-recovery-link').addEventListener('click', () => {
   window.history.replaceState({}, '', '/recupera-password');
   setAuthMode('recovery');
 });
+
+byId('dashboard-profile-select').addEventListener('change', event => selectDashboardProfile(event.target.value));
+byId('dashboard-profile-search').addEventListener('input', renderDashboardProfilePicker);
+byId('dashboard-profile-reset').addEventListener('click', () => selectDashboardProfile(''));

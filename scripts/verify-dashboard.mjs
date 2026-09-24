@@ -71,3 +71,33 @@ for(const role of ['admin','agent','distributor']) {
  }
 }
 console.log('PASS: menu associazione visibile solo all’amministratore; agenti e distributori selezionabili.');
+
+// Admin profile scope: entity IDs, distributor hierarchy, own purchases, period and details.
+run(`currentUser={role:'admin'}; networkRows=[{id:'a',name:'Agent A',type:'agent',active:true},{id:'d',name:'Distributor D',type:'distributor',active:true},{id:'off',name:'Inactive',type:'agent',active:false}]; networkAccounts=[{network_entity_id:'a',email:'own@example.test'}];`);
+const scoped = [
+ {...order,id:'A',distributorEntityId:'d'},
+ {...second,agentEntityId:'',id:'D',distributorEntityId:'d',customerEmail:'d@example.test'},
+ {...second,agentEntityId:'',id:'OTHER',distributorEntityId:'other',customerEmail:'other@example.test'},
+ {...second,agentEntityId:'',id:'OWN',customerEmail:'OWN@example.test'},
+ {...order,id:'OLD',date:'2020-01-01',distributorEntityId:'d'},
+ cancelled,
+];
+run(`reportOrders=${JSON.stringify(scoped)}; dashboardProfileId='a'; renderAdminDashboard();`);
+assert.equal(run('dashboardFilteredOrders().length'),3);
+assert.equal(text('admin-kpi-revenue'),'300,00 €');
+run(`openDashboardDetail('total-revenue')`);
+assert(!content('dashboard-detail-content').includes('<strong>OTHER</strong>'));
+assert.equal(elements.get('dashboard-network-channels').hidden,true);
+run(`dashboardProfileId='d'; renderAdminDashboard();`);
+assert.equal(text('admin-kpi-revenue'),'300,00 €');
+elements.get('admin-dashboard-period').value='custom';
+elements.get('admin-dashboard-date-from').value=date;
+elements.get('admin-dashboard-date-to').value=date;
+assert.equal(run('dashboardFilteredOrders().length'),2);
+run(`dashboardProfileId='off'`);
+assert.equal(run('dashboardFilteredOrders().length'),0);
+run(`dashboardProfileId='';`);
+assert.equal(run('dashboardFilteredOrders().length'),4);
+run(`currentUser={role:'agent'}; dashboardProfileId='d';`);
+assert.equal(run('dashboardScopedOrders().length'),scoped.length);
+console.log('PASS: admin profile scope, distributor child orders, own email, excluded statuses, dates, details, inactive profile, reset, non-admin isolation.');
