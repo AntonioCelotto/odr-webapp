@@ -91,6 +91,7 @@ async function openStoreManagement() {
  try {
   disposeStoreLocator?.(); disposeStoreLocator=null;
   const {mountLocator}=await import('./store-locator/view.js');
+  if(currentUser?.role==='admin' && !(await loadNetwork()))throw new Error('Rete non disponibile');
   if(!['admin','agent','distributor'].includes(currentUser?.role)||currentUser.id!==userId)return;
   const cleanup=await mountLocator(byId('store-management-content'),supabase,currentUser.role,networkRows);
   if(!['admin','agent','distributor'].includes(currentUser?.role)||currentUser.id!==userId)cleanup();else disposeStoreLocator=cleanup;
@@ -1868,12 +1869,12 @@ function normalizeNetworkRows(entities = [], accounts = []) {
 }
 
 async function loadNetwork() {
-  if (!supabase || !currentUser) return;
+  if (!supabase || !currentUser) return false;
   byId('import-notice').textContent = 'Caricamento rete...';
   const { data, error } = await supabase.functions.invoke('network-management', { method: 'GET' });
   if (error || data?.error) {
     byId('import-notice').textContent = data?.error || 'Rete non disponibile.';
-    return;
+    return false;
   }
   networkAccounts = data.accounts || [];
   canManageNetwork = Boolean(data.canManage);
@@ -1882,6 +1883,7 @@ async function loadNetwork() {
   renderNetwork();
   updateMetrics();
   byId('import-notice').textContent = `${networkRows.length} elementi configurati.`;
+  return true;
 }
 
 function refreshNetworkFormOptions(selectedParent = '', selectedAccount = '') {

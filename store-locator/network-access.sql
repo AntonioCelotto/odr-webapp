@@ -40,7 +40,7 @@ begin
   on conflict(store_id) do update set reference=excluded.reference,contact=excluded.contact,notes=excluded.notes,owner_entity_id=excluded.owner_entity_id;
    if owner is not null then update public.store_location_internal set owner_profile_id=null where store_id=target; end if;
   else
-   insert into public.store_location_internal(store_id,owner_entity_id,owner_profile_id) values(target,actor.network_entity_id,case when actor.network_entity_id is null then actor.id else null end) on conflict(store_id) do nothing;
+   insert into public.store_location_internal(store_id,owner_entity_id,owner_profile_id,reference,contact,notes) values(target,actor.network_entity_id,case when actor.network_entity_id is null then actor.id else null end,coalesce(entry->'internal'->>'reference',''),coalesce(entry->'internal'->>'contact',''),coalesce(entry->'internal'->>'notes','')) on conflict(store_id) do nothing;
   end if;
   saved:=saved+1;
  end loop;
