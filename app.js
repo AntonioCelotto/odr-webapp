@@ -85,15 +85,15 @@ let shopAddressLoaded = false;
 let disposeStoreLocator = null;
 let storeLocatorLoading = false;
 async function openStoreManagement() {
- if (currentUser?.role !== 'admin' || !supabase || storeLocatorLoading) return;
+ if (!['admin','agent','distributor'].includes(currentUser?.role) || !supabase || storeLocatorLoading) return;
  const userId=currentUser.id;
  storeLocatorLoading=true;
  try {
   disposeStoreLocator?.(); disposeStoreLocator=null;
   const {mountLocator}=await import('./store-locator/view.js');
-  if(currentUser?.role!=='admin'||currentUser.id!==userId)return;
-  const cleanup=await mountLocator(byId('store-management-content'),supabase,true,networkRows);
-  if(currentUser?.role!=='admin'||currentUser.id!==userId)cleanup();else disposeStoreLocator=cleanup;
+  if(!['admin','agent','distributor'].includes(currentUser?.role)||currentUser.id!==userId)return;
+  const cleanup=await mountLocator(byId('store-management-content'),supabase,currentUser.role,networkRows);
+  if(!['admin','agent','distributor'].includes(currentUser?.role)||currentUser.id!==userId)cleanup();else disposeStoreLocator=cleanup;
  } catch {byId('store-management-content').textContent='Store Locator non disponibile. Riapri la sezione per riprovare.';}
  finally {storeLocatorLoading=false;}
 }
@@ -2173,8 +2173,8 @@ function applyModuleVisibility(rows) {
       link.classList.toggle('hidden', !allowed);
     });
   });
-  byId('store-management')?.classList.toggle('module-denied', role !== 'admin');
-  byId('store-management-nav')?.classList.toggle('hidden', role !== 'admin');
+  byId('store-management')?.classList.toggle('module-denied', !['admin','agent','distributor'].includes(role));
+  byId('store-management-nav')?.classList.toggle('hidden', !['admin','agent','distributor'].includes(role));
   byId('setup')?.classList.toggle('module-denied', role !== 'admin');
   byId('admin-customers')?.classList.toggle('module-denied', role !== 'admin');
   byId('admin-customers-nav')?.classList.toggle('hidden', role !== 'admin');

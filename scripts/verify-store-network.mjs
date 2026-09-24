@@ -1,0 +1,15 @@
+import assert from 'node:assert/strict';
+import {readFileSync} from 'node:fs';
+import {markerStyle,markerStyles} from '../store-locator/markers.js';
+assert.equal(new Set(Object.values(markerStyles).map(x=>x.color)).size,5);
+assert.equal(markerStyle(['beauty','oncology']).label,'EO');
+assert.equal(markerStyle(['beauty','oncology'],'beauty').label,'CE');
+assert.equal(markerStyle(['hair']).label,'PA');
+const sql=readFileSync('store-locator/network-access.sql','utf8');
+assert.match(sql,/data.approved:=false/);
+assert.match(sql,/Scheda non autorizzata/);
+assert.match(sql,/i.owner_entity_id=p.network_entity_id/);
+assert.match(sql,/i.owner_entity_id is null and i.owner_profile_id=p.id/);
+assert.match(sql,/revoke all on function odr_private.save_store_locations\(jsonb\) from public,anon/);
+assert.ok(!readFileSync('store-locator/public.html','utf8').includes('odr-logo'));
+console.log('PASS five category colors, multi-category priority/filter, ownership and approval guards, public logo removed.');

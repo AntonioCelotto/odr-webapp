@@ -9,7 +9,7 @@ function reply(res, status, body) {
 export default async function handler(req, res) {
   if (req.method !== 'POST') return reply(res, 405, {error:'Metodo non consentito'});
   const token = String(req.headers.authorization || '').replace(/^Bearer\s+/i, '').trim();
-  if (!token) return reply(res, 403, {error:'Accesso amministratore richiesto'});
+  if (!token) return reply(res, 403, {error:'Account non abilitato'});
   try {
     const base = process.env.SUPABASE_URL;
     const headers = {apikey:process.env.SUPABASE_PUBLISHABLE_KEY,Authorization:`Bearer ${token}`};
@@ -18,7 +18,7 @@ export default async function handler(req, res) {
     const user = await auth.json();
     const profileResponse = await fetch(`${base}/rest/v1/profiles?id=eq.${encodeURIComponent(user.id)}&select=role,approval_status`, {headers,signal:AbortSignal.timeout(8000)});
     const [profile] = profileResponse.ok ? await profileResponse.json() : [];
-    if (profile?.role !== 'admin' || profile.approval_status !== 'approved') return reply(res, 403, {error:'Accesso amministratore richiesto'});
+    if (!['admin','agent','distributor'].includes(profile?.role) || profile.approval_status !== 'approved') return reply(res, 403, {error:'Account non abilitato'});
     const body = typeof req.body === 'string' ? JSON.parse(req.body) : req.body || {};
     const fields = ['address','postcode','city','country'].map(k=>String(body[k]||'').trim());
     if (!fields[0] || !fields[2] || !fields[3] || fields.some(s=>s.length>200)) return reply(res,400,{error:'Compila indirizzo, città e Paese (massimo 200 caratteri per campo).'});

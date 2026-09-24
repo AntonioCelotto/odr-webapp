@@ -17,7 +17,7 @@ async function run(headers={},body={},method='POST'){
 try {
  assert.equal((await run()).status,403);assert.equal(calls.length,0);
  const headers={authorization:'Bearer test-only'};
- role='agent';assert.equal((await run(headers)).status,403);assert.equal(calls.length,2);
+ role='patient';assert.equal((await run(headers)).status,403);assert.equal(calls.length,2);
  role='admin';approved='rejected';assert.equal((await run(headers)).status,403);
  approved='approved';assert.equal((await run(headers)).status,400);
  const address={address:'Via Roma 1',postcode:'10100',city:'Torino',country:'Italia'};
@@ -25,5 +25,6 @@ try {
  const count=calls.length;assert.equal((await run(headers,address)).status,200);assert.equal(calls.length-count,2,'Cached result still checks authentication');
  assert.equal((await run(headers,{...address,address:'Via Roma 2'})).status,429);
  assert.equal((await run(headers,address,'GET')).status,405);
+ role='agent';assert.equal((await run(headers,address)).status,200);role='distributor';assert.equal((await run(headers,address)).status,200);
  console.log('PASS geocoding: admin authorization, rejected accounts, required address, no token leakage, coordinate order/bounds, caching, request throttling.');
 }finally{globalThis.fetch=original;}
