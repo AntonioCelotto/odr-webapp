@@ -7,6 +7,7 @@ import {markerStyle} from './markers.js';
 const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 export async function mountLocator(root,client,role=false,network=[]) {
  const admin=role===true||role==='admin', manage=!!role;
+ let clickPopupUntil=0;
  let stores=[],internals=new Map(),preview=[],busy=false,map,markers,disposed=false;
  const q=s=>root.querySelector(s);
  root.innerHTML=`<div class="locator-heading"><div><small>ODR GLOBAL NETWORK</small><h2>${manage?'Gestione Store Locator':'Trova il tuo centro ODR'}</h2><p>Centri estetici, parrucchieri e distributori in Italia e nel mondo.</p></div>${manage?'<a href="/store-locator" target="_blank" rel="noopener">Apri mappa pubblica ↗</a>':''}</div>
@@ -44,7 +45,7 @@ export async function mountLocator(root,client,role=false,network=[]) {
   q('#sl-list').innerHTML=rows.length?rows.map(card).join(''):'<div class="locator-empty">Nessuna struttura disponibile con questi filtri.</div>';
   if(!map){map=L.map(q('#sl-map')).setView([42.5,12.5],5);L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png',{attribution:'© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>',maxZoom:19}).addTo(map);markers=L.markerClusterGroup();map.addLayer(markers);}
   markers.clearLayers();
-  rows.filter(positioned).forEach(r=>{const marker=L.marker([r.latitude,r.longitude],{icon:L.divIcon({className:'locator-pin',html:`<span style="background:${markerStyle(r.categories,type).color}">${markerStyle(r.categories,type).label}</span>`,iconSize:[38,38]})});marker.bindPopup(card(r));marker.on('mouseover',()=>marker.openPopup());markers.addLayer(marker);});
+  rows.filter(positioned).forEach(r=>{const marker=L.marker([r.latitude,r.longitude],{icon:L.divIcon({className:'locator-pin',html:`<span style="background:${markerStyle(r.categories,type).color}">${markerStyle(r.categories,type).label}</span>`,iconSize:[38,38]})});marker.bindPopup(card(r));marker.on('mouseover',()=>{if(Date.now()<clickPopupUntil)return;marker.getPopup().options.autoPan=false;marker.openPopup();});marker.on('click',()=>{clickPopupUntil=Date.now()+1000;marker.getPopup().options.autoPan=true;marker.openPopup();});markers.addLayer(marker);});
   map.invalidateSize();if(markers.getLayers().length)map.fitBounds(markers.getBounds(),{padding:[30,30],maxZoom:13});
  }
  const legend=document.createElement('div');legend.className='locator-legend';legend.innerHTML=Object.entries(categories).map(([k,v])=>`<span><i style="background:${markerStyle([k]).color}"></i>${esc(v)}</span>`).join('');q('#sl-count').after(legend);
