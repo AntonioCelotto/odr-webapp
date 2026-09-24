@@ -777,9 +777,9 @@ function validateShopAddress() {
   return true;
 }
 
-async function loadShopAddress() {
-  if (!supabase || !currentUser || shopAddressLoaded) return;
-  const stored = storedShopAddress();
+async function loadShopAddress(force = false) {
+  if (!supabase || !currentUser || (shopAddressLoaded && !force)) return;
+  const stored = force ? null : storedShopAddress();
   if (stored) {
     fillShopAddress(stored);
     shopAddressLoaded = true;
@@ -2453,7 +2453,8 @@ function renderAgentCustomers() {
     byId('clear-agent-customer').addEventListener('click', () => {
       selectedAgentCustomer = null;
       localStorage.removeItem(`odr-agent-customer-${currentUser.id}`);
-      loadShopAddress();
+      fillShopAddress({ email: currentUser.email });
+      loadShopAddress(true);
       renderAgentCustomers();
     });
   } else {
