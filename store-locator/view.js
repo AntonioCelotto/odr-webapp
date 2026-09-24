@@ -1,4 +1,5 @@
 import L from 'leaflet';
+import {mountPosition} from './position.js';
 import 'leaflet.markercluster';
 import readXlsxFile from 'read-excel-file';
 import {categories,validate,parseExcelRows,safeUrl,normalize} from './model.js';
@@ -46,11 +47,12 @@ export async function mountLocator(root,client,admin=false,network=[]) {
  }
  ['#sl-search','#sl-country','#sl-type','#sl-state'].forEach(id=>q(id)?.addEventListener('input',render));
  const fields={name:'Nome struttura',address:'Indirizzo',postcode:'CAP',city:'Città',province:'Provincia',region:'Regione',country:'Paese',email:'Email pubblica',phone:'Telefono pubblico',mobile:'Cellulare pubblico',website:'Sito web',facebook:'Facebook',instagram:'Instagram',tiktok:'TikTok',youtube:'YouTube',whatsapp:'WhatsApp',latitude:'Latitudine',longitude:'Longitudine'};
- let editing=null;
+ let editing=null, disposePosition=null;
+ q('#sl-dialog').addEventListener('close',()=>{disposePosition?.();disposePosition=null;});
  function edit(id) {
-  if(!admin)return;editing=stores.find(r=>r.id===id)||null;const r=editing||{country:'Italia',categories:['beauty']},inside=internals.get(id)||{};
+  if(!admin)return;disposePosition?.();disposePosition=null;editing=stores.find(r=>r.id===id)||null;const r=editing||{country:'Italia',categories:['beauty']},inside=internals.get(id)||{};
   q('#sl-fields').innerHTML=Object.entries(fields).map(([key,label])=>`<label>${label}<input name="${key}" value="${esc(r[key]??'')}" ${['name','address','city','country'].includes(key)?'required':''} ${key==='email'?'type="email"':'type="text"'} maxlength="500"></label>`).join('')+`<fieldset><legend>Tipologie e specializzazioni</legend>${Object.entries(categories).map(([k,v])=>`<label class="sl-check"><input type="checkbox" name="category" value="${k}" ${r.categories.includes(k)?'checked':''}>${v}</label>`).join('')}</fieldset><fieldset><legend>Pubblicazione</legend><label class="sl-check"><input type="checkbox" name="active" ${r.active?'checked':''}>Struttura attiva</label><label class="sl-check"><input type="checkbox" name="approved" ${r.approved?'checked':''}>Approvata per la mappa pubblica</label><p>La scheda appare nell’elenco pubblico quando è attiva e approvata. Per il segnaposto servono entrambe le coordinate.</p></fieldset><fieldset><legend>Informazioni riservate</legend><label>Agente o distributore<select name="owner_entity_id"><option value="">Da assegnare</option>${network.filter(n=>(n.active||inside.owner_entity_id===n.id)&&['agent','distributor'].includes(n.type)).map(n=>`<option value="${n.id}" ${inside.owner_entity_id===n.id?'selected':''}>${esc(n.name)}</option>`).join('')}</select></label><label>Riferimento originale<input name="reference" value="${esc(inside.reference)}"></label><label>Referente<input name="contact" value="${esc(inside.contact)}"></label><label>Note interne<textarea name="notes">${esc(inside.notes)}</textarea></label></fieldset>`;
-  q('#sl-form-message').textContent='';q('#sl-dialog').showModal();
+  q('#sl-form-message').textContent='';q('#sl-dialog').showModal();disposePosition=mountPosition(q('#sl-form'),client);
  }
  root.addEventListener('click',e=>{const b=e.target.closest('[data-edit]');if(b)edit(b.dataset.edit);});
  q('#sl-new')?.addEventListener('click',()=>edit(''));
@@ -75,5 +77,5 @@ export async function mountLocator(root,client,admin=false,network=[]) {
   if(busy||!admin)return;busy=true;q('#sl-confirm').disabled=true;
   try{const entries=preview.filter(p=>!p.duplicate&&!p.errors.length).map(({row,internal})=>({row,internal}));const {error,data}=await client.rpc('save_store_locations',{entries});if(error)throw error;q('#sl-import').close();await load();message(`${data} strutture importate, da completare e approvare.`);}catch{q('#sl-import-message').textContent='Importazione non riuscita: nessuna riga salvata. Aggiorna l’elenco e riprova; potrebbero esserci doppioni inseriti nel frattempo.';}finally{busy=false;q('#sl-confirm').disabled=false;}
  });
- await load();return ()=>{disposed=true;map?.remove();root.innerHTML='';};
+ await load();return ()=>{disposed=true;disposePosition?.();map?.remove();root.innerHTML='';};
 }
