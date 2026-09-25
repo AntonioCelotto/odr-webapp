@@ -24,6 +24,7 @@ const appRouteFiles = [
 const publicConfig = {
   supabaseUrl: process.env.SUPABASE_URL || '',
   supabasePublishableKey: process.env.SUPABASE_PUBLISHABLE_KEY || '',
+  bankCheckoutEnabled: process.env.ODR_BANK_CHECKOUT_ENABLED === 'true' || (process.env.VERCEL_ENV === 'preview' && process.env.VERCEL_GIT_COMMIT_REF === 'feat/in-app-bank-checkout'),
   wooBaseUrl: process.env.WOOCOMMERCE_STORE_URL || 'https://odr.ioxina.com',
 };
 

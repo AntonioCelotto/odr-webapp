@@ -1,3 +1,4 @@
+import { createBankCheckout } from './bank-checkout.js';
 import { createClient } from '@supabase/supabase-js';
 
 // Capture the recovery route before Supabase consumes the URL fragment.
@@ -11,6 +12,7 @@ const config = {
   supabasePublishableKey: runtimeConfig.supabasePublishableKey || '',
   wooBaseUrl: runtimeConfig.wooBaseUrl || 'https://odr.ioxina.com',
   wooShopPath: '/shop',
+  bankCheckoutEnabled: runtimeConfig.bankCheckoutEnabled === true,
 };
 const isSupabaseConfigured = Boolean(config.supabaseUrl && config.supabasePublishableKey);
 const supabase = isSupabaseConfigured
@@ -884,6 +886,7 @@ function renderShopCart() {
   byId('shop-discount-row').classList.toggle('hidden', discount <= 0);
   byId('shop-cart-total').textContent = money(shopQuote?.total ?? total);
   byId('shop-checkout').disabled = false;
+  byId('shop-checkout').textContent = config.bankCheckoutEnabled && ['agent', 'distributor', 'center'].includes(currentUser?.role) ? 'Riepilogo e bonifico' : 'Concludi ordine e paga';
 }
 
 function setCartPanel(open) {
@@ -3381,9 +3384,35 @@ byId('shop-cart-items').addEventListener('click', (event) => {
   if (!button || !item) return;
   updateShopCartItem(Number(item.dataset.cartProduct), button.dataset.cartAction);
 });
+const openBankCheckout = createBankCheckout({
+  userId: () => currentUser?.id || '',
+  escape: escapeHtml,
+  money,
+  clearCart: () => { shopCart = []; shopQuote = null; shopCoupon = ''; saveShopCart(); renderShopCart(); },
+  api: async (body) => {
+    const { data } = await supabase.auth.getSession();
+    if (!data.session?.access_token) throw new Error('Sessione scaduta. Accedi nuovamente.');
+    const result = await fetch('/api/bank-checkout', {
+      method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${data.session.access_token}` },
+      body: JSON.stringify(body),
+    });
+    const payload = await result.json();
+    if (!result.ok) { const error = new Error(payload.error || 'Conferma non disponibile'); error.code = payload.code; throw error; }
+    return payload;
+  },
+});
 byId('shop-checkout').addEventListener('click', (event) => {
   if (!shopCart.length) return;
   if (!validateShopAddress()) return;
+  if (config.bankCheckoutEnabled && ['agent', 'distributor', 'center'].includes(currentUser?.role)) {
+    if (currentUser.role === 'agent' && !selectedAgentCustomer) {
+      showRoute('agent-customers', { push: true });
+      byId('shop-message').textContent = 'Seleziona il cliente per cui ordinare';
+      return;
+    }
+    openBankCheckout({ items: shopCart, coupon: shopCoupon, address: readShopAddress(), customerId: selectedAgentCustomer?.id || null });
+    return;
+  }
   openWooSession(
     new URL('/pagamento/', config.wooBaseUrl).toString(),
     event.currentTarget,
