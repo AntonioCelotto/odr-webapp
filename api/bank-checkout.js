@@ -27,7 +27,11 @@ export default async function handler(req,res) {
   try {
     const headers = { apikey:process.env.SUPABASE_PUBLISHABLE_KEY, Authorization:`Bearer ${token}` };
     const auth = await fetch(`${process.env.SUPABASE_URL}/auth/v1/user`,{headers});
-    if (!auth.ok) return reply(res,401,{error:'Sessione scaduta'});
+    if (!auth.ok) {
+      const failure = await auth.json().catch(() => ({}));
+      console.warn('bank_checkout_auth_failed', { status: auth.status, code: /^[a-z_]+$/.test(failure.code || '') ? failure.code : 'unknown' });
+      return reply(res,401,{error:'Sessione scaduta'});
+    }
     const user = await auth.json();
     const profiles = await fetch(`${process.env.SUPABASE_URL}/rest/v1/profiles?id=eq.${encodeURIComponent(user.id)}&select=id,role,approval_status,network_entity_id,full_name,wordpress_user_id`,{headers});
     const [profile] = profiles.ok ? await profiles.json() : [];
