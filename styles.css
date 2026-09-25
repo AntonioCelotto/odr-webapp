@@ -3468,3 +3468,15 @@ body .shop-cart-thumb img {
   #reports .order-details, #reports .order-details div, #reports .installment-row, #reports .payment-action { min-width: 0; max-width: 100%; box-sizing: border-box; }
   #reports .payment-action input { width: 100%; min-width: 0; box-sizing: border-box; }
 }
+
+.bank-checkout-dialog { width: min(620px, calc(100vw - 28px)); max-height: 90dvh; overflow: auto; box-sizing: border-box; border: 1px solid #ded9df; border-radius: 22px; padding: 24px; color: #34283c; background: #fffdf9; }
+.bank-checkout-dialog::backdrop { background: #23162e88; }
+.bank-checkout-dialog label { display: block; margin: 14px 0; }
+.bank-checkout-dialog select { display:block; width:100%; max-width:100%; padding:10px; }
+.bank-checkout-dialog p, .bank-checkout-dialog li { overflow-wrap:anywhere; }
+.bank-checkout-dialog dl { display:grid; grid-template-columns:minmax(0,1fr) auto; gap:10px; }
+.bank-checkout-dialog dd { margin:0; text-align:right; }
+.bank-checkout-actions { display:flex; gap:10px; flex-wrap:wrap; margin-top:20px; }
+.bank-checkout-actions button { flex:1; padding:12px; border-radius:12px; cursor:pointer; }
+.bank-checkout-actions [data-confirm] { background:#503a58; color:white; }
+.bank-checkout-actions button:disabled { opacity:.5; cursor:default; }
