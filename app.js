@@ -1,0 +1,3528 @@
+import { createBankCheckout } from './bank-checkout.js';
+import { createClient } from '@supabase/supabase-js';
+
+// Capture the recovery route before Supabase consumes the URL fragment.
+const initialRecoveryRoute = window.location.pathname === '/recupera-password'
+  || window.location.hash.includes('type=recovery')
+  || window.location.hash.includes('error=');
+
+const runtimeConfig = window.__ODR_CONFIG__ || {};
+const config = {
+  supabaseUrl: runtimeConfig.supabaseUrl || '',
+  supabasePublishableKey: runtimeConfig.supabasePublishableKey || '',
+  wooBaseUrl: runtimeConfig.wooBaseUrl || 'https://odr.ioxina.com',
+  wooShopPath: '/shop',
+  bankCheckoutEnabled: runtimeConfig.bankCheckoutEnabled === true,
+};
+const isSupabaseConfigured = Boolean(config.supabaseUrl && config.supabasePublishableKey);
+const supabase = isSupabaseConfigured
+  ? createClient(config.supabaseUrl, config.supabasePublishableKey)
+  : null;
+
+const roleLabels = {
+  admin: 'Amministratore',
+  distributor: 'Distributore',
+  agent: 'Agente',
+  center: 'Centro / punto vendita',
+  patient: 'Paziente',
+};
+
+let validationCodes = [];
+let promotions = [];
+let codeValidations = [];
+
+let networkRows = [];
+let networkAccounts = [];
+let agentCustomers = [];
+let selectedAgentCustomer = null;
+let canManageNetwork = false;
+
+let reportOrders = [];
+let filteredReportOrders = [];
+let orderAssignmentOptions = [];
+
+const moduleLabels = {
+  dashboard: 'Dashboard',
+  codes: 'Codici e convenzioni',
+  promotions: 'Promozioni',
+  network: 'Rete commerciale',
+  wordpress: 'WordPress / shop',
+  reports: 'Ordini',
+  users: 'Gestione utenti',
+  permissions: 'Ruoli e permessi',
+};
+
+const appRoutes = {
+  dashboard: { path: '/dashboard', title: 'Dashboard' },
+  shop: { path: '/shop', title: 'Shop' },
+  'store-management': { path: '/gestione-store-locator', title: 'Store Locator' },
+  marketing: { path: '/materiale-mkt', title: 'Materiale MKT' },
+  profile: { path: '/profilo', title: 'Il mio profilo' },
+  access: { path: '/codici', title: 'Codici e convenzioni' },
+  promotions: { path: '/promozioni', title: 'Promozioni' },
+  network: { path: '/rete', title: 'Rete commerciale' },
+  'admin-customers': { path: '/clienti-fatturato', title: 'Clienti e fatturato' },
+  'agent-customers': { path: '/clienti', title: 'Gestione clienti' },
+  wordpress: { path: '/wordpress', title: 'WordPress e WooCommerce' },
+  reports: { path: '/ordini', title: 'Ordini' },
+  'admin-users': { path: '/utenti', title: 'Gestione utenti' },
+  permissions: { path: '/permessi', title: 'Ruoli e permessi' },
+  setup: { path: '/impostazioni', title: 'Impostazioni' },
+};
+
+let validatedCode = null;
+let currentUser = null;
+let authBusy = false;
+let passwordRecoveryActive = initialRecoveryRoute;
+let shopProducts = [];
+let packageDocuments = [];
+let marketingMaterials = [];
+let shopCategory = 'all';
+let shopOpening = false;
+let shopCart = [];
+let shopCoupon = '';
+let shopQuote = null;
+let shopAddressLoaded = false;
+
+let disposeStoreLocator = null;
+let storeLocatorLoading = false;
+async function openStoreManagement() {
+ if (!['admin','agent','distributor'].includes(currentUser?.role) || !supabase || storeLocatorLoading) return;
+ const userId=currentUser.id;
+ storeLocatorLoading=true;
+ try {
+  disposeStoreLocator?.(); disposeStoreLocator=null;
+  const {mountLocator}=await import('./store-locator/view.js');
+  if(currentUser?.role==='admin' && !(await loadNetwork()))throw new Error('Rete non disponibile');
+  if(!['admin','agent','distributor'].includes(currentUser?.role)||currentUser.id!==userId)return;
+  const cleanup=await mountLocator(byId('store-management-content'),supabase,currentUser.role,networkRows);
+  if(!['admin','agent','distributor'].includes(currentUser?.role)||currentUser.id!==userId)cleanup();else disposeStoreLocator=cleanup;
+ } catch {byId('store-management-content').textContent='Store Locator non disponibile. Riapri la sezione per riprovare.';}
+ finally {storeLocatorLoading=false;}
+}
+
+function byId(id) {
+  return document.getElementById(id);
+}
+
+function money(value) {
+  return Number(value || 0).toLocaleString('it-IT', { style: 'currency', currency: 'EUR' });
+}
+
+function formatLastAccess(value) {
+  if (!value) return 'Mai effettuato';
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return 'Mai effettuato';
+  return new Intl.DateTimeFormat('it-IT', {
+    dateStyle: 'short',
+    timeStyle: 'short',
+    timeZone: 'Europe/Rome',
+  }).format(date);
+}
+
+const dashboardMonthFormatter = new Intl.DateTimeFormat('it-IT', { month: 'short' });
+
+function dashboardOrderPaidAmount(order) {
+  if (order.paymentStatus === 'paid') return Number(order.amount) || 0;
+  return (order.installments || []).reduce((sum, item) => sum + (item.paid ? Number(item.amount) || 0 : 0), 0);
+}
+
+function dashboardPeriodStart(period) {
+  const now = new Date();
+  if (period === 'all') return null;
+  if (period === 'year') return new Date(now.getFullYear(), 0, 1);
+  const start = new Date(now);
+  start.setDate(start.getDate() - Number(period || 365));
+  start.setHours(0, 0, 0, 0);
+  return start;
+}
+
+function dashboardDateValue(date) {
+  return date ? new Date(`${date}T00:00:00`) : null;
+}
+
+function dashboardDateRange() {
+  const period = byId('admin-dashboard-period')?.value || '365';
+  const customFrom = dashboardDateValue(byId('admin-dashboard-date-from')?.value);
+  const customTo = dashboardDateValue(byId('admin-dashboard-date-to')?.value);
+  if (period === 'custom') return { start: customFrom, end: customTo };
+  return { start: dashboardPeriodStart(period), end: new Date() };
+}
+
+function dashboardLocalDate(date) {
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+}
+
+function syncDashboardDateInputs() {
+  const period = byId('admin-dashboard-period')?.value || '365';
+  if (period === 'custom') return;
+  const start = dashboardPeriodStart(period);
+  byId('admin-dashboard-date-from').value = start ? dashboardLocalDate(start) : '';
+  byId('admin-dashboard-date-to').value = dashboardLocalDate(new Date());
+}
+
+let dashboardProfileId = '';
+
+function dashboardProfiles() {
+  return networkRows.filter(row => row.active && ['agent', 'distributor'].includes(row.type));
+}
+
+function dashboardSelectedProfile() {
+  return currentUser?.role === 'admin' && dashboardProfileId
+    ? dashboardProfiles().find(row => row.id === dashboardProfileId) || null : null;
+}
+
+function dashboardScopedOrders() {
+  if (currentUser?.role !== 'admin' || !dashboardProfileId) return reportOrders;
+  const profile = dashboardSelectedProfile();
+  if (!profile) return [];
+  const emails = networkAccounts.filter(account => account.network_entity_id === profile.id)
+    .map(account => String(account.email || '').trim().toLowerCase()).filter(Boolean);
+  return reportOrders.filter(order =>
+    (profile.type === 'agent' ? order.agentEntityId === profile.id : order.distributorEntityId === profile.id)
+    || emails.includes(String(order.customerEmail || '').trim().toLowerCase()));
+}
+
+function renderDashboardProfilePicker() {
+  const wrap = byId('dashboard-profile-wrap');
+  if (!wrap) return;
+  wrap.hidden = currentUser?.role !== 'admin';
+  const query = (byId('dashboard-profile-search').value || '').trim().toLowerCase();
+  const profiles = dashboardProfiles();
+  const options = profiles.filter(row => row.id === dashboardProfileId
+    || [row.name, row.email, row.accountName].join(' ').toLowerCase().includes(query));
+  byId('dashboard-profile-select').innerHTML = '<option value="">Tutta la rete</option>'
+    + ['agent', 'distributor'].map(type => `<optgroup label="${type === 'agent' ? 'Agenti' : 'Distributori'}">${options.filter(row => row.type === type).sort((a,b) => a.name.localeCompare(b.name, 'it')).map(row => `<option value="${escapeHtml(row.id)}" ${row.id === dashboardProfileId ? 'selected' : ''}>${escapeHtml(row.name)}</option>`).join('')}</optgroup>`).join('');
+  const selected = dashboardSelectedProfile();
+  byId('dashboard-profile-status').textContent = selected
+    ? `Stai visualizzando: ${selected.name} — ${roleLabels[selected.type]}`
+    : dashboardProfileId ? 'Profilo non più disponibile. Seleziona un altro profilo.' : 'Stai visualizzando: tutta la rete';
+}
+
+function selectDashboardProfile(id) {
+  if (currentUser?.role !== 'admin') return;
+  if (id && !dashboardProfiles().some(row => row.id === id)) return;
+  dashboardProfileId = id;
+  byId('dashboard-profile-search').value = '';
+  byId('dashboard-detail-dialog')?.close();
+  dashboardSalesExpanded.products = false;
+  dashboardSalesExpanded.promotions = false;
+  renderDashboardProfilePicker();
+  renderAdminDashboard();
+}
+
+function dashboardFilteredOrders() {
+  const { start, end } = dashboardDateRange();
+  return dashboardScopedOrders().filter((order) => {
+    if (['cancelled', 'failed', 'refunded', 'trash'].includes(String(order.status).toLowerCase())) return false;
+    const orderDate = dashboardDateValue(order.date);
+    return (!start || orderDate >= start) && (!end || orderDate <= end);
+  });
+}
+
+function dashboardBarRows(rows, valueFormatter = money) {
+  const maximum = Math.max(...rows.map((row) => row.value), 1);
+  return rows.length ? rows.map((row) => `
+    <div class="dashboard-bar-row">
+      <div><span>${escapeHtml(row.label)}</span><strong>${escapeHtml(valueFormatter(row.value))}</strong></div>
+      ${row.gross !== undefined ? `<small>Totale lordo ${money(row.gross)}${row.quantity !== undefined ? ` · ${row.quantity} pz` : ''}</small>` : ''}
+      <div class="dashboard-bar-track"><i style="width:${Math.max(4, (row.value / maximum) * 100)}%"></i></div>
+    </div>`).join('') : '<div class="dashboard-empty">Nessun dato disponibile nel periodo.</div>';
+}
+
+function renderAdminSalesChart(orders) {
+  const months = [];
+  const now = new Date();
+  for (let offset = 11; offset >= 0; offset -= 1) {
+    const date = new Date(now.getFullYear(), now.getMonth() - offset, 1);
+    months.push({ key: `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`, label: dashboardMonthFormatter.format(date).replace('.', ''), value: 0 });
+  }
+  orders.forEach((order) => {
+    const month = months.find((item) => item.key === String(order.date).slice(0, 7));
+    if (month) { month.value += dashboardOrderTaxable(order); month.gross = (month.gross || 0) + Number(order.amount || 0); }
+  });
+  const width = 760; const height = 250; const insetX = 72; const insetRight = 20; const insetTop = 18; const insetBottom = 28;
+  const rawMax = Math.max(...months.map((item) => item.value), 1);
+  const roughStep = rawMax / 4;
+  const magnitude = 10 ** Math.floor(Math.log10(Math.max(roughStep, 1)));
+  const normalizedStep = roughStep / magnitude;
+  const step = (normalizedStep <= 1 ? 1 : normalizedStep <= 2 ? 2 : normalizedStep <= 5 ? 5 : 10) * magnitude;
+  const max = step * 4;
+  const chartHeight = height - insetTop - insetBottom;
+  const chartWidth = width - insetX - insetRight;
+  const points = months.map((item, index) => ({ ...item, x: insetX + (index * chartWidth) / 11, y: insetTop + chartHeight - ((item.value / max) * chartHeight) }));
+  const grid = Array.from({ length: 5 }, (_, index) => {
+    const value = step * index;
+    const y = insetTop + chartHeight - ((value / max) * chartHeight);
+    const label = value >= 1000 ? `${Number((value / 1000).toFixed(value % 1000 ? 1 : 0)).toLocaleString('it-IT')} mila €` : money(value).replace(',00', '');
+    return `<line x1="${insetX}" y1="${y}" x2="${width - insetRight}" y2="${y}" class="dashboard-grid-line"/><text x="${insetX - 9}" y="${y + 4}" text-anchor="end" class="dashboard-axis-label">${label}</text>`;
+  }).join('');
+  const area = `${insetX},${insetTop + chartHeight} ${points.map((item) => `${item.x},${item.y}`).join(' ')} ${width - insetRight},${insetTop + chartHeight}`;
+  byId('admin-sales-chart').innerHTML = `<svg viewBox="0 0 ${width} ${height}" role="img" aria-label="Andamento mensile dell'imponibile con griglia valori"><defs><linearGradient id="salesFill" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#58735c" stop-opacity=".32"/><stop offset="1" stop-color="#58735c" stop-opacity=".02"/></linearGradient></defs>${grid}<line x1="${insetX}" y1="${insetTop}" x2="${insetX}" y2="${insetTop + chartHeight}" class="dashboard-axis"/><polygon points="${area}" fill="url(#salesFill)"/><polyline points="${points.map((item) => `${item.x},${item.y}`).join(' ')}" class="dashboard-line"/>${points.map((item) => `<circle cx="${item.x}" cy="${item.y}" r="4" class="dashboard-point"><title>${item.label} · Imponibile: ${money(item.value)} · Totale lordo: ${money(item.gross)}</title></circle><text x="${item.x}" y="${height - 6}" text-anchor="middle">${item.label}</text>`).join('')}</svg>`;
+}
+
+const dashboardAreaProvinces = {
+  'Nord Ovest': new Set(['AO', 'AL', 'AT', 'BI', 'CN', 'NO', 'TO', 'VB', 'VC', 'BG', 'BS', 'CO', 'CR', 'LC', 'LO', 'MB', 'MI', 'MN', 'PV', 'SO', 'VA', 'GE', 'IM', 'SP', 'SV']),
+  'Nord Est': new Set(['BZ', 'TN', 'BL', 'PD', 'RO', 'TV', 'VE', 'VR', 'VI', 'BO', 'FC', 'FE', 'MO', 'PC', 'PR', 'RA', 'RE', 'RN', 'GO', 'PN', 'TS', 'UD']),
+  Centro: new Set(['AR', 'FI', 'GR', 'LI', 'LU', 'MS', 'PI', 'PO', 'PT', 'SI', 'AN', 'AP', 'FM', 'MC', 'PU', 'FR', 'LT', 'RI', 'RM', 'VT', 'PG', 'TR']),
+  Sud: new Set(['AQ', 'CH', 'PE', 'TE', 'CB', 'IS', 'AV', 'BN', 'CE', 'NA', 'SA', 'BA', 'BR', 'BT', 'FG', 'LE', 'TA', 'MT', 'PZ', 'CZ', 'CS', 'KR', 'RC', 'VV']),
+  Isole: new Set(['AG', 'CL', 'CT', 'EN', 'ME', 'PA', 'RG', 'SR', 'TP', 'CA', 'NU', 'OR', 'SS', 'SU']),
+};
+
+function dashboardOrderPieces(order) {
+  return (order.items || []).reduce((sum, item) => sum + (Number(item.quantity) || 0), 0);
+}
+
+function dashboardOrderTaxable(order) {
+  const amount = Number(order.amount) || 0;
+  const tax = Number(order.taxAmount) || 0;
+  const shippingNet = Number(order.shippingNetAmount) || 0;
+  const taxableProducts = amount - tax - shippingNet;
+  if (amount || tax || shippingNet) return Math.max(0, Math.round((taxableProducts + Number.EPSILON) * 100) / 100);
+  if (order.commissionBase !== undefined && order.commissionBase !== null) return Number(order.commissionBase) || 0;
+  return (order.items || []).reduce((sum, item) => sum + (Number(item.total) || 0), 0);
+}
+
+function addDashboardProductSale(map, label, item) {
+  const sale = map.get(label) || { value: 0, gross: 0, quantity: 0 };
+  sale.value += Number(item.total) || 0;
+  sale.gross += (Number(item.total) || 0) + (Number(item.taxAmount) || 0);
+  sale.quantity += Number(item.quantity) || 0;
+  map.set(label, sale);
+}
+
+function dashboardOrderArea(order) {
+  const province = String(order.shippingState || order.shippingAddress?.split(',').at(-1) || '').trim().toUpperCase();
+  return Object.entries(dashboardAreaProvinces).find(([, provinces]) => provinces.has(province))?.[0] || 'Non definita';
+}
+
+function renderItalyChart(orders) {
+  const areas = new Map();
+  orders.forEach((order) => {
+    const area = dashboardOrderArea(order);
+    const value = areas.get(area) || { taxable: 0, gross: 0 };
+    value.taxable += dashboardOrderTaxable(order);
+    value.gross += Number(order.amount) || 0;
+    areas.set(area, value);
+  });
+  const total = [...areas.values()].reduce((sum, value) => sum + value.taxable, 0);
+  const rows = [...areas.entries()];
+  byId('admin-italy-chart').innerHTML = `
+    <div class="italy-map-wrap"><img class="italy-silhouette" src="/italy-map.svg" alt="Cartina geografica dell'Italia" /><small>Cartina: Wikimedia Commons, CC BY-SA 3.0</small></div>
+    <div class="dashboard-area-list">${rows.length ? rows.map(([label, value]) => `<span><i></i>${escapeHtml(label)}<b>${total ? Math.round((value.taxable / total) * 100) : 0}%</b><small><strong>Imponibile ${money(value.taxable)}</strong><br>Totale lordo ${money(value.gross)}</small></span>`).join('') : '<div class="dashboard-empty">Nessuna area disponibile.</div>'}</div>`;
+}
+
+const dashboardSalesExpanded = { products: false, promotions: false };
+
+function renderExpandableSales(kind, rows, formatter) {
+  const limited = currentUser?.role === 'admin';
+  const expanded = limited && dashboardSalesExpanded[kind];
+  byId(`admin-${kind}-chart`).innerHTML = dashboardBarRows(limited && !expanded ? rows.slice(0, 10) : rows, formatter);
+  const button = byId(`admin-${kind}-expand`);
+  button.hidden = !limited || rows.length <= 10;
+  button.textContent = expanded ? 'Mostra meno' : `Mostra tutti (${rows.length})`;
+  button.ariaExpanded = String(Boolean(expanded));
+}
+
+function renderAdminDashboard() {
+  if (!['admin', 'agent', 'distributor'].includes(currentUser?.role) || !byId('admin-dashboard')) return;
+  renderDashboardProfilePicker();
+  const orders = dashboardFilteredOrders();
+  const total = orders.reduce((sum, order) => sum + (Number(order.amount) || 0), 0);
+  const customerKeys = new Set(orders.map((order) => String(order.customerEmail || order.customer).toLowerCase()).filter(Boolean));
+  const validHistoricalOrders = dashboardScopedOrders().filter((order) => !['cancelled', 'failed', 'refunded', 'trash'].includes(String(order.status).toLowerCase()));
+  const { start, end } = dashboardDateRange();
+  const historicalCustomerGroups = dashboardCustomerGroups(validHistoricalOrders);
+  const newCustomerOrders = [...historicalCustomerGroups.values()].filter((customer) => customer.orders.length === 1).map((customer) => customer.orders[0]).filter((order) => {
+    const orderDate = dashboardDateValue(order.date);
+    return (!start || orderDate >= start) && (!end || orderDate <= end);
+  }).sort((a, b) => String(b.date).localeCompare(String(a.date)));
+  const orderCountByCustomer = new Map();
+  orders.forEach((order) => {
+    const key = String(order.customerEmail || order.customer).toLowerCase();
+    if (key) orderCountByCustomer.set(key, (orderCountByCustomer.get(key) || 0) + 1);
+  });
+  const repeatCustomers = [...orderCountByCustomer.values()].filter((count) => count > 1).length;
+  const pendingOrders = orders.filter((order) => ['pending', 'on-hold'].includes(String(order.status).toLowerCase()));
+  const workingOrders = orders.filter((order) => ['processing'].includes(String(order.status).toLowerCase()));
+  const summarizeOrders = (rows) => ({ pieces: rows.reduce((sum, order) => sum + dashboardOrderPieces(order), 0), amount: rows.reduce((sum, order) => sum + Number(order.amount || 0), 0), taxable: rows.reduce((sum, order) => sum + dashboardOrderTaxable(order), 0) });
+  const pendingSummary = summarizeOrders(pendingOrders);
+  const workingSummary = summarizeOrders(workingOrders);
+  const distributorRevenue = orders.filter((order) => !order.agent && order.distributor).reduce((sum, order) => sum + Number(order.amount || 0), 0);
+  const agentRevenue = orders.filter((order) => order.agent).reduce((sum, order) => sum + Number(order.amount || 0), 0);
+  const totalTaxable = orders.reduce((sum, order) => sum + dashboardOrderTaxable(order), 0);
+  const distributorTaxable = orders.filter((order) => !order.agent && order.distributor).reduce((sum, order) => sum + dashboardOrderTaxable(order), 0);
+  const agentTaxable = orders.filter((order) => order.agent).reduce((sum, order) => sum + dashboardOrderTaxable(order), 0);
+  byId('admin-kpi-revenue').textContent = money(totalTaxable);
+  byId('admin-kpi-revenue-taxable').textContent = `Totale lordo ${money(total)}`;
+  byId('admin-kpi-pending').textContent = pendingOrders.length.toLocaleString('it-IT');
+  byId('admin-kpi-pending-detail').innerHTML = `<b>Imponibile ${money(pendingSummary.taxable)}</b><br>Totale lordo ${money(pendingSummary.amount)} · ${pendingSummary.pieces} pezzi`;
+  byId('admin-kpi-working').textContent = workingOrders.length.toLocaleString('it-IT');
+  byId('admin-kpi-working-detail').innerHTML = `<b>Imponibile ${money(workingSummary.taxable)}</b><br>Totale lordo ${money(workingSummary.amount)} · ${workingSummary.pieces} pezzi`;
+  byId('admin-kpi-distributor-revenue').textContent = money(distributorTaxable);
+  byId('admin-kpi-agent-revenue').textContent = money(agentTaxable);
+  byId('admin-kpi-distributor-taxable').textContent = `Totale lordo ${money(distributorRevenue)}`;
+  byId('admin-kpi-agent-taxable').textContent = `Totale lordo ${money(agentRevenue)}`;
+  byId('admin-kpi-new-customer-count').textContent = customerKeys.size.toLocaleString('it-IT');
+  byId('admin-kpi-customers').textContent = 'clienti nel periodo selezionato';
+  byId('admin-kpi-repeat-customers').textContent = repeatCustomers.toLocaleString('it-IT');
+  byId('admin-new-customers-total').textContent = newCustomerOrders.length.toLocaleString('it-IT');
+  byId('admin-sales-total').textContent = money(totalTaxable);
+  byId('admin-sales-gross').textContent = `Totale lordo ${money(total)}`;
+  renderAdminSalesChart(orders);
+  renderItalyChart(orders);
+
+  const products = new Map(); const categories = new Map(); const channels = new Map(); const promotionSales = new Map();
+  orders.forEach((order) => {
+    const channel = order.agent ? `Agente · ${order.agent}` : order.distributor ? `Distributore · ${order.distributor}` : 'Non associato alla rete';
+    const channelValue = channels.get(channel) || { value: 0, gross: 0 };
+    channelValue.value += dashboardOrderTaxable(order);
+    channelValue.gross += Number(order.amount) || 0;
+    channels.set(channel, channelValue);
+    (order.items || []).forEach((item) => {
+      const product = shopProducts.find((entry) => Number(entry.id) === Number(item.productId)) || shopProducts.find((entry) => entry.name === item.name);
+      const category = product?.categories?.find((entry) => !/promo/i.test(`${entry.slug} ${entry.name}`))?.name || 'Altri';
+      addDashboardProductSale(categories, category, item);
+      const isPromotion = /promo|pacchett/i.test(item.name) || product?.categories?.some((entry) => /promo|pacchett/i.test(`${entry.slug} ${entry.name}`));
+      if (isPromotion) addDashboardProductSale(promotionSales, item.name, item);
+      else addDashboardProductSale(products, item.name, item);
+    });
+  });
+  const topRows = (map, limit = 5) => [...map.entries()].map(([label, value]) => ({ label, ...value })).sort((a, b) => b.value - a.value).slice(0, limit);
+  const pieceRows = map => [...map.entries()].map(([label, sale]) => ({label, value: sale.quantity})).sort((a,b) => b.value - a.value);
+  const piecesLabel = value => `${value.toLocaleString('it-IT')} pz`;
+  renderExpandableSales('products', pieceRows(products), piecesLabel);
+  byId('admin-category-chart').innerHTML = dashboardBarRows(pieceRows(categories), piecesLabel);
+  renderExpandableSales('promotions', pieceRows(promotionSales), piecesLabel);
+  const channelRows = topRows(channels, Infinity);
+  const agentRows = channelRows.filter(row => row.label.startsWith('Agente · ')).map(row => ({...row, label: row.label.slice(9)}));
+  const distributorRows = channelRows.filter(row => row.label.startsWith('Distributore · ')).map(row => ({...row, label: row.label.slice(15)}));
+  byId('admin-agents-chart').innerHTML = dashboardBarRows(agentRows);
+  byId('admin-distributors-chart').innerHTML = dashboardBarRows(distributorRows);
+  byId('admin-channel-agents-total').textContent = money(agentRows.reduce((sum, row) => sum + row.value, 0));
+  byId('admin-channel-distributors-total').textContent = money(distributorRows.reduce((sum, row) => sum + row.value, 0));
+  const unassignedRows = channelRows.filter(row => row.label === 'Non associato alla rete');
+  byId('admin-channel-unassigned').innerHTML = unassignedRows.length ? dashboardBarRows(unassignedRows) : '';
+  const customerView = currentUser.role !== 'admin' || Boolean(dashboardProfileId);
+  byId('dashboard-channel-label').textContent = customerView ? 'Clienti · imponibile' : 'Canali · imponibile';
+  byId('dashboard-channel-title').textContent = customerView ? 'I miei clienti' : 'Agenti e distributori';
+  byId('dashboard-network-channels').hidden = customerView;
+  byId('admin-channel-unassigned').hidden = customerView;
+  byId('dashboard-customer-channels').hidden = !customerView;
+  const customerRows = customerView ? [...dashboardCustomerGroups(orders).values()].map(customer => ({
+    label: customer.email ? `${customer.customer} · ${customer.email}` : customer.customer,
+    value: customer.orders.reduce((sum, order) => sum + dashboardOrderTaxable(order), 0),
+    gross: customer.orders.reduce((sum, order) => sum + (Number(order.amount) || 0), 0),
+  })).sort((a,b) => b.value - a.value) : [];
+  byId('dashboard-customer-channels').innerHTML = customerView ? dashboardBarRows(customerRows) : '';
+  const channelTotal = [...channels.values()].reduce((sum, value) => sum + value.value, 0);
+  byId('admin-channel-total').textContent = `Imponibile ${customerView ? 'clienti' : 'canali'} ${money(channelTotal)} · ${Math.abs(channelTotal - totalTaxable) < 0.01 ? 'corrisponde all’imponibile totale' : 'da verificare'}`;
+}
+
+function dashboardCustomerKey(order) {
+  return String(order.customerEmail || order.customer || '').trim().toLowerCase();
+}
+
+function dashboardCustomerGroups(orders) {
+  const groups = new Map();
+  orders.forEach((order) => {
+    const key = dashboardCustomerKey(order);
+    if (!key) return;
+    if (!groups.has(key)) groups.set(key, { key, customer: order.customer || '-', email: order.customerEmail || '', orders: [] });
+    groups.get(key).orders.push(order);
+  });
+  return groups;
+}
+
+function dashboardOrderDetailRows(orders) {
+  return orders.map((order) => `<tr>
+    <td><strong>${escapeHtml(order.id)}</strong></td>
+    <td>${escapeHtml(order.date || '-')}</td>
+    <td><strong>${escapeHtml(order.customer || '-')}</strong>${order.customerEmail ? `<br><small>${escapeHtml(order.customerEmail)}</small>` : ''}</td>
+    <td>${dashboardOrderPieces(order).toLocaleString('it-IT')}</td>
+    <td><strong>${money(dashboardOrderTaxable(order))}</strong></td>
+    <td><small>${money(order.amount)}</small></td>
+    <td>${money(order.taxAmount)}</td>
+    <td>${money(order.shippingAmount)}</td>
+    <td><span class="state ${orderStatusClass(order.status)}">${escapeHtml(orderStatusLabel(order.status))}</span></td>
+    <td>${escapeHtml(order.agent || order.distributor || order.center || '-')}</td>
+  </tr>`).join('');
+}
+
+function dashboardOrderOrigin(order) {
+  if (order.agent) return { label: `Agente · ${order.agent}`, direct: false };
+  if (order.distributor) return { label: `Distributore · ${order.distributor}`, direct: false };
+  if (order.center) return { label: `Centro · ${order.center}`, direct: false };
+  return { label: 'Acquisto diretto', direct: true };
+}
+
+function openDashboardDetail(type) {
+  if (!['admin', 'agent', 'distributor'].includes(currentUser?.role)) return;
+  const orders = dashboardFilteredOrders();
+  const periodLabel = byId('admin-dashboard-period')?.selectedOptions?.[0]?.textContent || 'Periodo selezionato';
+  let title = ''; let summary = ''; let headers = ''; let rows = '';
+  if (['category-sales', 'promotion-sales', 'product-sales', 'channel-sales'].includes(type)) {
+    const breakdown = new Map();
+    if (type === 'channel-sales' && (currentUser.role !== 'admin' || Boolean(dashboardProfileId))) {
+      const customers = [...dashboardCustomerGroups(orders).values()].map(customer => ({...customer,
+        taxable: customer.orders.reduce((sum, order) => sum + dashboardOrderTaxable(order), 0),
+        gross: customer.orders.reduce((sum, order) => sum + (Number(order.amount) || 0), 0),
+      })).sort((a,b) => b.taxable - a.taxable);
+      title = 'I miei clienti';
+      headers = '<tr><th>Cliente</th><th>Ordini</th><th>Imponibile prodotti</th><th>Totale lordo</th></tr>';
+      rows = customers.map(customer => `<tr><td><strong>${escapeHtml(customer.customer)}</strong>${customer.email ? `<br><small>${escapeHtml(customer.email)}</small>` : ''}</td><td>${customer.orders.length}</td><td><strong>${money(customer.taxable)}</strong></td><td><small>${money(customer.gross)}</small></td></tr>`).join('');
+      summary = `${periodLabel} · ${customers.length} clienti · Imponibile ${money(customers.reduce((sum, customer) => sum + customer.taxable, 0))} · Totale lordo ${money(customers.reduce((sum, customer) => sum + customer.gross, 0))}`;
+    } else if (type === 'channel-sales') {
+      orders.forEach((order) => {
+        const label = order.agent ? `Agente · ${order.agent}` : order.distributor ? `Distributore · ${order.distributor}` : order.center ? `Centro · ${order.center}` : 'Acquisto diretto / non associato';
+        const current = breakdown.get(label) || { quantity: 0, amount: 0, taxable: 0 };
+        current.quantity += 1;
+        current.amount += Number(order.amount || 0);
+        current.taxable += dashboardOrderTaxable(order);
+        breakdown.set(label, current);
+      });
+      title = 'Agenti e distributori';
+      headers = '<tr><th>Canale</th><th>Ordini</th><th>Imponibile prodotti</th><th>Totale lordo</th></tr>';
+      rows = [...breakdown.entries()].sort((a, b) => b[1].taxable - a[1].taxable).map(([label, value]) => `<tr><td><strong>${escapeHtml(label)}</strong></td><td>${value.quantity}</td><td><strong>${money(value.taxable)}</strong></td><td><small>${money(value.amount)}</small></td></tr>`).join('');
+      summary = `${periodLabel} · ${breakdown.size} canali · Imponibile ${money([...breakdown.values()].reduce((sum, value) => sum + value.taxable, 0))} · Totale lordo ${money([...breakdown.values()].reduce((sum, value) => sum + value.amount, 0))}`;
+    } else {
+      orders.forEach((order) => (order.items || []).forEach((item) => {
+          const product = shopProducts.find((entry) => Number(entry.id) === Number(item.productId)) || shopProducts.find((entry) => entry.name === item.name);
+        const isPromotion = /promo|pacchett/i.test(item.name) || product?.categories?.some((entry) => /promo|pacchett/i.test(`${entry.slug} ${entry.name}`));
+        let label = item.name;
+        if (type === 'category-sales') label = product?.categories?.find((entry) => !/promo/i.test(`${entry.slug} ${entry.name}`))?.name || 'Altri';
+        if (type === 'promotion-sales' && !isPromotion) return;
+        if (type === 'product-sales' && isPromotion) return;
+        addDashboardProductSale(breakdown, label, item);
+      }));
+      title = type === 'category-sales' ? 'Vendite per categoria' : type === 'promotion-sales' ? 'Vendite promozionali' : 'Vendite per prodotto';
+      headers = `<tr><th>${type === 'category-sales' ? 'Categoria' : type === 'promotion-sales' ? 'Promozione' : 'Prodotto'}</th><th>Pezzi venduti</th></tr>`;
+      rows = [...breakdown.entries()].sort((a, b) => b[1].quantity - a[1].quantity).map(([label, sale]) => `<tr><td><strong>${escapeHtml(label)}</strong></td><td><strong>${sale.quantity.toLocaleString('it-IT')}</strong></td></tr>`).join('');
+      summary = `${periodLabel} · ${breakdown.size} voci · ${[...breakdown.values()].reduce((sum, value) => sum + value.quantity, 0).toLocaleString('it-IT')} pezzi venduti`;
+    }
+  } else if (['pending', 'working', 'total-revenue', 'distributor-revenue', 'agent-revenue'].includes(type)) {
+    const detailOrders = type === 'pending'
+      ? orders.filter((order) => ['pending', 'on-hold'].includes(String(order.status).toLowerCase()))
+      : type === 'working'
+        ? orders.filter((order) => String(order.status).toLowerCase() === 'processing')
+        : type === 'distributor-revenue'
+          ? orders.filter((order) => !order.agent && order.distributor)
+          : type === 'agent-revenue'
+            ? orders.filter((order) => order.agent)
+            : orders;
+    const pieces = detailOrders.reduce((sum, order) => sum + dashboardOrderPieces(order), 0);
+    const amount = detailOrders.reduce((sum, order) => sum + Number(order.amount || 0), 0);
+    const taxable = detailOrders.reduce((sum, order) => sum + dashboardOrderTaxable(order), 0);
+    title = type === 'pending' ? 'Ordini in attesa'
+      : type === 'working' ? 'Ordini in lavorazione'
+        : type === 'distributor-revenue' ? 'Fatturato distributori'
+          : type === 'agent-revenue' ? 'Fatturato agenti'
+            : 'Totale fatturato';
+    summary = `${periodLabel} · ${detailOrders.length} ordini · ${pieces} pezzi · Imponibile ${money(taxable)} · Totale lordo ${money(amount)}`;
+    headers = '<tr><th>Ordine</th><th>Data</th><th>Cliente</th><th>Pezzi</th><th>Imponibile prodotti</th><th>Totale lordo</th><th>IVA</th><th>Trasporto</th><th>Stato</th><th>Canale</th></tr>';
+    rows = dashboardOrderDetailRows(detailOrders);
+  } else if (type === 'new-customers') {
+    const { start, end } = dashboardDateRange();
+    const historicalOrders = dashboardScopedOrders().filter((order) => !['cancelled', 'failed', 'refunded', 'trash'].includes(String(order.status).toLowerCase()));
+    const customers = [...dashboardCustomerGroups(historicalOrders).values()].filter((customer) => customer.orders.length === 1).filter((customer) => {
+      const orderDate = dashboardDateValue(customer.orders[0].date);
+      return (!start || orderDate >= start) && (!end || orderDate <= end);
+    }).sort((a, b) => String(b.orders[0].date).localeCompare(String(a.orders[0].date)));
+    title = 'Nuovi clienti';
+    summary = `${periodLabel} · ${customers.length} clienti con un solo acquisto complessivo`;
+    headers = '<tr><th>Cliente</th><th>Ordine</th><th>Imponibile prodotti</th><th>Totale lordo</th><th>Pezzi</th><th>Provenienza</th></tr>';
+    rows = customers.map((customer) => {
+      const order = customer.orders[0];
+      const origin = dashboardOrderOrigin(order);
+      return `<tr><td><strong>${escapeHtml(customer.customer)}</strong>${customer.email ? `<br><small>${escapeHtml(customer.email)}</small>` : ''}</td><td>${escapeHtml(order.date || '-')}<br><small>${escapeHtml(order.id || '')}</small></td><td><strong>${money(dashboardOrderTaxable(order))}</strong></td><td><small>${money(order.amount)}</small></td><td>${dashboardOrderPieces(order)}</td><td><span class="dashboard-origin ${origin.direct ? 'direct' : ''}">${escapeHtml(origin.label)}</span></td></tr>`;
+    }).join('');
+  } else {
+    const periodGroups = dashboardCustomerGroups(orders);
+    let customers = [...periodGroups.values()];
+    if (type === 'customers') {
+      title = 'Clienti';
+    } else {
+      title = 'Clienti con riordino';
+      customers = customers.filter((customer) => customer.orders.length > 1);
+    }
+    customers.sort((a, b) => Math.max(...b.orders.map((order) => new Date(order.date).getTime())) - Math.max(...a.orders.map((order) => new Date(order.date).getTime())));
+    summary = `${periodLabel} · ${customers.length} clienti`;
+    headers = '<tr><th>Cliente</th><th>Primo ordine</th><th>Ultimo ordine</th><th>Ordini</th><th>Pezzi</th><th>Imponibile acquistato</th><th>Totale lordo</th></tr>';
+    rows = customers.map((customer) => {
+      const sorted = [...customer.orders].sort((a, b) => String(a.date).localeCompare(String(b.date)));
+      const pieces = sorted.reduce((sum, order) => sum + dashboardOrderPieces(order), 0);
+      const amount = sorted.reduce((sum, order) => sum + Number(order.amount || 0), 0);
+      return `<tr><td><strong>${escapeHtml(customer.customer)}</strong>${customer.email ? `<br><small>${escapeHtml(customer.email)}</small>` : ''}</td><td>${escapeHtml(sorted[0]?.date || '-')}<br><small>${escapeHtml(sorted[0]?.id || '')}</small></td><td>${escapeHtml(sorted.at(-1)?.date || '-')}<br><small>${escapeHtml(sorted.at(-1)?.id || '')}</small></td><td>${sorted.length}</td><td>${pieces}</td><td><strong>${money(sorted.reduce((sum, order) => sum + dashboardOrderTaxable(order), 0))}</strong></td><td><small>${money(amount)}</small></td></tr>`;
+    }).join('');
+  }
+  byId('dashboard-detail-content').innerHTML = `<div class="dashboard-detail-head"><h2 id="dashboard-detail-title">${escapeHtml(title)}</h2><button class="product-detail-close" type="button" data-dashboard-detail-close aria-label="Chiudi">×</button></div><div class="dashboard-detail-body"><p class="dashboard-detail-summary">${escapeHtml(summary).replace(/Imponibile ([^·]+)/g, '<strong>Imponibile $1</strong>')}</p>${rows ? `<div class="dashboard-detail-table-wrap"><table class="dashboard-detail-table"><thead>${headers}</thead><tbody>${rows}</tbody></table></div>` : '<div class="dashboard-empty">Nessun dato disponibile nel periodo selezionato.</div>'}</div>`;
+  if (!byId('dashboard-detail-dialog').open) byId('dashboard-detail-dialog').showModal();
+}
+
+function escapeHtml(value) {
+  return String(value ?? '')
+    .replaceAll('&', '&amp;')
+    .replaceAll('<', '&lt;')
+    .replaceAll('>', '&gt;')
+    .replaceAll('"', '&quot;')
+    .replaceAll("'", '&#039;');
+}
+
+function routeFromPath(pathname) {
+  const normalized = pathname.replace(/\/+$/, '') || '/';
+  if (normalized === '/report') return 'reports';
+  return Object.entries(appRoutes).find(([, route]) => route.path === normalized)?.[0] || 'dashboard';
+}
+
+function closeMobileMenu() {
+  byId('mobile-menu-button').setAttribute('aria-expanded', 'false');
+  document.querySelector('.nav').classList.remove('mobile-open');
+  byId('mobile-nav-backdrop').classList.add('hidden');
+}
+
+function openMobileMenu() {
+  byId('mobile-menu-button').setAttribute('aria-expanded', 'true');
+  document.querySelector('.nav').classList.add('mobile-open');
+  byId('mobile-nav-backdrop').classList.remove('hidden');
+}
+
+function showRoute(routeId, options = {}) {
+  const requested = appRoutes[routeId] ? routeId : 'dashboard';
+  const target = byId(requested);
+  const blocked = !target || target.classList.contains('module-denied');
+  const activeRoute = blocked
+    ? [...document.querySelectorAll('.route-screen:not(.module-denied)')][0]?.id || 'dashboard'
+    : requested;
+
+  document.querySelectorAll('.route-screen').forEach((section) => {
+    section.classList.toggle('route-active', section.id === activeRoute);
+  });
+  document.querySelectorAll('[data-route]').forEach((link) => {
+    link.classList.toggle('active', link.dataset.route === activeRoute);
+  });
+
+  if (activeRoute === 'store-management') openStoreManagement();
+  if (activeRoute === 'admin-customers') loadAdminCustomerReport();
+  const route = appRoutes[activeRoute];
+  byId('page-title').textContent = route.title;
+  document.title = `${route.title} · ODR`;
+  closeMobileMenu();
+  window.scrollTo({ top: 0, behavior: options.smooth ? 'smooth' : 'auto' });
+
+  if (options.push !== false && window.location.pathname !== route.path) {
+    window.history.pushState({ route: activeRoute }, '', route.path);
+  } else if (window.location.pathname === '/') {
+    window.history.replaceState({ route: activeRoute }, '', route.path);
+  }
+}
+
+function initRouting() {
+  document.querySelectorAll('[data-route]').forEach((link) => {
+    link.addEventListener('click', (event) => {
+      event.preventDefault();
+      showRoute(link.dataset.route, { push: true, smooth: true });
+    });
+  });
+  window.addEventListener('popstate', () => showRoute(routeFromPath(window.location.pathname), { push: false }));
+  byId('mobile-menu-button').addEventListener('click', () => {
+    const open = byId('mobile-menu-button').getAttribute('aria-expanded') === 'true';
+    open ? closeMobileMenu() : openMobileMenu();
+  });
+  byId('mobile-nav-backdrop').addEventListener('click', closeMobileMenu);
+  // Let Supabase consume recovery credentials before any URL rewriting.
+  if (!passwordRecoveryActive) showRoute(routeFromPath(window.location.pathname), { push: false });
+}
+
+function buildShopUrl(code) {
+  const url = new URL(config.wooShopPath, config.wooBaseUrl);
+  if (code?.coupon) url.searchParams.set('coupon', code.coupon);
+  if (code?.code) url.searchParams.set('odr_code', code.code);
+  return url.toString();
+}
+
+function productPrice(product) {
+  if (!product.price) return 'Prezzo su richiesta';
+  return money(Number(product.price));
+}
+
+function productCatalogImage(product) {
+  if (!product?.image) return '';
+  const image = new URL(product.image, config.wooBaseUrl);
+  if (product.imageUpdatedAt) image.searchParams.set('odr_v', product.imageUpdatedAt);
+  return image.toString();
+}
+
+function bundleItemPricing(item) {
+  const unitPrice = Number(item?.price) || 0;
+  const quantity = Math.max(0, Number(item?.quantity) || 0);
+  if (!unitPrice) return '<small>Prezzo del singolo prodotto non disponibile</small>';
+  return `<small>— ${money(unitPrice)} cad. — Totale ${money(unitPrice * quantity)}</small>`;
+}
+
+function openProductDetail(productId) {
+  const product = shopProducts.find((item) => Number(item.id) === Number(productId));
+  const bundleItems = Array.isArray(product?.bundleItems) ? product.bundleItems : [];
+  if (!product || !bundleItems.length) return;
+
+  const theoreticalValue = bundleItems.reduce((total, item) => (
+    total + ((Number(item.price) || 0) * (Number(item.quantity) || 0))
+  ), 0);
+  const packagePrice = Number(product.price) || 0;
+  const totalSavings = Math.max(0, theoreticalValue - packagePrice);
+  const cartQuantity = shopCart.find((item) => item.productId === product.id)?.quantity || 0;
+  const description = product.description || product.shortDescription || 'Composizione e dettagli del pacchetto promozionale.';
+  byId('product-detail-content').innerHTML = `
+    <div class="product-detail-head">
+      <span>Pacchetto intelligente</span>
+      <button type="button" class="product-detail-close" data-product-detail-close aria-label="Chiudi scheda">×</button>
+    </div>
+    <div class="product-detail-layout">
+      <div class="product-detail-copy">
+        <small>${escapeHtml(product.sku || 'Prodotto ODR')}</small>
+        <h2 id="product-detail-title">${escapeHtml(product.name)}</h2>
+        <p>${escapeHtml(description)}</p>
+        <div class="product-detail-composition">
+          <h3>Composizione del pacchetto</h3>
+          ${bundleItems.map((item) => `
+            <div class="product-detail-item">
+              ${item.image ? `<img src="${escapeHtml(item.image)}" alt="" loading="lazy" />` : '<span class="product-bundle-placeholder">ODR</span>'}
+              <div>
+                <strong>${item.quantity} × ${escapeHtml(item.name)}</strong>
+                ${bundleItemPricing(item)}
+              </div>
+            </div>`).join('')}
+        </div>
+        <div class="product-detail-totals">
+          ${theoreticalValue ? `<p><span>Valore totale promozione</span><strong>${money(theoreticalValue)}</strong></p>` : ''}
+          ${totalSavings ? `<p class="product-detail-savings"><span>Risparmio totale</span><strong>${money(totalSavings)}</strong></p>` : ''}
+          <p class="product-detail-offer"><span>Totale offerta</span><strong>${productPrice(product)}</strong></p>
+        </div>
+        <div class="product-detail-actions">
+          <span class="stock ${product.inStock ? 'ok' : 'off'}">${product.inStock ? 'Disponibile' : 'Esaurito'}</span>
+          ${product.inStock ? `<div class="product-quantity" aria-label="Quantità ${escapeHtml(product.name)}">
+            <button type="button" data-detail-quantity="decrease" data-product-id="${product.id}" ${cartQuantity < 1 ? 'disabled' : ''} aria-label="Riduci quantità">−</button>
+            <span>${cartQuantity}</span>
+            <button type="button" data-detail-quantity="increase" data-product-id="${product.id}" aria-label="Aumenta quantità">+</button>
+          </div>` : ''}
+        </div>
+      </div>
+    </div>`;
+  if (!byId('product-detail-dialog').open) byId('product-detail-dialog').showModal();
+}
+
+function cartStorageKey() {
+  return currentUser?.id ? `odr-cart:${currentUser.id}` : 'odr-cart';
+}
+
+function addressStorageKey() {
+  return currentUser?.id ? `odr-address:${currentUser.id}` : 'odr-address';
+}
+
+const shippingFieldIds = {
+  firstName: 'shipping-first-name',
+  lastName: 'shipping-last-name',
+  company: 'shipping-company',
+  address1: 'shipping-address-1',
+  address2: 'shipping-address-2',
+  postcode: 'shipping-postcode',
+  city: 'shipping-city',
+  state: 'shipping-state',
+  country: 'shipping-country',
+  phone: 'shipping-phone',
+  email: 'shipping-email',
+};
+
+function readShopAddress() {
+  return Object.fromEntries(Object.entries(shippingFieldIds).map(([key, id]) => [key, byId(id).value.trim()]));
+}
+
+function fillShopAddress(address = {}) {
+  Object.entries(shippingFieldIds).forEach(([key, id]) => {
+    if (address[key] !== undefined && address[key] !== null) byId(id).value = address[key];
+  });
+  byId('shipping-email').value = ['agent', 'distributor'].includes(currentUser?.role) && selectedAgentCustomer
+    ? (address.email || selectedAgentCustomer.email || '')
+    : (currentUser?.email || address.email || '');
+}
+
+function saveShopAddress() {
+  if (!currentUser) return;
+  localStorage.setItem(addressStorageKey(), JSON.stringify(readShopAddress()));
+  byId('shop-address-status').textContent = 'Dati salvati nell’app';
+}
+
+function storedShopAddress() {
+  try {
+    return JSON.parse(localStorage.getItem(addressStorageKey()) || 'null');
+  } catch {
+    return null;
+  }
+}
+
+function validateShopAddress() {
+  const required = [
+    'shipping-first-name', 'shipping-last-name', 'shipping-address-1',
+    'shipping-postcode', 'shipping-city', 'shipping-state', 'shipping-phone',
+  ];
+  const invalid = required.map(byId).find((field) => !field.value.trim());
+  if (invalid) {
+    invalid.focus();
+    byId('shop-address-status').textContent = 'Completa tutti i campi obbligatori';
+    return false;
+  }
+  if (!/^[A-Za-z]{2}$/.test(byId('shipping-state').value.trim())) {
+    byId('shipping-state').focus();
+    byId('shop-address-status').textContent = 'Inserisci la sigla della provincia (es. TO)';
+    return false;
+  }
+  saveShopAddress();
+  return true;
+}
+
+async function loadShopAddress(force = false) {
+  if (!supabase || !currentUser || (shopAddressLoaded && !force)) return;
+  const stored = force ? null : storedShopAddress();
+  if (stored) {
+    fillShopAddress(stored);
+    shopAddressLoaded = true;
+    return;
+  }
+  try {
+    const { data } = await supabase.auth.getSession();
+    const response = await fetch('/api/customer-address', {
+      headers: { Authorization: `Bearer ${data.session?.access_token || ''}` },
+    });
+    const payload = await response.json();
+    if (response.ok && payload.address) {
+      fillShopAddress(payload.address);
+      saveShopAddress();
+    }
+  } catch {
+    fillShopAddress({
+      firstName: currentUser.profile?.full_name?.split(/\s+/)[0] || '',
+      lastName: currentUser.profile?.full_name?.split(/\s+/).slice(1).join(' ') || '',
+      phone: currentUser.profile?.phone || '',
+      email: currentUser.email,
+      country: 'IT',
+    });
+  }
+  shopAddressLoaded = true;
+}
+
+function saveShopCart() {
+  localStorage.setItem(cartStorageKey(), JSON.stringify(shopCart));
+}
+
+function loadShopCart() {
+  try {
+    const saved = JSON.parse(localStorage.getItem(cartStorageKey()) || '[]');
+    shopCart = Array.isArray(saved)
+      ? saved
+        .map((item) => ({
+          productId: Number(item.productId),
+          quantity: Math.max(1, Math.min(99, Number(item.quantity) || 1)),
+        }))
+        .filter((item) => Number.isInteger(item.productId) && item.productId > 0)
+      : [];
+  } catch {
+    shopCart = [];
+  }
+}
+
+function cartProduct(productId) {
+  return shopProducts.find((product) => product.id === productId);
+}
+
+function renderShopCart() {
+  if (['agent', 'distributor'].includes(currentUser?.role) && selectedAgentCustomer?.address) {
+    fillShopAddress(selectedAgentCustomer.address);
+    byId('shop-address-status').textContent = `Dati di ${selectedAgentCustomer.name}`;
+  }
+  shopCart = shopCart.filter((item) => cartProduct(item.productId)?.inStock);
+  saveShopCart();
+  const count = shopCart.reduce((sum, item) => sum + item.quantity, 0);
+  byId('shop-cart-count').textContent = String(count);
+
+  if (!shopCart.length) {
+    byId('shop-cart-items').innerHTML = '<div class="shop-cart-empty">Il carrello è vuoto. Aggiungi uno o più prodotti.</div>';
+    byId('shop-cart-subtotal').textContent = money(0);
+    byId('shop-cart-discount').textContent = `− ${money(0)}`;
+    byId('shop-discount-row').classList.add('hidden');
+    byId('shop-cart-total').textContent = money(0);
+    byId('shop-checkout').disabled = true;
+    return;
+  }
+
+  let total = 0;
+  byId('shop-cart-items').innerHTML = shopCart.map((item) => {
+    const product = cartProduct(item.productId);
+    const unitPrice = Number(product.price) || 0;
+    total += unitPrice * item.quantity;
+    const productImage = productCatalogImage(product);
+    const image = productImage
+      ? `<img src="${escapeHtml(productImage)}" alt="" loading="lazy" />`
+      : '<span class="cart-thumb-placeholder">ODR</span>';
+    return `
+      <article class="shop-cart-item" data-cart-product="${product.id}">
+        <div class="shop-cart-thumb">${image}</div>
+        <div class="shop-cart-copy">
+          <small>${escapeHtml(product.sku || 'Prodotto ODR')}</small>
+          <strong>${escapeHtml(product.name)}</strong>
+          <span>${money(unitPrice)}</span>
+        </div>
+        <div class="shop-cart-quantity" aria-label="Quantità">
+          <button type="button" data-cart-action="decrease" aria-label="Riduci quantità">−</button>
+          <span>${item.quantity}</span>
+          <button type="button" data-cart-action="increase" aria-label="Aumenta quantità">+</button>
+        </div>
+        <button class="shop-cart-remove" type="button" data-cart-action="remove">Rimuovi</button>
+      </article>
+    `;
+  }).join('');
+  const subtotal = shopQuote?.subtotal ?? total;
+  const discount = shopQuote?.discount ?? 0;
+  byId('shop-cart-subtotal').textContent = money(subtotal);
+  byId('shop-cart-discount').textContent = `− ${money(discount)}`;
+  byId('shop-discount-row').classList.toggle('hidden', discount <= 0);
+  byId('shop-cart-total').textContent = money(shopQuote?.total ?? total);
+  byId('shop-checkout').disabled = false;
+  byId('shop-checkout').textContent = config.bankCheckoutEnabled && ['agent', 'distributor', 'center'].includes(currentUser?.role) ? 'Riepilogo e bonifico' : 'Concludi ordine e paga';
+}
+
+function setCartPanel(open) {
+  byId('shop-cart-panel').classList.toggle('hidden', !open);
+  byId('shop-cart-link').setAttribute('aria-expanded', String(open));
+  if (open) byId('shop-cart-panel').scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+
+function addToShopCart(productId, trigger) {
+  const product = cartProduct(productId);
+  if (!product?.inStock) return;
+  const existing = shopCart.find((item) => item.productId === productId);
+  if (existing) existing.quantity = Math.min(99, existing.quantity + 1);
+  else shopCart.push({ productId, quantity: 1 });
+  shopQuote = null;
+  saveShopCart();
+  renderShopCart();
+  if (shopCoupon) applyShopCoupon({ silent: true });
+  if (trigger) {
+    const originalText = trigger.textContent;
+    trigger.textContent = 'Aggiunto ✓';
+    trigger.classList.add('added');
+    window.setTimeout(() => {
+      trigger.textContent = originalText;
+      trigger.classList.remove('added');
+    }, 900);
+  }
+}
+
+function updateShopCartItem(productId, action) {
+  const item = shopCart.find((row) => row.productId === productId);
+  if (!item) return;
+  if (action === 'increase') item.quantity = Math.min(99, item.quantity + 1);
+  if (action === 'decrease') item.quantity -= 1;
+  if (action === 'remove' || item.quantity < 1) {
+    shopCart = shopCart.filter((row) => row.productId !== productId);
+  }
+  shopQuote = null;
+  saveShopCart();
+  renderShopCart();
+  if (shopCoupon && shopCart.length) applyShopCoupon({ silent: true });
+  renderShopProducts();
+}
+
+function renderShopProducts() {
+  const query = byId('shop-search').value.trim().toLowerCase();
+  const categoryGroup = (product) => {
+    const categories = product.categories.filter((category) => (
+      !`${category.slug} ${category.name}`.toLowerCase().includes('promo')
+    ));
+    return categories
+      .map((category) => `${category.name} ${category.slug}`.toLowerCase())
+      .sort((a, b) => a.localeCompare(b, 'it'))[0] || 'zzzz';
+  };
+  const products = shopProducts.filter((product) => {
+    const isPromotion = product.onSale || product.categories.some((category) => (
+      `${category.slug} ${category.name}`.toLowerCase().includes('promo')
+    ));
+    const matchesCategory = shopCategory === 'all'
+      || (shopCategory === 'promo' && isPromotion)
+      || product.categories.some((category) => category.slug === shopCategory);
+    const matchesQuery = !query
+      || `${product.name} ${product.sku}`.toLowerCase().includes(query);
+    return matchesCategory && matchesQuery;
+  }).sort((a, b) => {
+    const groupDifference = categoryGroup(a).localeCompare(categoryGroup(b), 'it');
+    return groupDifference || a.name.localeCompare(b.name, 'it');
+  });
+
+  byId('shop-products').innerHTML = products.map((product) => {
+    const category = product.categories[0]?.name || 'ODR';
+    const productImage = productCatalogImage(product);
+    const image = productImage
+      ? `<img src="${escapeHtml(productImage)}" alt="${escapeHtml(product.name)}" loading="lazy" />`
+      : '<div class="product-placeholder">ODR</div>';
+    const priceClass = product.onSale ? 'product-price on-sale' : 'product-price';
+    const regular = product.onSale && product.regularPrice
+      ? `<del>${money(Number(product.regularPrice))}</del>`
+      : '';
+    const cartQuantity = shopCart.find((item) => item.productId === product.id)?.quantity || 0;
+    const bundleItems = Array.isArray(product.bundleItems) ? product.bundleItems : [];
+    const isPackage = bundleItems.length > 0 || product.categories.some((entry) => (
+      /promo|pacchett/i.test(`${entry.slug} ${entry.name}`)
+    ));
+    const documents = packageDocuments.filter((document) => Number(document.product_id) === Number(product.id));
+    const documentList = documents.length ? documents.map((document) => `
+      <div class="package-document-row">
+        <span class="package-document-icon" aria-hidden="true">PDF</span>
+        <span class="package-document-copy">
+          <strong>${escapeHtml(document.title)}</strong>
+          <small>${escapeHtml(document.file_name)}${document.file_size ? ` · ${(Number(document.file_size) / 1048576).toLocaleString('it-IT', { maximumFractionDigits: 1 })} MB` : ''}</small>
+        </span>
+        <button type="button" class="package-document-download" data-package-document-download="${escapeHtml(document.id)}">Scarica</button>
+        ${currentUser?.role === 'admin' ? `<button type="button" class="package-document-delete" data-package-document-delete="${escapeHtml(document.id)}" aria-label="Elimina ${escapeHtml(document.title)}">Elimina</button>` : ''}
+      </div>`).join('') : '<p class="package-document-empty">Nessun PDF disponibile per questo pacchetto.</p>';
+    const packageMaterials = isPackage && ['admin', 'agent', 'distributor'].includes(currentUser?.role) ? `
+      <details class="package-documents">
+        <summary>${currentUser?.role === 'admin' ? 'Gestisci PDF' : 'Materiali PDF'} <span>${documents.length}</span></summary>
+        <div class="package-document-list">${documentList}</div>
+        ${currentUser?.role === 'admin' ? `
+          <form class="package-document-form" data-package-document-form="${product.id}">
+            <label>Titolo del documento
+              <input type="text" name="title" maxlength="160" placeholder="Es. Scheda tecnica" required />
+            </label>
+            <label>File PDF
+              <input type="file" name="pdf" accept="application/pdf,.pdf" required />
+            </label>
+            <button type="submit">Carica PDF</button>
+            <small data-package-document-message></small>
+          </form>` : ''}
+      </details>` : '';
+    const bundleDetails = bundleItems.length ? `
+      <details class="product-bundle">
+        <summary>Vedi composizione <span>${bundleItems.length} articoli</span></summary>
+        <div class="product-bundle-list">
+          ${bundleItems.map((item) => `
+            <div class="product-bundle-item">
+              ${item.image
+    ? `<img src="${escapeHtml(item.image)}" alt="" loading="lazy" />`
+    : '<span class="product-bundle-placeholder">ODR</span>'}
+              <span class="product-bundle-quantity">${item.quantity}×</span>
+              <span class="product-bundle-copy">
+                <strong>${escapeHtml(item.name)}</strong>
+                ${bundleItemPricing(item)}
+              </span>
+            </div>
+          `).join('')}
+        </div>
+      </details>` : '';
+    return `
+      <article class="product-card">
+        <div class="product-image">${image}<span>${escapeHtml(category)}</span></div>
+        <div class="product-copy">
+          <small>${escapeHtml(product.sku || 'Prodotto ODR')}</small>
+          <h3>${escapeHtml(product.name)}</h3>
+          ${bundleItems.length ? `<button type="button" class="product-expand-button" data-product-expand="${product.id}">Espandi scheda</button>` : ''}
+          ${bundleDetails}
+          ${packageMaterials}
+          <div class="${priceClass}">${regular}<strong>${productPrice(product)}</strong></div>
+          <div class="product-actions product-actions-with-quantity">
+            <span class="stock ${product.inStock ? 'ok' : 'off'}">${product.inStock ? 'Disponibile' : 'Esaurito'}</span>
+            ${product.inStock
+    ? `<div class="product-quantity" aria-label="Quantità ${escapeHtml(product.name)}">
+        <button type="button" data-product-quantity="decrease" data-product-id="${product.id}" ${cartQuantity < 1 ? 'disabled' : ''} aria-label="Riduci quantità">−</button>
+        <span>${cartQuantity}</span>
+        <button type="button" data-product-quantity="increase" data-product-id="${product.id}" aria-label="Aumenta quantità">+</button>
+      </div>`
+    : `<a href="${escapeHtml(product.permalink)}" data-shop-destination="${escapeHtml(product.permalink)}">Dettagli</a>`}
+          </div>
+        </div>
+      </article>
+    `;
+  }).join('');
+
+  byId('shop-message').classList.toggle('hidden', products.length > 0);
+  if (!products.length) byId('shop-message').textContent = 'Nessun prodotto corrisponde ai filtri.';
+}
+
+async function loadPackageDocuments() {
+  if (!supabase || !['admin', 'agent', 'distributor'].includes(currentUser?.role)) {
+    packageDocuments = [];
+    return;
+  }
+  const { data, error } = await supabase
+    .from('package_documents')
+    .select('id,product_id,title,file_name,file_size,storage_path,created_at')
+    .order('created_at', { ascending: true });
+  if (error) throw error;
+  packageDocuments = data || [];
+}
+
+function safePdfName(name) {
+  const normalized = String(name || 'documento.pdf')
+    .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^a-zA-Z0-9._-]+/g, '-')
+    .replace(/-+/g, '-');
+  return normalized.toLowerCase().endsWith('.pdf') ? normalized : `${normalized}.pdf`;
+}
+
+async function uploadPackageDocument(form) {
+  if (currentUser?.role !== 'admin' || !supabase) return;
+  const productId = Number(form.dataset.packageDocumentForm);
+  const file = form.elements.pdf.files?.[0];
+  const title = form.elements.title.value.trim();
+  const message = form.querySelector('[data-package-document-message]');
+  if (!file || !title) return;
+  if (file.type !== 'application/pdf' && !file.name.toLowerCase().endsWith('.pdf')) {
+    message.textContent = 'Seleziona un file PDF valido.';
+    return;
+  }
+  if (file.size > 20 * 1024 * 1024) {
+    message.textContent = 'Il PDF non può superare 20 MB.';
+    return;
+  }
+  const button = form.querySelector('button[type="submit"]');
+  button.disabled = true;
+  message.textContent = 'Caricamento in corso...';
+  const uniqueId = globalThis.crypto?.randomUUID?.() || `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+  const storagePath = `${productId}/${uniqueId}-${safePdfName(file.name)}`;
+  try {
+    const { error: uploadError } = await supabase.storage
+      .from('package-documents')
+      .upload(storagePath, file, { contentType: 'application/pdf', upsert: false });
+    if (uploadError) throw uploadError;
+    const { data: userData } = await supabase.auth.getUser();
+    const { error: insertError } = await supabase.from('package_documents').insert({
+      product_id: productId,
+      title,
+      file_name: file.name,
+      file_size: file.size,
+      storage_path: storagePath,
+      created_by: userData.user?.id,
+    });
+    if (insertError) {
+      await supabase.storage.from('package-documents').remove([storagePath]);
+      throw insertError;
+    }
+    await loadPackageDocuments();
+    renderShopProducts();
+  } catch (error) {
+    message.textContent = error.message || 'Caricamento non riuscito.';
+    button.disabled = false;
+  }
+}
+
+async function downloadPackageDocument(documentId, trigger) {
+  const packageDocument = packageDocuments.find((entry) => entry.id === documentId);
+  if (!packageDocument || !supabase) return;
+  const original = trigger.textContent;
+  trigger.disabled = true;
+  trigger.textContent = 'Apro...';
+  try {
+    const { data, error } = await supabase.storage.from('package-documents').download(packageDocument.storage_path);
+    if (error) throw error;
+    const url = URL.createObjectURL(data);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = packageDocument.file_name || `${packageDocument.title}.pdf`;
+    link.click();
+    window.setTimeout(() => URL.revokeObjectURL(url), 30000);
+  } catch (error) {
+    window.alert(error.message || 'Download non riuscito.');
+  } finally {
+    trigger.disabled = false;
+    trigger.textContent = original;
+  }
+}
+
+async function deletePackageDocument(documentId) {
+  if (currentUser?.role !== 'admin' || !supabase) return;
+  const document = packageDocuments.find((entry) => entry.id === documentId);
+  if (!document || !window.confirm(`Eliminare il PDF “${document.title}”?`)) return;
+  const { error: storageError } = await supabase.storage.from('package-documents').remove([document.storage_path]);
+  if (storageError) return window.alert(storageError.message || 'Eliminazione del file non riuscita.');
+  const { error } = await supabase.from('package_documents').delete().eq('id', document.id);
+  if (error) return window.alert(error.message || 'Eliminazione non riuscita.');
+  await loadPackageDocuments();
+  renderShopProducts();
+}
+
+const marketingAudienceRoles = {
+  all: ['agent', 'distributor', 'center', 'patient'],
+  agent: ['agent'],
+  distributor: ['distributor'],
+  center: ['center'],
+};
+
+function marketingAudienceLabel(roles = []) {
+  if (marketingAudienceRoles.all.every((role) => roles.includes(role))) return 'Tutti gli account';
+  if (roles.length === 1) return {
+    agent: 'Solo agenti',
+    distributor: 'Solo distributori',
+    center: 'Solo centri benessere',
+    patient: 'Solo pazienti',
+  }[roles[0]] || roleLabels[roles[0]] || roles[0];
+  return roles.map((role) => roleLabels[role] || role).join(', ');
+}
+
+function renderMarketingMaterials() {
+  const container = byId('marketing-list');
+  const message = byId('marketing-message');
+  if (!container || !message) return;
+  message.classList.toggle('hidden', marketingMaterials.length > 0);
+  message.textContent = marketingMaterials.length ? '' : 'Nessun materiale disponibile per il tuo profilo.';
+  container.innerHTML = marketingMaterials.map((material) => `
+    <article class="marketing-card">
+      <div class="marketing-card-icon">PDF</div>
+      <div class="marketing-card-copy">
+        <div class="marketing-card-head">
+          <div>
+            <span class="marketing-audience">${escapeHtml(marketingAudienceLabel(material.audience_roles || []))}</span>
+            <h3>${escapeHtml(material.title)}</h3>
+          </div>
+          <small>${new Date(material.created_at).toLocaleDateString('it-IT')}</small>
+        </div>
+        ${material.description ? `<p>${escapeHtml(material.description)}</p>` : ''}
+        <small>${escapeHtml(material.file_name)} · ${Math.max(1, Math.round((Number(material.file_size) || 0) / 1024))} KB</small>
+        <div class="marketing-card-actions">
+          <button class="secondary-action" type="button" data-marketing-download="${material.id}">Scarica</button>
+          <button class="secondary-action" type="button" data-marketing-share="${material.id}">Condividi</button>
+          ${currentUser?.role === 'admin' ? `<button class="danger-action" type="button" data-marketing-delete="${material.id}">Elimina</button>` : ''}
+        </div>
+      </div>
+    </article>
+  `).join('');
+}
+
+async function loadMarketingMaterials() {
+  if (!supabase || !currentUser) return;
+  const { data, error } = await supabase
+    .from('marketing_materials')
+    .select('id,title,description,file_name,file_size,storage_path,audience_roles,created_at')
+    .order('created_at', { ascending: false });
+  if (error) {
+    byId('marketing-message').classList.remove('hidden');
+    byId('marketing-message').textContent = 'Non è stato possibile caricare il materiale marketing.';
+    return;
+  }
+  marketingMaterials = data || [];
+  renderMarketingMaterials();
+}
+
+async function uploadMarketingMaterial(event) {
+  event.preventDefault();
+  if (currentUser?.role !== 'admin' || !supabase) return;
+  const form = event.currentTarget;
+  const file = form.elements.pdf.files?.[0];
+  const title = form.elements.title.value.trim();
+  const description = form.elements.description.value.trim();
+  const roles = marketingAudienceRoles[form.elements.audience.value] || marketingAudienceRoles.all;
+  const message = byId('marketing-upload-message');
+  if (!file || !title) return;
+  if (file.type !== 'application/pdf' && !file.name.toLowerCase().endsWith('.pdf')) {
+    message.textContent = 'Seleziona un file PDF valido.';
+    return;
+  }
+  if (file.size > 20 * 1024 * 1024) {
+    message.textContent = 'Il PDF non può superare 20 MB.';
+    return;
+  }
+  const button = form.querySelector('button[type="submit"]');
+  button.disabled = true;
+  message.textContent = 'Caricamento in corso...';
+  const uniqueId = globalThis.crypto?.randomUUID?.() || `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+  const storagePath = `${new Date().getFullYear()}/${uniqueId}-${safePdfName(file.name)}`;
+  try {
+    const { error: uploadError } = await supabase.storage
+      .from('marketing-materials')
+      .upload(storagePath, file, { contentType: 'application/pdf', upsert: false });
+    if (uploadError) throw uploadError;
+    const { data: userData } = await supabase.auth.getUser();
+    const { error: insertError } = await supabase.from('marketing_materials').insert({
+      title,
+      description: description || null,
+      file_name: file.name,
+      file_size: file.size,
+      storage_path: storagePath,
+      audience_roles: roles,
+      created_by: userData.user?.id,
+    });
+    if (insertError) {
+      await supabase.storage.from('marketing-materials').remove([storagePath]);
+      throw insertError;
+    }
+    form.reset();
+    message.textContent = 'Materiale caricato correttamente.';
+    await loadMarketingMaterials();
+  } catch (error) {
+    message.textContent = error.message || 'Caricamento non riuscito.';
+  } finally {
+    button.disabled = false;
+  }
+}
+
+async function marketingMaterialBlob(material) {
+  const { data, error } = await supabase.storage.from('marketing-materials').download(material.storage_path);
+  if (error) throw error;
+  return data;
+}
+
+async function downloadMarketingMaterial(materialId, trigger) {
+  const material = marketingMaterials.find((entry) => entry.id === materialId);
+  if (!material || !supabase) return;
+  const original = trigger.textContent;
+  trigger.disabled = true;
+  trigger.textContent = 'Scarico...';
+  try {
+    const blob = await marketingMaterialBlob(material);
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = material.file_name || `${material.title}.pdf`;
+    link.click();
+    window.setTimeout(() => URL.revokeObjectURL(url), 30000);
+  } catch (error) {
+    window.alert(error.message || 'Download non riuscito.');
+  } finally {
+    trigger.disabled = false;
+    trigger.textContent = original;
+  }
+}
+
+async function shareMarketingMaterial(materialId, trigger) {
+  const material = marketingMaterials.find((entry) => entry.id === materialId);
+  if (!material || !supabase) return;
+  const original = trigger.textContent;
+  trigger.disabled = true;
+  trigger.textContent = 'Preparo...';
+  try {
+    const blob = await marketingMaterialBlob(material);
+    const file = new File([blob], material.file_name || `${material.title}.pdf`, { type: 'application/pdf' });
+    if (navigator.share && (!navigator.canShare || navigator.canShare({ files: [file] }))) {
+      await navigator.share({ title: material.title, text: material.description || material.title, files: [file] });
+      return;
+    }
+    const { data, error } = await supabase.storage.from('marketing-materials').createSignedUrl(material.storage_path, 600);
+    if (error) throw error;
+    if (navigator.share) await navigator.share({ title: material.title, text: material.description || material.title, url: data.signedUrl });
+    else {
+      await navigator.clipboard.writeText(data.signedUrl);
+      window.alert('Link valido per 10 minuti copiato negli appunti.');
+    }
+  } catch (error) {
+    if (error?.name !== 'AbortError') window.alert(error.message || 'Condivisione non riuscita.');
+  } finally {
+    trigger.disabled = false;
+    trigger.textContent = original;
+  }
+}
+
+async function deleteMarketingMaterial(materialId) {
+  if (currentUser?.role !== 'admin' || !supabase) return;
+  const material = marketingMaterials.find((entry) => entry.id === materialId);
+  if (!material || !window.confirm(`Eliminare il materiale “${material.title}”?`)) return;
+  const { error: storageError } = await supabase.storage.from('marketing-materials').remove([material.storage_path]);
+  if (storageError) return window.alert(storageError.message || 'Eliminazione del file non riuscita.');
+  const { error } = await supabase.from('marketing_materials').delete().eq('id', material.id);
+  if (error) return window.alert(error.message || 'Eliminazione non riuscita.');
+  await loadMarketingMaterials();
+}
+
+async function openWooSession(destination, trigger, items = [], coupon = '', options = {}) {
+  if (shopOpening || !supabase) return;
+  shopOpening = true;
+  const originalText = trigger?.textContent;
+  if (trigger) {
+    trigger.classList.add('loading');
+    trigger.textContent = items.length ? 'Pagamento...' : 'Apertura...';
+  }
+
+  try {
+    const { data } = await supabase.auth.getSession();
+    const token = data.session?.access_token;
+    if (!token) throw new Error('Sessione ODR scaduta');
+    if (currentUser?.role === 'agent' && options.checkout && !selectedAgentCustomer) {
+      showRoute('agent-customers', { push: true });
+      throw new Error('Seleziona prima il cliente per cui stai effettuando l’ordine');
+    }
+    const agentCheckout = options.checkout && (currentUser?.role === 'agent' || (currentUser?.role === 'distributor' && Boolean(selectedAgentCustomer)));
+    const response = await fetch(agentCheckout ? '/api/agent-order' : '/api/shop-session', {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${token}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        redirect: destination,
+        items,
+        coupon,
+        address: options.address || null,
+        checkout: Boolean(options.checkout),
+        customerId: selectedAgentCustomer?.id || null,
+      }),
+    });
+    const payload = await response.json();
+    const targetUrl = agentCheckout ? payload.paymentUrl : payload.url;
+    if (!response.ok || !targetUrl) throw new Error(payload.error || 'Accesso allo shop non riuscito');
+    if (items.length) {
+      shopCart = [];
+      saveShopCart();
+    }
+    window.location.assign(targetUrl);
+  } catch (error) {
+    byId('shop-message').classList.remove('hidden');
+    byId('shop-message').textContent = `${error.message}. Riprova tra qualche secondo.`;
+    shopOpening = false;
+    if (trigger) {
+      trigger.classList.remove('loading');
+      trigger.textContent = originalText;
+    }
+  }
+}
+
+function renderShopCategories() {
+  const categories = new Map();
+  shopProducts.forEach((product) => product.categories.forEach((category) => {
+    categories.set(category.slug, category.name);
+  }));
+
+  const categoryKey = ([slug, name]) => `${slug} ${name}`
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^a-z0-9]/g, '');
+  const categoryRank = (category) => {
+    const key = categoryKey(category);
+    if (key.includes('facebody')) return 2;
+    if (key.includes('face')) return 0;
+    if (key.includes('body')) return 1;
+    if (key.includes('hair')) return 3;
+    if (key.includes('lash')) return 4;
+    if (key.includes('fir')) return 5;
+    return 6;
+  };
+  const orderedCategories = [...categories.entries()]
+    .filter((category) => !categoryKey(category).includes('promo'))
+    .sort((a, b) => {
+    const rankDifference = categoryRank(a) - categoryRank(b);
+    return rankDifference || a[1].localeCompare(b[1], 'it');
+    });
+
+  byId('shop-categories').innerHTML = [
+    '<option value="promo">TUTTE LE PROMO</option>',
+    ...orderedCategories.map(([slug, name]) => (
+      `<option value="${escapeHtml(slug)}">${escapeHtml(name).toUpperCase()}</option>`
+    )),
+    '<option value="all">TUTTI I PRODOTTI</option>',
+  ].join('');
+  byId('shop-categories').value = shopCategory;
+}
+
+async function loadShop() {
+  if (!supabase || !currentUser) return;
+  byId('shop-message').classList.remove('hidden');
+  byId('shop-message').textContent = 'Aggiornamento catalogo e listino in corso...';
+  byId('shop-products').innerHTML = '';
+  const { data: sessionData } = await supabase.auth.getSession();
+  const token = sessionData.session?.access_token;
+  if (!token) return;
+
+  try {
+    const response = await fetch(`/api/catalog?refresh=${Date.now()}`, {
+      headers: { Authorization: `Bearer ${token}` },
+      cache: 'no-store',
+    });
+    const payload = await response.json();
+    if (!response.ok) throw new Error(payload.error || 'Catalogo non disponibile');
+    shopProducts = payload.products || [];
+    await loadPackageDocuments();
+    shopCategory = 'all';
+    loadShopCart();
+    if (validatedCode?.woo_coupon && !shopCoupon) {
+      shopCoupon = validatedCode.woo_coupon;
+      byId('shop-coupon').value = shopCoupon;
+    }
+    renderShopCategories();
+    renderShopProducts();
+    renderShopCart();
+    renderAdminDashboard();
+    loadShopAddress();
+    if (shopCoupon && shopCart.length) applyShopCoupon({ silent: true });
+    byId('shop-intro').textContent =
+      `${shopProducts.length} prodotti disponibili per il profilo ${roleLabels[currentUser.role] || currentUser.role}.`;
+  } catch (error) {
+    byId('shop-message').textContent = error.message || 'Catalogo temporaneamente non disponibile.';
+  }
+}
+
+async function applyShopCoupon(options = {}) {
+  const code = byId('shop-coupon').value.trim();
+  const message = byId('shop-coupon-message');
+  if (!shopCart.length) {
+    message.textContent = 'Aggiungi almeno un prodotto prima di applicare il codice.';
+    return false;
+  }
+  const button = byId('shop-apply-coupon');
+  button.disabled = true;
+  if (!options.silent) message.textContent = code ? 'Verifica del codice in corso...' : 'Aggiornamento del totale...';
+  try {
+    const { data } = await supabase.auth.getSession();
+    const token = data.session?.access_token;
+    if (!token) throw new Error('Sessione ODR scaduta');
+    const response = await fetch('/api/cart-quote', {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${token}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        items: shopCart.map(({ productId, quantity }) => ({ productId, quantity })),
+        coupon: code,
+      }),
+    });
+    const payload = await response.json();
+    if (!response.ok) throw new Error(payload.error || 'Codice non applicabile');
+    shopCoupon = payload.coupon?.code || '';
+    shopQuote = payload;
+    byId('shop-coupon').value = shopCoupon;
+    message.className = shopCoupon ? 'success-text' : '';
+    message.textContent = shopCoupon
+      ? `Codice ${shopCoupon.toUpperCase()} applicato${payload.coupon?.description ? ` · ${payload.coupon.description}` : ''}.`
+      : 'Totale aggiornato. Nessun codice promozionale applicato.';
+    renderShopCart();
+    return true;
+  } catch (error) {
+    shopCoupon = '';
+    shopQuote = null;
+    message.className = 'error-text';
+    message.textContent = error.message;
+    renderShopCart();
+    return false;
+  } finally {
+    button.disabled = false;
+  }
+}
+
+function updateMetrics() {
+  const revenue = reportOrders.reduce((sum, order) => sum + dashboardOrderTaxable(order), 0);
+  byId('metric-revenue-gross').textContent = `Totale lordo ${money(reportOrders.reduce((sum, order) => sum + Number(order.amount || 0), 0))}`;
+  byId('metric-revenue').textContent = money(revenue);
+  byId('metric-codes').textContent = validationCodes.filter((code) => code.active).length;
+  byId('metric-network').textContent = networkRows.filter((row) => row.active).length;
+  byId('metric-role').textContent = roleLabels[byId('role').value] || 'Utente';
+  byId('metric-email').textContent = byId('account-email').value;
+  byId('wp-base-url').textContent = config.wooBaseUrl;
+}
+
+function renderCodes() {
+  if (!validationCodes.length) {
+    byId('code-list').innerHTML = '<div class="empty-box">Nessuna convenzione disponibile.</div>';
+    return;
+  }
+  byId('code-list').innerHTML = validationCodes
+    .map((code) => `
+      <div class="list-row">
+        <div>
+          <strong>${code.code}</strong>
+          <span>${escapeHtml(code.label)}${code.hospital ? ` · ${escapeHtml(code.hospital)}` : ''}</span>
+        </div>
+        <em class="state ${code.active ? 'ok' : 'off'}">${code.active ? 'Attivo' : 'Spento'}</em>
+      </div>
+    `)
+    .join('');
+}
+
+function renderPromotions() {
+  byId('promotion-message').classList.toggle('hidden', promotions.length > 0);
+  if (!promotions.length) {
+    byId('promotion-list').innerHTML = '';
+    return;
+  }
+  byId('promotion-list').innerHTML = promotions
+    .map((promo) => `
+      <article class="promo-card">
+        <div>
+          <span>${escapeHtml(promo.discountType === 'percent' ? 'Sconto percentuale' : 'Sconto sul carrello')}</span>
+          <h3>${escapeHtml(promo.code)}</h3>
+        </div>
+        <strong>${escapeHtml(promo.code)}</strong>
+        <p>${escapeHtml(promo.description || `${promo.discountType}: ${promo.amount}`)}</p>
+        <div class="promo-meta">
+          <span>${escapeHtml(promo.discountType === 'percent' ? `${promo.amount}%` : money(Number(promo.amount) || 0))}</span>
+          <span>${promo.usageCount || 0}${promo.usageLimit ? ` / ${promo.usageLimit}` : ''} utilizzi</span>
+          <span>${promo.expiresAt ? `Scade ${codeDate(promo.expiresAt)}` : 'Nessuna scadenza'}</span>
+        </div>
+        <div class="promo-actions">
+          <em class="state ${promo.expired ? 'off' : 'ok'}">${promo.expired ? 'Scaduto' : 'Attivo'}</em>
+          <button type="button" data-promotion-edit="${promo.id}">Modifica</button>
+        </div>
+      </article>
+    `)
+    .join('');
+}
+
+function codeDate(value) {
+  return value ? new Date(value).toLocaleDateString('it-IT') : 'Nessuna';
+}
+
+function renderAdminCodes() {
+  byId('admin-code-table').innerHTML = validationCodes.map((code) => `
+    <tr>
+      <td data-label="Codice"><strong>${escapeHtml(code.code)}</strong></td>
+      <td data-label="Convenzione">${escapeHtml(code.label)}${code.hospital ? `<br><small>${escapeHtml(code.hospital)}</small>` : ''}</td>
+      <td data-label="Coupon">${escapeHtml(code.woo_coupon)}</td>
+      <td data-label="Profilo">${escapeHtml(roleLabels[code.audience_role] || 'Tutti')}</td>
+      <td data-label="Utilizzi">${code.current_uses}${code.max_uses ? ` / ${code.max_uses}` : ''}</td>
+      <td data-label="Scadenza">${codeDate(code.ends_at)}</td>
+      <td data-label="Stato"><span class="state ${code.active ? 'ok' : 'off'}">${code.active ? 'Attivo' : 'Spento'}</span></td>
+      <td data-label="Azioni">
+        <div class="user-actions">
+          <button type="button" data-code-edit="${code.id}">Modifica</button>
+          <button type="button" data-code-toggle="${code.id}" data-code-active="${code.active ? 'false' : 'true'}">
+            ${code.active ? 'Disattiva' : 'Attiva'}
+          </button>
+        </div>
+      </td>
+    </tr>
+  `).join('');
+  byId('code-validation-history').innerHTML = codeValidations.length
+    ? codeValidations.map((entry) => {
+      const profile = entry.profiles || {};
+      return `<div class="list-row">
+        <div><strong>${escapeHtml(entry.code)}</strong><span>${escapeHtml(profile.full_name || profile.email || 'Utente')}</span></div>
+        <div><span class="state ${entry.valid ? 'ok' : 'off'}">${entry.valid ? 'Valido' : escapeHtml(entry.failure_reason || 'Rifiutato')}</span><small>${codeDate(entry.created_at)}</small></div>
+      </div>`;
+    }).join('')
+    : '<div class="empty-box">Nessuna validazione registrata.</div>';
+}
+
+function resetCodeForm() {
+  byId('code-admin-form').reset();
+  byId('admin-code-id').value = '';
+  byId('admin-code-active').checked = true;
+  byId('code-admin-form').classList.add('hidden');
+}
+
+function openCodeForm(code = null) {
+  byId('code-admin-form').classList.remove('hidden');
+  byId('admin-code-id').value = code?.id || '';
+  byId('admin-code-value').value = code?.code || `ODR-${Math.random().toString(36).slice(2, 8).toUpperCase()}`;
+  byId('admin-code-label').value = code?.label || '';
+  byId('admin-code-hospital').value = code?.hospital || '';
+  byId('admin-code-discount').value = code?.discount_label || '';
+  byId('admin-code-coupon').value = code?.woo_coupon || '';
+  byId('admin-code-audience').value = code?.audience_role || '';
+  byId('admin-code-start').value = code?.starts_at ? code.starts_at.slice(0, 16) : '';
+  byId('admin-code-end').value = code?.ends_at ? code.ends_at.slice(0, 16) : '';
+  byId('admin-code-max').value = code?.max_uses || '';
+  byId('admin-code-active').checked = code?.active ?? true;
+  byId('admin-code-value').focus();
+}
+
+async function loadWooCoupons() {
+  const { data } = await supabase.auth.getSession();
+  const response = await fetch('/api/coupons', {
+    headers: { Authorization: `Bearer ${data.session?.access_token || ''}` },
+  });
+  const payload = await response.json();
+  if (!response.ok) throw new Error(payload.error || 'Coupon non disponibili');
+  promotions = (payload.coupons || []).map((coupon) => ({
+    ...coupon,
+    expired: coupon.expiresAt ? Date.parse(coupon.expiresAt) < Date.now() : false,
+  }));
+  byId('admin-code-coupon').innerHTML = [
+    '<option value="">Seleziona un coupon</option>',
+    ...promotions.map((coupon) => `<option value="${escapeHtml(coupon.code)}">${escapeHtml(coupon.code)} · ${escapeHtml(coupon.amount)}</option>`),
+  ].join('');
+  renderPromotions();
+}
+
+function openPromotionForm(coupon = null) {
+  byId('promotion-form').classList.remove('hidden');
+  byId('promotion-id').value = coupon?.id || '';
+  byId('promotion-code').value = coupon?.code || '';
+  byId('promotion-code').readOnly = Boolean(coupon?.id);
+  byId('promotion-type').value = coupon?.discountType || 'percent';
+  byId('promotion-amount').value = coupon?.amount || '';
+  byId('promotion-expires').value = coupon?.expiresAt ? coupon.expiresAt.slice(0, 10) : '';
+  byId('promotion-usage-limit').value = coupon?.usageLimit || '';
+  byId('promotion-user-limit').value = coupon?.usageLimitPerUser || '';
+  byId('promotion-minimum').value = coupon?.minimumAmount || '';
+  byId('promotion-maximum').value = coupon?.maximumAmount || '';
+  byId('promotion-description').value = coupon?.description || '';
+  byId('promotion-individual').checked = Boolean(coupon?.individualUse);
+  byId('promotion-free-shipping').checked = Boolean(coupon?.freeShipping);
+  byId('promotion-exclude-sale').checked = Boolean(coupon?.excludeSaleItems);
+  byId('promotion-code').focus();
+}
+
+function closePromotionForm() {
+  byId('promotion-form').reset();
+  byId('promotion-id').value = '';
+  byId('promotion-form').classList.add('hidden');
+}
+
+async function savePromotion(event) {
+  event.preventDefault();
+  const button = event.submitter;
+  if (button) button.disabled = true;
+  byId('promotion-message').textContent = 'Salvataggio coupon in WooCommerce...';
+  const id = byId('promotion-id').value;
+  const { data } = await supabase.auth.getSession();
+  const response = await fetch('/api/coupons', {
+    method: id ? 'PATCH' : 'POST',
+    headers: {
+      Authorization: `Bearer ${data.session?.access_token || ''}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      id: id || undefined,
+      code: byId('promotion-code').value,
+      discountType: byId('promotion-type').value,
+      amount: byId('promotion-amount').value,
+      expiresAt: byId('promotion-expires').value || null,
+      usageLimit: byId('promotion-usage-limit').value || null,
+      usageLimitPerUser: byId('promotion-user-limit').value || null,
+      minimumAmount: byId('promotion-minimum').value,
+      maximumAmount: byId('promotion-maximum').value,
+      description: byId('promotion-description').value,
+      individualUse: byId('promotion-individual').checked,
+      freeShipping: byId('promotion-free-shipping').checked,
+      excludeSaleItems: byId('promotion-exclude-sale').checked,
+    }),
+  });
+  const payload = await response.json();
+  if (button) button.disabled = false;
+  if (!response.ok) {
+    byId('promotion-message').textContent = payload.error || 'Salvataggio non riuscito.';
+    return;
+  }
+  closePromotionForm();
+  await loadWooCoupons();
+  byId('promotion-message').textContent = id ? 'Coupon aggiornato.' : 'Coupon creato.';
+}
+
+function handlePromotionAction(event) {
+  const button = event.target.closest('[data-promotion-edit]');
+  if (!button) return;
+  openPromotionForm(promotions.find((coupon) => String(coupon.id) === button.dataset.promotionEdit));
+}
+
+async function loadWooOrders() {
+  byId('report-message').textContent = 'Aggiornamento ordini WooCommerce...';
+  const { data } = await supabase.auth.getSession();
+  const response = await fetch('/api/orders', {
+    headers: { Authorization: `Bearer ${data.session?.access_token || ''}` },
+  });
+  const payload = await response.json();
+  if (!response.ok) {
+    byId('report-message').textContent = payload.error || 'Report temporaneamente non disponibile.';
+    return false;
+  }
+  reportOrders = payload.orders || [];
+  orderAssignmentOptions = payload.assignmentOptions || [];
+  renderOrders();
+  renderNetwork();
+  updateMetrics();
+  renderAdminDashboard();
+  byId('report-message').textContent = `${reportOrders.length} ordini WooCommerce caricati. ${(payload.warnings || []).join(' ')}`;
+  return true;
+}
+
+async function loadPromoCodes() {
+  const { data, error } = await supabase.functions.invoke('promo-codes', { method: 'GET' });
+  if (error || data?.error) {
+    byId('code-admin-message').textContent = data?.error || 'Codici non disponibili.';
+    return;
+  }
+  validationCodes = data.codes || [];
+  codeValidations = data.validations || [];
+  renderCodes();
+  if (currentUser?.role === 'admin') {
+    renderAdminCodes();
+    byId('code-admin-message').textContent = `${validationCodes.length} codici ODR configurati.`;
+  }
+}
+
+async function loadActivePromoCode() {
+  const { data: sessionData } = await supabase.auth.getSession();
+  const response = await fetch(`${config.supabaseUrl}/functions/v1/promo-codes?view=active`, {
+    headers: {
+      apikey: config.supabasePublishableKey,
+      Authorization: `Bearer ${sessionData.session?.access_token || ''}`,
+    },
+  });
+  const payload = response.ok ? await response.json() : {};
+  if (payload.activeCode) {
+    validatedCode = payload.activeCode;
+    byId('code-result').className = 'success-box';
+    byId('code-result').innerHTML = `<div><strong>${escapeHtml(validatedCode.label)}</strong><span>${escapeHtml(validatedCode.discount_label || 'Convenzione attiva')}</span></div>`;
+    if (!shopCoupon && validatedCode.woo_coupon) {
+      shopCoupon = validatedCode.woo_coupon;
+      byId('shop-coupon').value = shopCoupon;
+      if (shopCart.length) applyShopCoupon({ silent: true });
+    }
+  }
+}
+
+async function saveAdminCode(event) {
+  event.preventDefault();
+  const button = event.submitter;
+  if (button) button.disabled = true;
+  const body = {
+    action: 'save',
+    id: byId('admin-code-id').value || null,
+    code: byId('admin-code-value').value,
+    label: byId('admin-code-label').value,
+    hospital: byId('admin-code-hospital').value,
+    discountLabel: byId('admin-code-discount').value,
+    wooCoupon: byId('admin-code-coupon').value,
+    audienceRole: byId('admin-code-audience').value || null,
+    startsAt: byId('admin-code-start').value ? new Date(byId('admin-code-start').value).toISOString() : null,
+    endsAt: byId('admin-code-end').value ? new Date(byId('admin-code-end').value).toISOString() : null,
+    maxUses: byId('admin-code-max').value || null,
+    active: byId('admin-code-active').checked,
+  };
+  const { data, error } = await supabase.functions.invoke('promo-codes', { method: 'POST', body });
+  if (button) button.disabled = false;
+  if (error || data?.error) {
+    byId('code-admin-message').textContent = data?.error || 'Salvataggio non riuscito.';
+    return;
+  }
+  resetCodeForm();
+  await loadPromoCodes();
+}
+
+async function handleCodeAdminAction(event) {
+  const edit = event.target.closest('[data-code-edit]');
+  if (edit) {
+    openCodeForm(validationCodes.find((code) => code.id === edit.dataset.codeEdit));
+    return;
+  }
+  const toggle = event.target.closest('[data-code-toggle]');
+  if (!toggle) return;
+  toggle.disabled = true;
+  const { data, error } = await supabase.functions.invoke('promo-codes', {
+    method: 'POST',
+    body: { action: 'toggle', id: toggle.dataset.codeToggle, active: toggle.dataset.codeActive === 'true' },
+  });
+  if (error || data?.error) byId('code-admin-message').textContent = data?.error || 'Aggiornamento non riuscito.';
+  await loadPromoCodes();
+}
+
+function renderNetwork() {
+  const query = byId('network-search').value.trim().toLowerCase();
+  const rows = networkRows.filter((row) => {
+    if (!query) return true;
+    return [row.type, row.name, row.email, row.phone, row.area, row.parentName, row.accountName]
+      .filter(Boolean)
+      .join(' ')
+      .toLowerCase()
+      .includes(query);
+  });
+
+  byId('network-table').innerHTML = rows
+    .map((row) => {
+      const agentOrders = row.type === 'agent' ? reportOrders.filter((order) => order.agentEntityId === row.id) : [];
+      const paidAgentOrders = agentOrders
+        .filter((order) => order.paymentStatus === 'paid' && !['cancelled', 'failed', 'refunded'].includes(order.status));
+      const agentRevenue = paidAgentOrders.reduce((sum, order) => sum + dashboardOrderTaxable(order), 0);
+      const agentGross = paidAgentOrders.reduce((sum, order) => sum + Number(order.amount || 0), 0);
+      const agentEarnings = agentOrders.reduce((sum, order) => sum + (order.agentEarning || 0), 0);
+      return `
+      <tr>
+        <td data-label="Tipo">${escapeHtml(roleLabels[row.type] || row.type)}</td>
+        <td data-label="Nome"><strong>${escapeHtml(row.name)}</strong>${row.external_code ? `<br><small>${escapeHtml(row.external_code)}</small>` : ''}</td>
+        <td data-label="Zona">${escapeHtml(row.area || '-')}</td>
+        <td data-label="Collegato a">${escapeHtml(row.parentName || '-')}</td>
+        <td data-label="Provvigione">${row.type === 'agent' ? `${(Number(row.commission_rate || 0) * 100).toLocaleString('it-IT', { maximumFractionDigits: 2 })}%` : '-'}</td>
+        <td data-label="Imponibile">${row.type === 'agent' ? `<strong>${money(agentRevenue)}</strong><br><small>Totale lordo ${money(agentGross)} · ${agentOrders.length} ordini</small>` : '-'}</td>
+        <td data-label="Guadagno agente">${row.type === 'agent' ? `<strong>${money(agentEarnings)}</strong>` : '-'}</td>
+        <td data-label="Contatto">${escapeHtml(row.email || row.phone || '-')}</td>
+        <td data-label="Account ODR">${escapeHtml(row.accountName || 'Non collegato')}</td>
+        <td data-label="Ultimo accesso">${['agent', 'distributor'].includes(row.type)
+          ? (row.accountId ? escapeHtml(formatLastAccess(row.accountLastSignIn)) : 'Account non collegato')
+          : '-'}</td>
+        <td data-label="Stato"><span class="state ${row.active ? 'ok' : 'off'}">${row.active ? 'Attivo' : 'Spento'}</span></td>
+        <td data-label="Azioni">${canManageNetwork ? `<div class="user-actions">
+          ${currentUser?.role === 'admin' && row.active && ['agent', 'distributor'].includes(row.type) ? `<button type="button" data-network-dashboard="${row.id}">Vedi dashboard</button>` : ''}
+          <button type="button" data-network-edit="${row.id}">Modifica</button>
+          <button type="button" data-network-toggle="${row.id}" data-network-active="${row.active ? 'false' : 'true'}">${row.active ? 'Disattiva' : 'Attiva'}</button>
+        </div>` : '-'}</td>
+      </tr>
+    `; })
+    .join('');
+}
+
+function normalizeNetworkRows(entities = [], accounts = []) {
+  const byEntity = new Map(entities.map((entity) => [entity.id, entity]));
+  const accountByEntity = new Map(accounts
+    .filter((account) => account.network_entity_id)
+    .map((account) => [account.network_entity_id, account]));
+  return entities.map((entity) => {
+    const account = accountByEntity.get(entity.id);
+    return {
+      ...entity,
+      parentName: byEntity.get(entity.parent_id)?.name || '',
+      accountId: account?.id || '',
+      accountName: account ? (account.full_name || account.email) : '',
+      accountLastSignIn: account?.last_sign_in_at || null,
+    };
+  });
+}
+
+async function loadNetwork() {
+  if (!supabase || !currentUser) return false;
+  byId('import-notice').textContent = 'Caricamento rete...';
+  const { data, error } = await supabase.functions.invoke('network-management', { method: 'GET' });
+  if (error || data?.error) {
+    byId('import-notice').textContent = data?.error || 'Rete non disponibile.';
+    return false;
+  }
+  networkAccounts = data.accounts || [];
+  canManageNetwork = Boolean(data.canManage);
+  networkRows = normalizeNetworkRows(data.entities || [], networkAccounts);
+  byId('network-admin-actions').classList.toggle('hidden', !canManageNetwork);
+  renderNetwork();
+  updateMetrics();
+  byId('import-notice').textContent = `${networkRows.length} elementi configurati.`;
+  return true;
+}
+
+function refreshNetworkFormOptions(selectedParent = '', selectedAccount = '') {
+  const type = byId('network-type').value;
+  const parentType = type === 'agent' ? 'distributor' : type === 'center' ? 'agent' : '';
+  byId('network-commission-label').classList.toggle('hidden', type !== 'agent');
+  const parents = networkRows.filter((row) => row.type === parentType && row.active);
+  byId('network-parent').disabled = !parentType;
+  byId('network-parent').required = Boolean(parentType);
+  byId('network-parent').innerHTML = [
+    `<option value="">${parentType ? 'Seleziona' : 'Nessun collegamento'}</option>`,
+    ...parents.map((row) => `<option value="${row.id}">${escapeHtml(row.name)}</option>`),
+  ].join('');
+  byId('network-parent').value = selectedParent;
+
+  const editingId = byId('network-id').value;
+  const accounts = networkAccounts.filter((account) =>
+    account.role === type && (!account.network_entity_id || account.network_entity_id === editingId));
+  byId('network-account').innerHTML = [
+    '<option value="">Nessun account</option>',
+    ...accounts.map((account) => `<option value="${account.id}">${escapeHtml(account.full_name || account.email)} · ${escapeHtml(account.email)}</option>`),
+  ].join('');
+  byId('network-account').value = selectedAccount;
+}
+
+function openNetworkForm(row = null) {
+  byId('network-form').classList.remove('hidden');
+  byId('network-id').value = row?.id || '';
+  byId('network-type').value = row?.type || 'distributor';
+  byId('network-name').value = row?.name || '';
+  byId('network-area').value = row?.area || '';
+  byId('network-email').value = row?.email || '';
+  byId('network-phone').value = row?.phone || '';
+  byId('network-external-code').value = row?.external_code || '';
+  byId('network-commission').value = row?.type === 'agent'
+    ? String(Number(row.commission_rate || 0.2) * 100)
+    : '20';
+  byId('network-active').checked = row?.active ?? true;
+  refreshNetworkFormOptions(row?.parent_id || '', row?.accountId || '');
+  byId('network-name').focus();
+}
+
+function closeNetworkForm() {
+  byId('network-form').reset();
+  byId('network-id').value = '';
+  byId('network-form').classList.add('hidden');
+}
+
+async function saveNetworkEntity(event) {
+  event.preventDefault();
+  const button = event.submitter;
+  if (button) button.disabled = true;
+  byId('import-notice').textContent = 'Salvataggio in corso...';
+  const { data, error } = await supabase.functions.invoke('network-management', {
+    method: 'POST',
+    body: {
+      action: 'save',
+      id: byId('network-id').value || null,
+      type: byId('network-type').value,
+      name: byId('network-name').value,
+      area: byId('network-area').value,
+      parentId: byId('network-parent').value || null,
+      email: byId('network-email').value,
+      phone: byId('network-phone').value,
+      externalCode: byId('network-external-code').value,
+      commissionRate: byId('network-type').value === 'agent'
+        ? Number(byId('network-commission').value || 0) / 100
+        : null,
+      accountId: byId('network-account').value || null,
+      active: byId('network-active').checked,
+    },
+  });
+  if (button) button.disabled = false;
+  if (error || data?.error) {
+    byId('import-notice').textContent = data?.error || 'Salvataggio non riuscito.';
+    return;
+  }
+  closeNetworkForm();
+  await loadNetwork();
+}
+
+async function handleNetworkAction(event) {
+  const dashboard = event.target.closest('[data-network-dashboard]');
+  if (dashboard && currentUser?.role === 'admin') {
+    selectDashboardProfile(dashboard.dataset.networkDashboard);
+    showRoute('dashboard');
+    return;
+  }
+  const edit = event.target.closest('[data-network-edit]');
+  if (edit) {
+    openNetworkForm(networkRows.find((row) => row.id === edit.dataset.networkEdit));
+    return;
+  }
+  const toggle = event.target.closest('[data-network-toggle]');
+  if (!toggle) return;
+  toggle.disabled = true;
+  const { data, error } = await supabase.functions.invoke('network-management', {
+    method: 'POST',
+    body: { action: 'toggle', id: toggle.dataset.networkToggle, active: toggle.dataset.networkActive === 'true' },
+  });
+  if (error || data?.error) byId('import-notice').textContent = data?.error || 'Aggiornamento non riuscito.';
+  await loadNetwork();
+}
+
+function orderAssignmentControl(order) {
+  if (currentUser?.role !== 'admin' || !/^WC-\d+$/.test(order.id)) return '';
+  const selected = order.assignmentMode === 'manual' ? order.assignmentEntityId : '';
+  const options = [...orderAssignmentOptions].sort((a,b)=>a.type.localeCompare(b.type)||a.name.localeCompare(b.name,'it'));
+  return `<div class="order-assignment">
+    <label for="assignment-${escapeHtml(order.id)}">Associa questo ordine</label>
+    <select id="assignment-${escapeHtml(order.id)}">
+      <option value="">Automatico da cliente / ordine</option>
+      ${selected && !options.some(item=>item.id===selected) ? `<option value="${escapeHtml(selected)}" selected>Assegnazione salvata non più attiva</option>` : ''}
+      ${options.map(item=>`<option value="${escapeHtml(item.id)}" ${selected===item.id?'selected':''}>${escapeHtml(roleLabels[item.type])} · ${escapeHtml(item.name)}</option>`).join('')}
+    </select>
+    <button type="button" data-save-assignment="${escapeHtml(order.id)}">Salva associazione</button>
+    <small>${order.assignmentConflict ? 'Associazione da verificare' : selected ? 'Assegnazione manuale salvata' : 'Associazione automatica'} · Solo questo ordine</small>
+    <span id="assignment-message-${escapeHtml(order.id)}" role="status"></span>
+  </div>`;
+}
+
+async function saveOrderAssignment(button) {
+  if (currentUser?.role !== 'admin') return;
+  const orderId = button.dataset.saveAssignment;
+  const select = byId(`assignment-${orderId}`);
+  const message = byId(`assignment-message-${orderId}`);
+  const entityId = select.value;
+  button.disabled = true; select.disabled = true;
+  message.textContent = 'Salvataggio...';
+  try {
+    const { data } = await supabase.auth.getSession();
+    const response = await fetch('/api/orders', {
+      method:'PATCH', headers:{Authorization:`Bearer ${data.session?.access_token || ''}`, 'Content-Type':'application/json'},
+      body:JSON.stringify({orderId:Number(orderId.slice(3)),mode:entityId?'manual':'automatic',entityId}),
+    });
+    const payload = await response.json();
+    if (!response.ok || !payload.saved) throw new Error(payload.error || 'Associazione non salvata');
+    message.textContent = 'Salvata. Aggiornamento report...';
+    const refreshed = await loadWooOrders();
+    byId('report-message').textContent += refreshed ? ' Associazione salvata e report aggiornati.' : ' Associazione salvata: premi Aggiorna per ricaricare i report.';
+  } catch(error) {
+    message.textContent = error.message || 'Salvataggio non riuscito';
+  } finally {
+    button.disabled = false; select.disabled = false;
+  }
+}
+
+function renderOrders() {
+  const query = byId('report-search').value.trim().toLowerCase();
+  const status = byId('report-status').value;
+  const payment = byId('report-payment').value;
+  const dateFrom = byId('report-date-from').value;
+  const dateTo = byId('report-date-to').value;
+  filteredReportOrders = reportOrders.filter((order) => {
+    const haystack = [
+      order.id, order.customer, order.customerEmail, order.coupon,
+      order.agent, order.distributor, order.center,
+    ].filter(Boolean).join(' ').toLowerCase();
+    return (!query || haystack.includes(query))
+      && (!status || order.status === status)
+      && (!payment || order.paymentStatus === payment)
+      && (!dateFrom || order.date >= dateFrom)
+      && (!dateTo || order.date <= dateTo);
+  });
+  byId('orders-table').innerHTML = filteredReportOrders.length
+    ? filteredReportOrders
+    .map((order) => `
+      <tr>
+        <td data-label="Cod. ordine">${escapeHtml(order.id)}</td>
+        <td data-label="Data">${escapeHtml(order.date)}</td>
+        <td data-label="Cliente"><strong>${escapeHtml(order.customer)}</strong>${order.customerEmail ? `<br><small>${escapeHtml(order.customerEmail)}</small>` : ''}</td>
+        <td data-label="Coupon">${escapeHtml(order.coupon || '-')}</td>
+        <td data-label="Agente">${escapeHtml(order.agent || '-')}</td>
+        <td data-label="Distributore">${escapeHtml(order.distributor || '-')}</td>
+        <td data-label="Centro">${escapeHtml(order.center || '-')}</td>
+        <td data-label="Imponibile"><strong>${money(dashboardOrderTaxable(order))}</strong><br><small>Totale lordo ${money(order.amount)}</small></td>
+        <td data-label="Stato WP"><span class="state ${orderStatusClass(order.status)}">${escapeHtml(orderStatusLabel(order.status))}</span></td>
+        <td data-label="Dettagli">
+          ${orderAssignmentControl(order)}
+          <details class="order-details">
+            <summary>Apri ordine</summary>
+            <div>
+              <strong>Prodotti · imponibile</strong>
+              ${(order.items || []).map((item) => `<span>${escapeHtml(item.name)} × ${item.quantity} · ${money(item.total)}</span>`).join('') || '<span>Nessun prodotto disponibile</span>'}
+              <strong>Spedizione</strong><span>${escapeHtml(order.shippingAddress || '-')}</span>
+              <strong>Pagamento</strong><span>${escapeHtml(order.paymentMethod || (order.paymentStatus === 'paid' ? 'Pagato' : 'Non pagato'))}</span>
+              <strong>Scadenze pagamenti</strong>
+              <div class="installment-list">${(order.installments || []).map((item) => `<div class="installment-row ${item.paid ? 'paid' : ''}">
+                <span><b>Rata ${item.number}</b> · ${money(item.amount)} · ${escapeHtml(item.dueDate)}</span>
+                ${item.paid ? `<span class="state ok">Pagata${item.paidAt ? ` il ${escapeHtml(item.paidAt)}` : ''}</span>` : currentUser?.role === 'agent' ? `<span class="payment-action"><input type="date" value="${new Date().toISOString().slice(0, 10)}" data-payment-date="${order.id}-${item.number}" /><button class="primary-action payment-plus" type="button" data-order-payment="${order.id.replace('WC-', '')}" data-order-key="${order.id}-${item.number}" data-installment="${item.number}" data-due-date="${item.dueDate}" data-amount="${item.amount}">＋ Pagato</button></span>` : '<span class="state off">Da pagare</span>'}
+              </div>`).join('')}</div>
+            </div>
+          </details>
+        </td>
+      </tr>
+    `)
+    .join('')
+    : '<tr class="report-empty-row"><td colspan="10">Nessun ordine corrisponde ai filtri selezionati.</td></tr>';
+  renderReportSummary();
+}
+
+function orderStatusLabel(status) {
+  const labels = {
+    pending: 'In attesa di pagamento',
+    processing: 'In lavorazione',
+    'on-hold': 'In sospeso',
+    completed: 'Completato',
+    cancelled: 'Annullato',
+    refunded: 'Rimborsato',
+    failed: 'Fallito',
+    trash: 'Cestinato',
+  };
+  return labels[String(status || '').toLowerCase()] || status || 'Non disponibile';
+}
+
+function orderStatusClass(status) {
+  const normalized = String(status || '').toLowerCase();
+  if (['cancelled', 'failed', 'refunded', 'trash'].includes(normalized)) return 'off';
+  if (['pending', 'on-hold'].includes(normalized)) return 'pending';
+  return 'ok';
+}
+
+function renderReportSummary() {
+  const total = filteredReportOrders.reduce((sum, order) => sum + dashboardOrderTaxable(order), 0);
+  const gross = filteredReportOrders.reduce((sum, order) => sum + Number(order.amount || 0), 0);
+  const totalAgentEarnings = filteredReportOrders.reduce((sum, order) => sum + (order.agentEarning || 0), 0);
+  const byCoupon = filteredReportOrders.reduce((acc, order) => {
+    const key = order.coupon || 'Senza coupon';
+    acc[key] = (acc[key] || 0) + dashboardOrderTaxable(order);
+    return acc;
+  }, {});
+  const topCoupon = Object.entries(byCoupon).sort((a, b) => b[1] - a[1])[0];
+
+  byId('report-summary').innerHTML = `
+    <div><span>Ordini visualizzati</span><strong>${filteredReportOrders.length}</strong></div>
+    <div><span>Imponibile vendite</span><strong>${money(total)}</strong><small>Totale lordo ${money(gross)}</small></div>
+    <div><span>Provvigioni agenti</span><strong>${money(totalAgentEarnings)}</strong></div>
+    <div><span>Coupon principale · imponibile</span><strong>${topCoupon ? `${topCoupon[0]} · ${money(topCoupon[1])}` : '-'}</strong></div>
+  `;
+}
+
+function renderPermissions(rows) {
+  const roles = ['admin', 'distributor', 'agent', 'center', 'patient'];
+  byId('permissions-table').innerHTML = Object.keys(moduleLabels)
+    .map((module) => `
+      <tr>
+        <td>${moduleLabels[module]}</td>
+        ${roles.map((role) => {
+          const permission = rows.find((row) => row.role === role && row.module === module);
+          const checked = Boolean(permission?.can_view);
+          const editable = currentUser?.role === 'admin' && role !== 'admin';
+          return `<td>
+            <input
+              class="permission-toggle"
+              type="checkbox"
+              data-permission-role="${role}"
+              data-permission-module="${module}"
+              ${checked ? 'checked' : ''}
+              ${editable ? '' : 'disabled'}
+              aria-label="${moduleLabels[module]} - ${roleLabels[role]}"
+            />
+          </td>`;
+        }).join('')}
+      </tr>
+    `)
+    .join('');
+}
+
+function applyModuleVisibility(rows) {
+  const role = currentUser?.role;
+  if (!role) return;
+  const sectionIds = {
+    dashboard: 'dashboard',
+    codes: 'access',
+    promotions: 'promotions',
+    network: 'network',
+    wordpress: 'wordpress',
+    reports: 'reports',
+    users: 'admin-users',
+    permissions: 'permissions',
+  };
+
+  Object.entries(sectionIds).forEach(([module, sectionId]) => {
+    const hiddenByRole = (role === 'agent' && ['promotions', 'network'].includes(module))
+      || (role === 'distributor' && module === 'promotions');
+    const allowed = !hiddenByRole && rows.some((row) => row.role === role && row.module === module && row.can_view);
+    byId(sectionId)?.classList.toggle('module-denied', !allowed);
+    document.querySelectorAll(`[data-route="${sectionId}"]`).forEach((link) => {
+      link.classList.toggle('hidden', !allowed);
+    });
+  });
+  byId('store-management')?.classList.toggle('module-denied', !['admin','agent','distributor'].includes(role));
+  byId('store-management-nav')?.classList.toggle('hidden', !['admin','agent','distributor'].includes(role));
+  byId('setup')?.classList.toggle('module-denied', role !== 'admin');
+  byId('admin-customers')?.classList.toggle('module-denied', role !== 'admin');
+  byId('admin-customers-nav')?.classList.toggle('hidden', role !== 'admin');
+  const agentCustomerAllowed = ['agent', 'distributor'].includes(role);
+  byId('agent-customers')?.classList.toggle('module-denied', !agentCustomerAllowed);
+  byId('agent-customers-nav')?.classList.toggle('hidden', !agentCustomerAllowed);
+  byId('metric-network-card')?.classList.toggle('hidden', role === 'agent');
+  const hasSalesDashboard = ['admin', 'agent', 'distributor'].includes(role);
+  byId('admin-dashboard')?.classList.toggle('hidden', !hasSalesDashboard);
+  byId('admin-dashboard-period-wrap')?.classList.toggle('hidden', !hasSalesDashboard);
+  byId('role-dashboard-metrics')?.classList.toggle('hidden', hasSalesDashboard);
+  document.querySelectorAll('[data-admin-dashboard-only]').forEach((element) => {
+    element.classList.toggle('hidden', role !== 'admin');
+  });
+  if (byId('dashboard-revenue-label')) {
+    byId('dashboard-revenue-label').textContent = role === 'admin' ? 'Imponibile totale' : 'Il tuo imponibile';
+  }
+  if (byId('dashboard-intro')) {
+    byId('dashboard-intro').textContent = role === 'agent'
+      ? 'La tua dashboard: clienti, ordini e vendite WooCommerce collegati al tuo account agente.'
+      : role === 'distributor'
+        ? 'La tua dashboard: clienti, ordini e vendite WooCommerce collegati al tuo account distributore.'
+        : 'Controllo rapido di codici, rete commerciale e vendite lette da WooCommerce.';
+  }
+  document.querySelectorAll('[data-route="setup"]').forEach((link) => {
+    link.classList.toggle('hidden', role !== 'admin');
+  });
+  if (hasSalesDashboard) renderAdminDashboard();
+  showRoute(routeFromPath(window.location.pathname), { push: false });
+}
+
+async function loadPermissions() {
+  const { data, error } = await supabase
+    .from('role_permissions')
+    .select('role,module,can_view')
+    .order('module');
+  if (error) {
+    byId('permissions-message').textContent = 'Non è stato possibile caricare i permessi.';
+    return;
+  }
+  renderPermissions(data || []);
+  applyModuleVisibility(data || []);
+  byId('permissions-message').textContent = currentUser?.role === 'admin'
+    ? 'Le modifiche vengono applicate immediatamente.'
+    : 'Visualizzazione dei permessi assegnati al tuo ruolo.';
+}
+
+async function updatePermission(event) {
+  const checkbox = event.target.closest('[data-permission-role]');
+  if (!checkbox || currentUser?.role !== 'admin') return;
+  checkbox.disabled = true;
+  const { data, error } = await supabase.functions.invoke('admin-permissions', {
+    method: 'POST',
+    body: {
+      role: checkbox.dataset.permissionRole,
+      module: checkbox.dataset.permissionModule,
+      canView: checkbox.checked,
+    },
+  });
+  if (error || data?.error) {
+    checkbox.checked = !checkbox.checked;
+    byId('permissions-message').textContent = data?.error || 'Modifica non riuscita.';
+  } else {
+    byId('permissions-message').textContent = 'Permesso aggiornato.';
+  }
+  checkbox.disabled = false;
+}
+
+async function validateCode() {
+  const input = byId('code-input').value.trim();
+  if (!input || !supabase) return;
+  byId('validate-code').disabled = true;
+  byId('code-result').className = 'empty-box';
+  byId('code-result').innerHTML = '<span>Verifica del codice in corso...</span>';
+  const { data, error } = await supabase.functions.invoke('promo-codes', {
+    method: 'POST',
+    body: { action: 'validate', code: input },
+  });
+  byId('validate-code').disabled = false;
+  if (error || data?.error || !data?.valid) {
+    validatedCode = null;
+    byId('code-result').className = 'empty-box';
+    byId('code-result').innerHTML = `<span>${escapeHtml(data?.error || 'Codice non valido o non attivo.')}</span>`;
+    updateMetrics();
+    return;
+  }
+  const found = data.activeCode;
+  validatedCode = found;
+  shopCoupon = found.woo_coupon || '';
+  byId('shop-coupon').value = shopCoupon;
+  shopQuote = null;
+  if (shopCoupon && shopCart.length) applyShopCoupon({ silent: true });
+  byId('code-result').className = 'success-box';
+  byId('code-result').innerHTML = `
+    <div>
+      <strong>${escapeHtml(found.label)}</strong>
+      <span>${escapeHtml(found.discount_label || 'Convenzione applicata al prossimo acquisto')}</span>
+      <a href="/shop" data-route="shop">Vai ai prodotti</a>
+    </div>
+  `;
+  byId('code-result').querySelector('[data-route]').addEventListener('click', (event) => {
+    event.preventDefault();
+    showRoute('shop', { push: true, smooth: true });
+  });
+  updateMetrics();
+}
+
+function setAuthMode(mode) {
+  const loginActive = mode === 'login';
+  const registerActive = mode === 'register';
+  const recoveryActive = mode === 'recovery';
+  const resetActive = mode === 'reset';
+  byId('auth-screen').classList.remove('hidden');
+  byId('app-shell').classList.add('hidden');
+  byId('auth-screen').classList.toggle('auth-reset-mode', recoveryActive || resetActive);
+  byId('show-login').classList.toggle('active', loginActive);
+  byId('show-register').classList.toggle('active', registerActive);
+  byId('show-login').disabled = resetActive;
+  byId('show-register').disabled = resetActive;
+  byId('login-form').classList.toggle('hidden', !loginActive);
+  byId('register-form').classList.toggle('hidden', !registerActive);
+  byId('password-recovery-form').classList.toggle('hidden', !recoveryActive);
+  byId('password-reset-form').classList.toggle('hidden', !resetActive);
+  showAuthMessage(
+    loginActive
+      ? ''
+      : registerActive
+        ? 'Il paziente viene attivato subito; gli altri profili richiedono approvazione.'
+        : '',
+  );
+}
+
+function showAuthMessage(message, type = '') {
+  const box = byId('auth-message');
+  box.className = `auth-message${type ? ` ${type}` : ''}`;
+  box.textContent = message;
+}
+
+function setAuthBusy(busy) {
+  authBusy = busy;
+  document.querySelectorAll('#login-form button, #register-form button, #password-recovery-form button, #password-reset-form button').forEach((button) => {
+    button.disabled = busy;
+  });
+}
+
+async function loadProfile(userId) {
+  const { data, error } = await supabase
+    .from('profiles')
+    .select('role, requested_role, approval_status, full_name, phone, wordpress_user_id')
+    .eq('id', userId)
+    .single();
+
+  if (error) throw error;
+  return data;
+}
+
+async function enterAuthenticatedApp(user) {
+  const profile = await loadProfile(user.id);
+  if (profile.approval_status !== 'approved') {
+    await supabase.auth.signOut();
+    const requested = roleLabels[profile.requested_role] || 'profilo professionale';
+    showAuthMessage(
+      `La richiesta come ${requested} è in attesa di approvazione dell'amministratore.`,
+      'success',
+    );
+    return;
+  }
+
+  enterApp({
+    id: user.id,
+    email: user.email,
+    code: user.user_metadata?.validation_code || '',
+    role: profile.role,
+    profile,
+  });
+}
+
+function enterApp(user) {
+  currentUser = user;
+  dashboardProfileId = '';
+  dashboardSalesExpanded.products = false;
+  dashboardSalesExpanded.promotions = false;
+  byId('auth-screen').classList.add('hidden');
+  byId('app-shell').classList.remove('hidden');
+  byId('role').value = user.role;
+  byId('account-email').value = user.email;
+  byId('code-input').value = user.code || '';
+  renderCurrentProfile(user);
+  try {
+    selectedAgentCustomer = ['agent', 'distributor'].includes(user.role)
+      ? JSON.parse(localStorage.getItem(`odr-agent-customer-${currentUser.id}`) || 'null')
+      : null;
+  } catch {
+    selectedAgentCustomer = null;
+    localStorage.removeItem(`odr-agent-customer-${currentUser.id}`);
+  }
+  const isAdmin = user.role === 'admin';
+  byId('admin-code-manager').classList.toggle('hidden', !isAdmin);
+  byId('new-promotion-button').classList.toggle('hidden', !isAdmin);
+  byId('marketing-upload-form').classList.toggle('hidden', !isAdmin);
+  byId('admin-users-nav').classList.toggle('hidden', !isAdmin);
+  byId('admin-users').classList.remove('hidden');
+  byId('admin-users').classList.toggle('module-denied', !isAdmin);
+  if (isAdmin) {
+    loadAdminUsers();
+    loadPromoCodes();
+    loadWooCoupons().catch((error) => {
+      byId('promotion-message').textContent = error.message;
+      byId('code-admin-message').textContent = error.message;
+    });
+  } else {
+    validationCodes = [];
+    renderCodes();
+  }
+  loadActivePromoCode();
+  loadPermissions();
+  loadShop();
+  loadMarketingMaterials();
+  loadWooOrders();
+  if (['agent', 'distributor'].includes(user.role)) loadAgentCustomers();
+  loadNetwork();
+  updateMetrics();
+}
+
+function renderCurrentProfile(user) {
+  byId('profile-name').textContent = user.profile?.full_name || '-';
+  byId('profile-email').textContent = user.email || '-';
+  byId('profile-role').textContent = roleLabels[user.role] || user.role;
+  byId('profile-status').textContent = user.profile?.approval_status || '-';
+  byId('profile-wordpress-id').textContent = user.profile?.wordpress_user_id || 'Non collegato';
+  const linked = Boolean(user.profile?.wordpress_user_id);
+  byId('profile-link-status').className = `config-pill${linked ? ' ok' : ''}`;
+  byId('profile-link-status').textContent = linked ? 'Collegato a WordPress' : 'Solo ODR';
+}
+
+function togglePasswordField(button) {
+  const input = byId(button.dataset.passwordToggle);
+  if (!input) return;
+  const reveal = input.type === 'password';
+  input.type = reveal ? 'text' : 'password';
+  button.setAttribute('aria-label', reveal ? 'Nascondi password' : 'Mostra password');
+  button.setAttribute('aria-pressed', String(reveal));
+}
+
+async function changePassword(event) {
+  event.preventDefault();
+  const form = event.currentTarget;
+  const button = form.querySelector('[type="submit"]');
+  const message = byId('change-password-message');
+  const currentPassword = byId('current-password').value;
+  const password = byId('new-password').value;
+  const confirmation = byId('confirm-new-password').value;
+  if (password.length < 8) { message.className = 'error-text'; message.textContent = 'La nuova password deve contenere almeno 8 caratteri.'; return; }
+  if (password !== confirmation) { message.className = 'error-text'; message.textContent = 'Le due nuove password non coincidono.'; return; }
+  if (password === currentPassword) { message.className = 'error-text'; message.textContent = 'Scegli una password diversa da quella attuale.'; return; }
+  button.disabled = true; message.className = ''; message.textContent = 'Aggiornamento in corso...';
+  const { error } = await supabase.auth.updateUser({ password, currentPassword });
+  button.disabled = false;
+  if (error) { message.className = 'error-text'; message.textContent = error.message || 'Password non aggiornata.'; return; }
+  form.reset(); message.className = 'success-text'; message.textContent = 'Password aggiornata correttamente.';
+}
+
+function renderAgentCustomers() {
+  const list = byId('agent-customer-list');
+  const selected = byId('agent-selected-customer');
+  const query = String(byId('agent-customer-search')?.value || '').trim().toLowerCase();
+  const visibleCustomers = query
+    ? agentCustomers.filter((customer) => [customer.name, customer.company, customer.email, customer.phone, customer.area]
+      .some((value) => String(value || '').toLowerCase().includes(query)))
+    : agentCustomers;
+  if (selectedAgentCustomer) {
+    selected.classList.remove('hidden');
+    selected.innerHTML = `<strong>Ordine per: ${escapeHtml(selectedAgentCustomer.name)}</strong><span>${escapeHtml(selectedAgentCustomer.email || '')}</span><button id="clear-agent-customer" type="button">Cambia cliente</button>`;
+    byId('clear-agent-customer').addEventListener('click', () => {
+      selectedAgentCustomer = null;
+      localStorage.removeItem(`odr-agent-customer-${currentUser.id}`);
+      fillShopAddress({ email: currentUser.email });
+      loadShopAddress(true);
+      renderAgentCustomers();
+    });
+  } else {
+    selected.classList.add('hidden');
+    selected.innerHTML = '';
+  }
+  list.innerHTML = visibleCustomers.length ? visibleCustomers.map((customer) => `
+    <article class="agent-customer-card${selectedAgentCustomer?.id === customer.id ? ' selected' : ''}">
+      <div class="agent-customer-info">
+        <strong>${escapeHtml(customer.name)}</strong><span>${escapeHtml(customer.email || '-')}</span><small>${escapeHtml(customer.phone || customer.area || '')}</small>
+        <div class="agent-customer-orders">
+          <b>${customer.orders?.length || 0} ordini</b>
+          ${(customer.orders || []).map((order) => `<span>${escapeHtml(order.id)} · ${escapeHtml(order.date)} · ${money(order.total)} · ${order.paid ? 'Pagato' : 'Non pagato'}</span>`).join('')}
+        </div>
+      </div>
+      <div class="agent-customer-actions">
+        <button class="primary-action" type="button" data-agent-customer="${customer.id}">Nuovo ordine</button>
+        ${customer.source === 'app' ? `<button class="secondary-action" type="button" data-edit-agent-customer="${customer.id}">Gestisci cliente</button>` : ''}
+        <button class="secondary-action" type="button" data-customer-orders="${escapeHtml(customer.email || customer.name)}">Vedi ordini</button>
+        ${customer.source === 'app' ? `<button class="danger-action" type="button" data-delete-agent-customer="${customer.id}">Elimina cliente</button>` : ''}
+      </div>
+    </article>
+  `).join('') : `<div class="empty-box">${agentCustomers.length ? 'Nessun cliente trovato con questa ricerca.' : 'Nessun cliente collegato. Premi “Aggiungi cliente” per iniziare.'}</div>`;
+}
+
+async function loadAgentCustomers() {
+  if (!supabase || !['agent', 'distributor', 'admin'].includes(currentUser?.role)) return;
+  byId('agent-customer-message').textContent = 'Caricamento clienti...';
+  const { data } = await supabase.auth.getSession();
+  try {
+    const response = await fetch('/api/agent-customers', { headers: { Authorization: `Bearer ${data.session?.access_token || ''}` } });
+    const payload = await response.json();
+    if (!response.ok) throw new Error(payload.error || 'Clienti non disponibili');
+    agentCustomers = payload.customers || [];
+    if (selectedAgentCustomer) {
+      const refreshedCustomer = agentCustomers.find((item) => item.id === selectedAgentCustomer.id);
+      if (refreshedCustomer) {
+        selectedAgentCustomer = refreshedCustomer;
+        localStorage.setItem(`odr-agent-customer-${currentUser.id}`, JSON.stringify(refreshedCustomer));
+        fillShopAddress(refreshedCustomer.address || {});
+      } else {
+        selectedAgentCustomer = null;
+        localStorage.removeItem(`odr-agent-customer-${currentUser.id}`);
+      }
+    }
+    renderAgentCustomers();
+    byId('agent-customer-message').textContent = `${agentCustomers.length} clienti disponibili.`;
+  } catch (error) {
+    byId('agent-customer-message').textContent = error.message;
+  }
+}
+
+async function saveAgentCustomer(event) {
+  event.preventDefault();
+  if (!byId('agent-customer-pec').value.trim() && !byId('agent-customer-sdi').value.trim()) {
+    byId('agent-customer-message').textContent = 'Inserisci almeno uno tra PEC e codice SDI.';
+    byId('agent-customer-pec').focus(); return;
+  }
+  const { data } = await supabase.auth.getSession();
+  const button = event.currentTarget.querySelector('[type="submit"]');
+  button.disabled = true;
+    byId('agent-customer-message').textContent = 'Salvataggio cliente nell’app...';
+  try {
+    const editId = byId('agent-customer-edit-id').value;
+    const response = await fetch('/api/agent-customers', {
+      method: editId ? 'PUT' : 'POST',
+      headers: { Authorization: `Bearer ${data.session?.access_token || ''}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        customerId: editId || undefined, name: byId('agent-customer-name').value,
+        soleTrader: byId('agent-customer-sole-trader').checked,
+        storeRequested: byId('agent-customer-store').checked,
+        storeCategory: byId('agent-customer-store-category').value,
+        company: byId('agent-customer-company').value,
+        email: byId('agent-customer-email').value,
+        phone: byId('agent-customer-phone').value,
+        address1: byId('agent-customer-address').value,
+        postcode: byId('agent-customer-postcode').value,
+        city: byId('agent-customer-city').value,
+        state: byId('agent-customer-state').value,
+        taxCode: byId('agent-customer-tax-code').value, vatNumber: byId('agent-customer-vat').value,
+        pec: byId('agent-customer-pec').value, sdiCode: byId('agent-customer-sdi').value,
+        shippingName: byId('agent-customer-shipping-name').value, shippingCompany: byId('agent-customer-shipping-company').value,
+        shippingAddress1: byId('agent-customer-shipping-address').value, shippingPostcode: byId('agent-customer-shipping-postcode').value,
+        shippingCity: byId('agent-customer-shipping-city').value, shippingState: byId('agent-customer-shipping-state').value,
+        paymentTerms: [...document.querySelectorAll('[name="agent-payment-term"]:checked')].map((input) => Number(input.value)),
+        notes: byId('agent-customer-notes').value,
+      }),
+    });
+    const payload = await response.json();
+    if (!response.ok) throw new Error(payload.error || 'Creazione non riuscita');
+    event.currentTarget.reset();
+    event.currentTarget.classList.add('hidden');
+    await loadAgentCustomers();
+    byId('agent-customer-edit-id').value = '';
+    byId('agent-customer-message').textContent = editId ? 'Cliente aggiornato correttamente.' : 'Cliente salvato correttamente nell’app.';
+  } catch (error) {
+    byId('agent-customer-message').textContent = error.message;
+  } finally {
+    button.disabled = false;
+  }
+}
+
+async function deleteAgentCustomer(button) {
+  const customer = agentCustomers.find((item) => item.id === button.dataset.deleteAgentCustomer);
+  if (!customer || !window.confirm(`Vuoi eliminare ${customer.name}? Gli ordini già effettuati resteranno conservati.`)) return;
+  button.disabled = true;
+  const { data } = await supabase.auth.getSession();
+  try {
+    const response = await fetch('/api/agent-customers', {
+      method: 'DELETE',
+      headers: { Authorization: `Bearer ${data.session?.access_token || ''}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ customerId: customer.id }),
+    });
+    const payload = await response.json();
+    if (!response.ok) throw new Error(payload.error || 'Eliminazione non riuscita');
+    if (selectedAgentCustomer?.id === customer.id) {
+      selectedAgentCustomer = null;
+      localStorage.removeItem(`odr-agent-customer-${currentUser.id}`);
+    }
+    await loadAgentCustomers();
+    byId('agent-customer-message').textContent = 'Cliente eliminato. Gli ordini restano conservati.';
+  } catch (error) {
+    byId('agent-customer-message').textContent = error.message;
+    button.disabled = false;
+  }
+}
+
+function handleAgentCustomerClick(event) {
+  const editButton = event.target.closest('[data-edit-agent-customer]');
+  if (editButton) {
+    const customer = agentCustomers.find((item) => item.id === editButton.dataset.editAgentCustomer);
+    if (!customer) return;
+    const fields = {
+      'agent-customer-name': customer.name, 'agent-customer-company': customer.company, 'agent-customer-email': customer.email, 'agent-customer-phone': customer.phone,
+      'agent-customer-address': customer.address?.address1, 'agent-customer-postcode': customer.address?.postcode, 'agent-customer-city': customer.address?.city, 'agent-customer-state': customer.address?.state,
+      'agent-customer-tax-code': customer.taxCode, 'agent-customer-vat': customer.vatNumber, 'agent-customer-pec': customer.pec, 'agent-customer-sdi': customer.sdiCode,
+      'agent-customer-shipping-name': customer.shipping?.name, 'agent-customer-shipping-company': customer.shipping?.company, 'agent-customer-shipping-address': customer.shipping?.address1,
+      'agent-customer-shipping-postcode': customer.shipping?.postcode, 'agent-customer-shipping-city': customer.shipping?.city, 'agent-customer-shipping-state': customer.shipping?.state,
+      'agent-customer-notes': customer.notes,
+    };
+    Object.entries(fields).forEach(([id, value]) => { byId(id).value = value || ''; });
+    document.querySelectorAll('[name="agent-payment-term"]').forEach((input) => { input.checked = (customer.paymentTerms || [30]).includes(Number(input.value)); });
+    byId('agent-customer-sole-trader').checked = Boolean(customer.soleTrader);
+    byId('agent-customer-tax-code').required = Boolean(customer.soleTrader);
+    byId('agent-customer-store').checked = Boolean(customer.storeRequested);
+    byId('agent-customer-store').disabled = Boolean(customer.storeRequested);
+    byId('agent-customer-store-category').value = customer.storeCategory || 'beauty';
+    byId('agent-customer-store-category').disabled = Boolean(customer.storeRequested);
+    byId('agent-customer-edit-id').value = customer.id;
+    byId('agent-customer-extra').classList.remove('hidden');
+    byId('agent-customer-form').classList.remove('hidden');
+    byId('agent-customer-form').scrollIntoView({ behavior: 'smooth' });
+    return;
+  }
+  const ordersButton = event.target.closest('[data-customer-orders]');
+  if (ordersButton) {
+    byId('report-search').value = ordersButton.dataset.customerOrders;
+    renderOrders();
+    showRoute('reports', { push: true });
+    return;
+  }
+  const deleteButton = event.target.closest('[data-delete-agent-customer]');
+  if (deleteButton) {
+    deleteAgentCustomer(deleteButton);
+    return;
+  }
+  const button = event.target.closest('[data-agent-customer]');
+  if (!button) return;
+  selectedAgentCustomer = agentCustomers.find((item) => item.id === button.dataset.agentCustomer) || null;
+  if (!selectedAgentCustomer) return;
+  localStorage.setItem(`odr-agent-customer-${currentUser.id}`, JSON.stringify(selectedAgentCustomer));
+  fillShopAddress(selectedAgentCustomer.address || {});
+  byId('shop-address-status').textContent = `Dati di ${selectedAgentCustomer.name}`;
+  renderAgentCustomers();
+  showRoute('shop', { push: true });
+  byId('shop-message').classList.remove('hidden');
+  byId('shop-message').textContent = `Stai creando un ordine per ${selectedAgentCustomer.name}.`;
+}
+
+async function registerOrderPayment(button) {
+  const paidAt = document.querySelector(`[data-payment-date="${button.dataset.orderKey}"]`)?.value;
+  if (!paidAt) { window.alert('Seleziona la data del pagamento'); return; }
+  button.disabled = true;
+  const { data } = await supabase.auth.getSession();
+  const response = await fetch('/api/order-payments', {
+    method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${data.session?.access_token || ''}` },
+    body: JSON.stringify({ wooOrderId: button.dataset.orderPayment, installmentNumber: button.dataset.installment, dueDate: button.dataset.dueDate, amount: button.dataset.amount, paidAt }),
+  });
+  const payload = await response.json();
+  if (!response.ok) { button.disabled = false; window.alert(payload.error || 'Pagamento non registrato'); return; }
+  await loadWooOrders();
+}
+
+function renderAdminUsers(users, wordpressAccounts = [], adminMembers = [], canManageAdmins = false) {
+  const normalizeAccountEmail = value => String(value || '').trim().toLowerCase();
+  const registeredEmails = new Set(users.map(user => normalizeAccountEmail(user.email)));
+  const unregisteredAccounts = wordpressAccounts.filter(account => !account.connected_profile_id && !registeredEmails.has(normalizeAccountEmail(account.email)));
+  const registeredRows = users
+    .map((user) => {
+      const membership = adminMembers.find((member) => member.profile_id === user.id);
+      const wordpressAccount = wordpressAccounts.find((account) => (
+        normalizeAccountEmail(account.email) === normalizeAccountEmail(user.email)
+      ));
+      const approvalRole = wordpressAccount?.mapped_role || user.requested_role;
+      const pendingActions = ['pending', 'rejected'].includes(user.approval_status) ? `
+        <button class="approve" type="button" data-user-action="approve" data-user-id="${user.id}">
+          ${user.approval_status === 'rejected' ? 'Riattiva e associa come' : 'Approva come'} ${escapeHtml(roleLabels[approvalRole] || approvalRole)}
+        </button>
+${user.approval_status === 'pending' ? `<button class="reject" type="button" data-user-action="reject" data-user-id="${user.id}">Rifiuta</button>` : ''}
+      ` : '';
+      const adminActions = canManageAdmins && user.approval_status === 'approved'
+        ? membership?.level === 'owner'
+          ? '<span class="state ok">Titolare</span>'
+          : user.role === 'admin'
+            ? `
+              <button class="reject" type="button" data-user-action="remove_admin" data-user-id="${user.id}">Rimuovi admin</button>
+              <button class="delete" type="button" data-user-action="delete_user" data-user-id="${user.id}" data-user-label="${escapeHtml(user.full_name || user.email)}">Elimina account</button>
+            `
+            : `
+              <select class="user-role-select" data-user-role="${user.id}" aria-label="Nuovo ruolo per ${escapeHtml(user.full_name || user.email)}">
+                ${['patient', 'center', 'agent', 'distributor'].map((role) => (
+    `<option value="${role}"${user.role === role ? ' selected' : ''}>${escapeHtml(roleLabels[role])}</option>`
+  )).join('')}
+              </select>
+              <button class="role-change" type="button" data-user-action="change_role" data-user-id="${user.id}">Cambia ruolo</button>
+              <button class="approve" type="button" data-user-action="promote_admin" data-user-id="${user.id}">Rendi amministratore</button>
+              <button class="delete" type="button" data-user-action="delete_user" data-user-id="${user.id}" data-user-label="${escapeHtml(user.full_name || user.email)}">Elimina account</button>
+            `
+        : '';
+      const inactiveDelete = canManageAdmins && user.approval_status !== 'approved' && membership?.level !== 'owner'
+        ? `<button class="delete" type="button" data-user-action="delete_user" data-user-id="${user.id}" data-user-label="${escapeHtml(user.full_name || user.email)}">Elimina account</button>` : '';
+      return `
+      <tr>
+        <td data-label="Utente">
+          <strong>${escapeHtml(user.full_name || user.email)}</strong><br />
+          <small>${escapeHtml(user.email)}${user.phone ? ` · ${escapeHtml(user.phone)}` : ''}</small>
+        </td>
+        <td data-label="Ruolo">
+          ${escapeHtml(roleLabels[approvalRole] || approvalRole)}
+          ${wordpressAccount ? '<br /><small>Account WordPress riconosciuto</small>' : ''}
+        </td>
+        <td data-label="Stato"><span class="state ${user.approval_status === 'approved' ? 'ok' : 'off'}">${escapeHtml(user.approval_status)}</span></td>
+        <td data-label="Azioni">
+          <div class="user-actions">
+            ${pendingActions}
+            ${adminActions}
+            ${inactiveDelete}
+            ${!pendingActions && !adminActions && !inactiveDelete ? '-' : ''}
+          </div>
+        </td>
+      </tr>
+    `;
+    })
+    .join('');
+  const importedRows = unregisteredAccounts
+    .map((account) => `
+      <tr>
+        <td data-label="Utente">
+          <strong>${escapeHtml(account.full_name || account.email)}</strong><br />
+          <small>${escapeHtml(account.email)} · WordPress #${account.wordpress_user_id}</small>
+        </td>
+        <td data-label="Ruolo">${escapeHtml(roleLabels[account.mapped_role] || account.mapped_role)}</td>
+        <td data-label="Stato"><span class="state off">Da attivare</span></td>
+        <td data-label="Azioni">Attende registrazione ODR</td>
+      </tr>
+    `)
+    .join('');
+  byId('admin-users-table').innerHTML = registeredRows + importedRows;
+
+  const pending = users.filter((user) => user.approval_status === 'pending').length;
+  const unlinked = unregisteredAccounts.length;
+  byId('admin-users-message').textContent =
+    `${pending} richieste in attesa · ${unlinked} account WordPress da collegare.`;
+}
+
+async function loadAdminUsers() {
+  if (!supabase || currentUser?.role !== 'admin') return;
+  byId('admin-users-message').textContent = 'Caricamento utenti...';
+  const { data, error } = await supabase.functions.invoke('admin-users', {
+    method: 'GET',
+  });
+  if (error || data?.error) {
+    byId('admin-users-message').textContent = data?.error || 'Non è stato possibile caricare gli utenti.';
+    return;
+  }
+  renderAdminUsers(
+    data.users || [],
+    data.wordpressAccounts || [],
+    data.adminMembers || [],
+    Boolean(data.canManageAdmins),
+  );
+}
+
+async function handleAdminUserAction(event) {
+  const button = event.target.closest('[data-user-action]');
+  if (!button || currentUser?.role !== 'admin') return;
+  const action = button.dataset.userAction;
+  if (action === 'delete_user') {
+    const confirmed = window.confirm(
+      `Vuoi eliminare l’account app di ${button.dataset.userLabel}? L’account WordPress e gli ordini resteranno conservati.`,
+    );
+    if (!confirmed) return;
+  }
+  const roleSelect = byId('admin-users-table').querySelector(`[data-user-role="${button.dataset.userId}"]`);
+  button.disabled = true;
+  byId('admin-users-message').textContent = 'Aggiornamento del profilo...';
+  const { data, error } = await supabase.functions.invoke('admin-users', {
+    method: 'POST',
+    body: {
+      userId: button.dataset.userId,
+      action,
+      role: action === 'change_role' ? roleSelect?.value : undefined,
+    },
+  });
+  if (error || data?.error) {
+    byId('admin-users-message').textContent = data?.error || 'Aggiornamento non riuscito.';
+    button.disabled = false;
+    return;
+  }
+  await loadAdminUsers();
+}
+
+async function submitLogin(event) {
+  event.preventDefault();
+  if (authBusy || !supabase) return;
+
+  setAuthBusy(true);
+  showAuthMessage('Accesso in corso...');
+  const { data, error } = await supabase.auth.signInWithPassword({
+    email: byId('login-email').value.trim(),
+    password: byId('login-password').value,
+  });
+
+  if (error) {
+    const message = error.code === 'email_not_confirmed'
+      ? 'Devi prima confermare l’email ricevuta dopo la registrazione.'
+      : 'Email o password dell’app non corrette. La password WordPress non viene usata per accedere all’app.';
+    showAuthMessage(message, 'error');
+    setAuthBusy(false);
+    return;
+  }
+
+  try {
+    await enterAuthenticatedApp(data.user);
+  } catch {
+    showAuthMessage('Accesso riuscito, ma il profilo ODR non è ancora disponibile.', 'error');
+  } finally {
+    setAuthBusy(false);
+  }
+}
+
+async function submitRegistration(event) {
+  event.preventDefault();
+  if (authBusy || !supabase) return;
+  if (!byId('register-privacy').checked) {
+    showAuthMessage('Per creare il profilo serve accettare la privacy.', 'error');
+    return;
+  }
+
+  const requestedRole = byId('register-role').value;
+  const code = byId('register-code').value.trim();
+
+  const email = byId('register-email').value.trim();
+  const fullName = `${byId('register-name').value.trim()} ${byId('register-surname').value.trim()}`.trim();
+  setAuthBusy(true);
+  showAuthMessage('Creazione del profilo in corso...');
+
+  const { data, error } = await supabase.auth.signUp({
+    email,
+    password: byId('register-password').value,
+    options: {
+      data: {
+        full_name: fullName,
+        phone: byId('register-phone').value.trim(),
+        requested_role: requestedRole,
+        validation_code: code,
+      },
+    },
+  });
+
+  if (error) {
+    showAuthMessage(error.message || 'Non è stato possibile creare il profilo.', 'error');
+    setAuthBusy(false);
+    return;
+  }
+
+  if (!data.session) {
+    setAuthMode('login');
+    byId('login-email').value = email;
+    showAuthMessage(
+      `Profilo creato per ${email}. Se hai richiesto un profilo professionale, dovrà essere approvato dall’amministratore prima dell’accesso.`,
+      'success',
+    );
+    setAuthBusy(false);
+    return;
+  }
+
+  try {
+    await enterAuthenticatedApp(data.user);
+  } catch {
+    showAuthMessage('Profilo creato, ma la scheda ODR non è ancora disponibile.', 'error');
+  } finally {
+    setAuthBusy(false);
+  }
+}
+
+function passwordRecoveryErrorMessage(error) {
+  if (error?.status === 429 || ['over_email_send_rate_limit', 'over_request_rate_limit'].includes(error?.code)) {
+    return 'Hai richiesto più link in poco tempo. Attendi qualche minuto e usa solo l’ultima email ricevuta.';
+  }
+  if (error?.code === 'same_password') return 'Scegli una password diversa da quella attuale.';
+  if (error?.code === 'weak_password') return 'La password non soddisfa i requisiti di sicurezza. Scegline una più lunga e meno comune.';
+  if (['session_not_found', 'refresh_token_not_found', 'otp_expired'].includes(error?.code)) return 'Il link è scaduto o è già stato usato. Richiedi un nuovo link di recupero.';
+  return 'Operazione non riuscita. Controlla la connessione e riprova; se il problema continua, contatta l’amministratore.';
+}
+
+async function submitPasswordRecovery(event) {
+  event.preventDefault();
+  if (authBusy || !supabase) return;
+  const email = byId('recovery-email').value.trim();
+  setAuthBusy(true);
+  showAuthMessage('Invio del link in corso...');
+  try {
+    const { error } = await supabase.auth.resetPasswordForEmail(email, {
+      redirectTo: `${window.location.origin}/recupera-password`,
+    });
+    if (error) { showAuthMessage(passwordRecoveryErrorMessage(error), 'error'); return; }
+    showAuthMessage('Se l’indirizzo è associato a un account ODR, riceverai un’email. Controlla anche lo spam e apri solo il link dell’ultima email per scegliere e salvare la nuova password.', 'success');
+  } catch {
+    showAuthMessage('Connessione non disponibile. Riprova tra poco.', 'error');
+  } finally {
+    setAuthBusy(false);
+  }
+}
+
+async function submitPasswordReset(event) {
+  event.preventDefault();
+  if (authBusy || !supabase) return;
+
+  const password = byId('reset-password').value;
+  const confirmation = byId('reset-password-confirm').value;
+  if (password.length < 8) {
+    showAuthMessage('La nuova password deve contenere almeno 8 caratteri.', 'error');
+    return;
+  }
+  if (password !== confirmation) {
+    showAuthMessage('Le due password non coincidono.', 'error');
+    return;
+  }
+
+  setAuthBusy(true);
+  showAuthMessage('Aggiornamento della password in corso...');
+  try {
+    const { data: sessionData, error: sessionError } = await supabase.auth.getSession();
+    if (sessionError || !sessionData.session) {
+      showAuthMessage('Sessione di recupero assente o scaduta. Premi “Richiedi un nuovo link”.', 'error');
+      return;
+    }
+    const { error } = await supabase.auth.updateUser({ password });
+    if (error) { showAuthMessage(passwordRecoveryErrorMessage(error), 'error'); return; }
+    await supabase.auth.signOut();
+    passwordRecoveryActive = false;
+    window.history.replaceState({}, '', '/');
+    setAuthMode('login');
+    byId('password-reset-form').reset();
+    showAuthMessage('Password aggiornata. Ora accedi con la nuova password dell’app ODR.', 'success');
+  } catch {
+    showAuthMessage('Non è stato possibile completare la richiesta. Controlla la connessione e riprova.', 'error');
+  } finally {
+    setAuthBusy(false);
+  }
+}
+
+async function submitLogout() {
+  if (!supabase) return;
+  await supabase.auth.signOut();
+  disposeStoreLocator?.(); disposeStoreLocator = null;
+  currentUser = null;
+  adminCustomerReport = null;
+  byId('customer-report-table').innerHTML = '';
+  byId('dashboard-detail-dialog').close();
+  byId('dashboard-detail-content').innerHTML = '';
+  validatedCode = null;
+  shopAddressLoaded = false;
+  byId('app-shell').classList.add('hidden');
+  byId('auth-screen').classList.remove('hidden');
+  byId('login-password').value = '';
+  showAuthMessage('Sessione terminata correttamente.', 'success');
+}
+
+function parseCsv(text) {
+  const separator = text.includes('\t') ? '\t' : ';';
+  const lines = text
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean);
+  if (lines.length < 2) return [];
+
+  const headers = lines[0].split(separator).map((header) => header.trim().toLowerCase());
+  return lines.slice(1).map((line, index) => {
+    const cells = line.split(separator).map((cell) => cell.trim());
+    const row = Object.fromEntries(headers.map((header, cellIndex) => [header, cells[cellIndex] || '']));
+    const rawType = String(row.tipo || row.type || '').toLowerCase();
+    const type = rawType.includes('agent') ? 'agent' : rawType.includes('cent') ? 'center' : 'distributor';
+    const name = row.nome || row.name || row.ragione_sociale || '';
+    return {
+      id: `import-${Date.now()}-${index}`,
+      type,
+      name,
+      email: row.email || '',
+      phone: row.telefono || row.phone || '',
+      area: row.zona || row.area || '',
+      parentName: row.distributore || row.agente || row.parent || '',
+      active: Boolean(name),
+    };
+  }).filter((row) => row.name);
+}
+
+function parseOrderCsv(text) {
+  const separator = text.includes('\t') ? '\t' : ';';
+  const lines = text
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean);
+  if (lines.length < 2) return [];
+
+  const headers = lines[0].split(separator).map((header) => header.trim().toLowerCase());
+  return lines.slice(1).map((line, index) => {
+    const cells = line.split(separator).map((cell) => cell.trim());
+    const row = Object.fromEntries(headers.map((header, cellIndex) => [header, cells[cellIndex] || '']));
+    return {
+      id: row.ordine || row.order || row.id || `WC-IMPORT-${Date.now()}-${index}`,
+      date: row.data || row.date || new Date().toISOString().slice(0, 10),
+      customer: row.cliente || row.customer || row.nome || 'Cliente WooCommerce',
+      amount: Number(String(row.importo || row.totale || row.amount || '0').replace(',', '.')) || 0,
+      taxAmount: Number(String(row.iva || '0').replace(',', '.')) || 0,
+      shippingNetAmount: Number(String(row.trasporto_netto || '0').replace(',', '.')) || 0,
+      coupon: row.coupon || row.codice || '',
+      agent: row.agente || '',
+      distributor: row.distributore || '',
+      status: row.stato || row.status || 'completed',
+    };
+  });
+}
+
+function importNetworkFile(file) {
+  const reader = new FileReader();
+  reader.onload = async () => {
+    const rows = parseCsv(String(reader.result || ''));
+    byId('import-notice').textContent = `Importazione di ${rows.length} righe...`;
+    const { data, error } = await supabase.functions.invoke('network-management', {
+      method: 'POST',
+      body: { action: 'import', rows, fileName: file.name },
+    });
+    if (error || data?.error) {
+      byId('import-notice').textContent = data?.error || 'Importazione non riuscita.';
+      return;
+    }
+    await loadNetwork();
+    byId('import-notice').textContent = `${data.imported} righe importate e salvate da ${file.name}.`;
+  };
+  reader.readAsText(file);
+}
+
+function importOrdersFile(file) {
+  const reader = new FileReader();
+  reader.onload = () => {
+    const rows = parseOrderCsv(String(reader.result || ''));
+    reportOrders = [...rows, ...reportOrders];
+    renderOrders();
+    updateMetrics();
+  };
+  reader.readAsText(file);
+}
+
+function exportReport() {
+  const header = ['ordine', 'data', 'cliente', 'email', 'coupon', 'agente', 'distributore', 'centro', 'imponibile', 'importo', 'iva', 'trasporto_netto', 'stato'];
+  const lines = filteredReportOrders.map((order) => [
+    order.id,
+    order.date,
+    order.customer,
+    order.customerEmail || '',
+    order.coupon || '',
+    order.agent || '',
+    order.distributor || '',
+    order.center || '',
+    dashboardOrderTaxable(order).toFixed(2),
+    Number(order.amount || 0).toFixed(2),
+    Number(order.taxAmount || 0).toFixed(2),
+    Number(order.shippingNetAmount || 0).toFixed(2),
+    order.status,
+  ]);
+  const csv = [header, ...lines].map((row) => row.join(';')).join('\n');
+  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = 'odr-report-vendite.csv';
+  link.click();
+  URL.revokeObjectURL(url);
+}
+
+function initSupabaseStatus() {
+  byId('supabase-dot').className = isSupabaseConfigured ? 'dot ok' : 'dot warn';
+  byId('supabase-status').textContent = isSupabaseConfigured ? 'Supabase collegato' : 'Configurazione mancante';
+  byId('supabase-pill').className = isSupabaseConfigured ? 'config-pill ok' : 'config-pill warn';
+  byId('supabase-pill').textContent = isSupabaseConfigured ? 'Connessione attiva' : 'Connessione non disponibile';
+  if (!isSupabaseConfigured) {
+    showAuthMessage('Configurazione Supabase non disponibile in questo ambiente.', 'error');
+  }
+}
+
+async function restoreSession() {
+  if (!supabase) return;
+  try {
+    const initialized = await supabase.auth.initialize();
+    const { data, error } = await supabase.auth.getSession();
+    if (passwordRecoveryActive) {
+      if (initialized.error || error || !data.session?.user) {
+        passwordRecoveryActive = false;
+        window.history.replaceState({}, '', '/recupera-password');
+        setAuthMode('recovery');
+        showAuthMessage('Il link di recupero manca, è scaduto o è già stato usato. Inserisci la tua email per riceverne uno nuovo.', 'error');
+        return;
+      }
+      setAuthMode('reset');
+      showAuthMessage('Link verificato. Scegli e salva una nuova password per l’app ODR.', 'success');
+      return;
+    }
+    if (!data.session?.user) return;
+    await enterAuthenticatedApp(data.session.user);
+  } catch {
+    setAuthMode(passwordRecoveryActive ? 'recovery' : 'login');
+    showAuthMessage('Impossibile verificare la sessione. Controlla la connessione e riprova.', 'error');
+  }
+}
+
+let adminCustomerReport = null;
+let adminCustomerReportLoading = false;
+
+// Stable customer IDs take precedence; email merges only unambiguous records across sources.
+function buildCustomerReport(masters, orders) {
+  const groups = new Map(masters.map(c => [c.id, { ...c, orders: [], aliases: [c.id] }]));
+  const emailKey = value => String(value || '').trim().toLowerCase();
+  const emails = new Map();
+  for (const group of groups.values()) {
+    const email = emailKey(group.email);
+    if (email) emails.set(email, [...(emails.get(email) || []), group]);
+  }
+  for (const candidates of emails.values()) {
+    if (candidates.length === 2 && candidates[0].id.startsWith('app-') !== candidates[1].id.startsWith('app-')) {
+      const [target, other] = candidates;
+      target.aliases.push(other.id);
+      for (const [key, value] of Object.entries(other)) if (!target[key] && value) target[key] = value;
+      groups.set(other.id, target);
+    }
+  }
+  const seenOrders = new Set();
+  for (const order of orders) {
+    if (seenOrders.has(order.id)) continue;
+    seenOrders.add(order.id);
+    const reference = String(order.customerReference || '');
+    const id = reference || (order.customerId ? `wc-${order.customerId}` : '');
+    let group = groups.get(id);
+    const email = emailKey(order.customerEmail);
+    const matches = [...new Set((emails.get(email) || []).map(c => groups.get(c.id)))];
+    if (!group && matches.length === 1 && (!id || matches[0].aliases.includes(id))) group = matches[0];
+    if (!group) {
+      const key = id || (matches.length === 0 && email ? `guest-${email}` : `order-${order.id}`);
+      group = groups.get(key);
+      if (!group) {
+        const b = order.customerBilling || {};
+        group = { id: key, aliases: [key], name: order.customer, email: order.customerEmail, company: b.company || '', phone: b.phone || '',
+          address: [b.address_1,b.address_2,b.postcode,b.city,b.state,b.country].filter(Boolean).join(', '), orders: [] };
+        groups.set(key, group);
+      }
+    }
+    group.orders.push(order);
+  }
+  return [...new Set(groups.values())];
+}
+
+function customerPeriodOrders(orders, from, to) {
+  return orders.filter(o => !['cancelled','failed','refunded','trash'].includes(o.status)
+    && (!from || o.date >= from) && (!to || o.date <= to));
+}
+
+function customerMonthlySeries(orders, from, to) {
+  const dates = orders.map(o => o.date).filter(Boolean).sort();
+  const start = (from || dates[0] || to || '').slice(0,7);
+  const end = (to || dates.at(-1) || from || '').slice(0,7);
+  if (!start || !end || start > end) return [];
+  const totals = new Map();
+  for (const o of orders) {
+    const key = o.date.slice(0,7);
+    totals.set(key, (totals.get(key) || 0) + Math.round(dashboardOrderTaxable(o) * 100));
+  }
+  const series = [];
+  let [year, month] = start.split('-').map(Number);
+  while (`${String(year).padStart(4,'0')}-${String(month).padStart(2,'0')}` <= end) {
+    const key = `${String(year).padStart(4,'0')}-${String(month).padStart(2,'0')}`;
+    series.push({ label: key, value: (totals.get(key) || 0) / 100 });
+    month++; if (month === 13) { month = 1; year++; }
+  }
+  return series;
+}
+
+async function loadAdminCustomerReport(force = false) {
+  if (currentUser?.role !== 'admin' || adminCustomerReportLoading) return;
+  if (!force && adminCustomerReport?.userId === currentUser.id) { renderAdminCustomerReport(); return; }
+  const userId = currentUser.id;
+  adminCustomerReportLoading = true;
+  adminCustomerReport = null;
+  byId('customer-report-table').innerHTML = '';
+  byId('customer-report-summary').textContent = '';
+  byId('customer-report-message').textContent = 'Caricamento anagrafica e ordini…';
+  byId('customer-report-refresh').disabled = true;
+  try {
+    const { data } = await supabase.auth.getSession();
+    const headers = { Authorization: `Bearer ${data.session?.access_token || ''}` };
+    const [customerResponse, orderResponse] = await Promise.all([
+      fetch('/api/admin-customers', { headers }), fetch('/api/orders', { headers }),
+    ]);
+    const [customers, orders] = await Promise.all([customerResponse.json(), orderResponse.json()]);
+    if (!customerResponse.ok || !orderResponse.ok) throw new Error(customers.error || orders.error || 'Dati non disponibili. Riprova.');
+    if (currentUser?.role !== 'admin' || currentUser.id !== userId) return;
+    adminCustomerReport = { userId, groups: buildCustomerReport(customers.customers || [], orders.orders || []), warnings: orders.warnings || [] };
+    renderAdminCustomerReport();
+  } catch (error) {
+    if (currentUser?.id === userId) byId('customer-report-message').textContent = error.message || 'Caricamento non riuscito. Riprova.';
+  } finally {
+    adminCustomerReportLoading = false;
+    byId('customer-report-refresh').disabled = false;
+  }
+}
+
+function renderAdminCustomerReport() {
+  if (currentUser?.role !== 'admin' || !adminCustomerReport || adminCustomerReport.userId !== currentUser.id) return;
+  const from = byId('customer-report-from').value;
+  const to = byId('customer-report-to').value;
+  byId('customer-report-table').innerHTML = '';
+  byId('customer-report-summary').textContent = '';
+  if (from && to && from > to) { byId('customer-report-message').textContent = 'La data iniziale deve precedere quella finale.'; return; }
+  const query = byId('customer-report-search').value.trim().toLowerCase();
+  const rows = adminCustomerReport.groups.map((c,index) => {
+    const orders = customerPeriodOrders(c.orders, from, to);
+    return { c, index, orders, cents: orders.reduce((sum,o) => sum + Math.round(dashboardOrderTaxable(o)*100),0) };
+  }).filter(({c}) => [c.name,c.company,c.email,c.phone].some(v => String(v || '').toLowerCase().includes(query)))
+    .sort((a,b) => b.cents-a.cents || String(a.c.name).localeCompare(String(b.c.name),'it'));
+  byId('customer-report-message').textContent = `${rows.length} clienti · ${from || 'Inizio storico'} — ${to || 'Ultimo ordine'}. Ordini annullati, falliti e rimborsati esclusi. ${adminCustomerReport.warnings.join(' ')}`;
+  byId('customer-report-summary').textContent = `Imponibile ${money(rows.reduce((sum,r) => sum+r.cents,0)/100)} · ${rows.reduce((sum,r) => sum+r.orders.length,0)} ordini`;
+  byId('customer-report-table').innerHTML = rows.map(({c,index,orders,cents}) => {
+    const owners = [...new Set(orders.map(o => o.agent || o.distributor).filter(Boolean))];
+    const details = [c.company,c.email,c.phone,c.address,c.vatNumber && `P. IVA ${c.vatNumber}`,c.taxCode && `Codice fiscale ${c.taxCode}`,c.pec && `PEC ${c.pec}`,c.sdiCode && `SDI ${c.sdiCode}`].filter(Boolean);
+    return `<tr><td><strong>${escapeHtml(c.name || c.email || 'Cliente')}</strong>${details.map(v=>`<small>${escapeHtml(v)}</small>`).join('')}</td><td>${escapeHtml(owners.join(', ') || '—')}</td><td>${orders.length}</td><td><button class="secondary customer-turnover" type="button" data-customer-turnover="${index}" aria-label="Andamento acquisti di ${escapeHtml(c.name || c.email || 'Cliente')}">${money(cents/100)}</button><small>Lordo ${money(orders.reduce((sum,o)=>sum+Number(o.amount || 0),0))}</small></td></tr>`;
+  }).join('') || '<tr><td colspan="4">Nessun cliente trovato.</td></tr>';
+}
+
+function openCustomerTurnover(index) {
+  if (currentUser?.role !== 'admin' || !adminCustomerReport || adminCustomerReport.userId !== currentUser.id) return;
+  const customer = adminCustomerReport.groups[index];
+  if (!customer) return;
+  const from = byId('customer-report-from').value, to = byId('customer-report-to').value;
+  if (from && to && from > to) return;
+  const orders = customerPeriodOrders(customer.orders,from,to).sort((a,b)=>b.date.localeCompare(a.date));
+  const series = customerMonthlySeries(orders,from,to);
+  const maximum = Math.max(...series.map(row => row.value), 1);
+  const chart = series.length ? series.map(row => `<div class="dashboard-bar-row"><div><span>${escapeHtml(row.label)}</span><strong>${money(row.value)}</strong></div><div class="dashboard-bar-track"><i style="width:${row.value / maximum * 100}%"></i></div></div>`).join('') : '<p>Nessun acquisto nel periodo.</p>';
+  byId('dashboard-detail-content').innerHTML = `<div class="dashboard-detail-head"><h2 id="dashboard-detail-title">Acquisti · ${escapeHtml(customer.name || customer.email || 'Cliente')}</h2><button class="product-detail-close" type="button" data-dashboard-detail-close aria-label="Chiudi">×</button></div><div class="dashboard-detail-body"><p>${escapeHtml(from || 'Inizio storico')} — ${escapeHtml(to || 'Ultimo ordine')} · ${orders.length} ordini · Imponibile ${money(orders.reduce((sum,o)=>sum+Math.round(dashboardOrderTaxable(o)*100),0)/100)}</p><h3>Andamento mensile · imponibile</h3><div class="dashboard-bars customer-monthly-chart">${chart}</div><h3>Ordini del periodo</h3><div class="dashboard-detail-table-wrap"><table class="dashboard-detail-table"><thead><tr><th>Ordine</th><th>Data</th><th>Imponibile</th><th>Totale lordo</th><th>Stato</th></tr></thead><tbody>${orders.map(o=>`<tr><td>${escapeHtml(o.id)}</td><td>${escapeHtml(o.date)}</td><td>${money(dashboardOrderTaxable(o))}</td><td>${money(o.amount)}</td><td>${escapeHtml(o.status)}</td></tr>`).join('') || '<tr><td colspan="5">Nessun ordine.</td></tr>'}</tbody></table></div></div>`;
+  if (!byId('dashboard-detail-dialog').open) byId('dashboard-detail-dialog').showModal();
+}
+
+byId('show-login').addEventListener('click', () => setAuthMode('login'));
+byId('show-register').addEventListener('click', () => setAuthMode('register'));
+byId('show-password-recovery').addEventListener('click', () => {
+  byId('recovery-email').value = byId('login-email').value.trim();
+  setAuthMode('recovery');
+});
+byId('back-to-login').addEventListener('click', () => setAuthMode('login'));
+byId('toggle-login-password').addEventListener('click', () => {
+  const input = byId('login-password');
+  const button = byId('toggle-login-password');
+  const reveal = input.type === 'password';
+  input.type = reveal ? 'text' : 'password';
+  button.setAttribute('aria-label', reveal ? 'Nascondi password' : 'Mostra password');
+  button.setAttribute('aria-pressed', String(reveal));
+});
+byId('change-password-form').addEventListener('click', (event) => {
+  const toggle = event.target.closest('[data-password-toggle]');
+  if (toggle) togglePasswordField(toggle);
+});
+byId('change-password-form').addEventListener('submit', changePassword);
+byId('login-form').addEventListener('submit', submitLogin);
+byId('register-form').addEventListener('submit', submitRegistration);
+byId('password-recovery-form').addEventListener('submit', submitPasswordRecovery);
+byId('password-reset-form').addEventListener('submit', submitPasswordReset);
+byId('password-reset-form').addEventListener('click', (event) => {
+  const toggle = event.target.closest('[data-password-toggle]');
+  if (toggle) togglePasswordField(toggle);
+});
+byId('logout-button').addEventListener('click', submitLogout);
+byId('refresh-users').addEventListener('click', loadAdminUsers);
+byId('admin-users-table').addEventListener('click', handleAdminUserAction);
+byId('new-agent-customer').addEventListener('click', () => {
+  byId('agent-customer-form').reset(); byId('agent-customer-edit-id').value = '';
+  byId('agent-customer-tax-code').required = false;
+  byId('agent-customer-store').disabled = false;
+  byId('agent-customer-store-category').disabled = false;
+  byId('agent-customer-form').classList.remove('hidden');
+});
+byId('cancel-agent-customer').addEventListener('click', () => { byId('agent-customer-form').classList.add('hidden'); byId('agent-customer-edit-id').value = ''; });
+byId('agent-customer-sole-trader').addEventListener('change', () => { byId('agent-customer-tax-code').required = byId('agent-customer-sole-trader').checked; });
+byId('agent-customer-form').addEventListener('submit', saveAgentCustomer);
+byId('agent-customer-list').addEventListener('click', handleAgentCustomerClick);
+byId('agent-customer-search').addEventListener('input', renderAgentCustomers);
+byId('permissions-table').addEventListener('change', updatePermission);
+byId('validate-code').addEventListener('click', validateCode);
+byId('new-code-button').addEventListener('click', () => openCodeForm());
+byId('cancel-code-button').addEventListener('click', resetCodeForm);
+byId('code-admin-form').addEventListener('submit', saveAdminCode);
+byId('admin-code-table').addEventListener('click', handleCodeAdminAction);
+byId('network-search').addEventListener('input', renderNetwork);
+byId('new-network-button').addEventListener('click', () => openNetworkForm());
+byId('cancel-network-button').addEventListener('click', closeNetworkForm);
+byId('network-type').addEventListener('change', () => refreshNetworkFormOptions());
+byId('network-form').addEventListener('submit', saveNetworkEntity);
+byId('network-table').addEventListener('click', handleNetworkAction);
+byId('network-import').addEventListener('change', (event) => {
+  const file = event.target.files?.[0];
+  if (file) importNetworkFile(file);
+});
+byId('orders-import').addEventListener('change', (event) => {
+  const file = event.target.files?.[0];
+  if (file) importOrdersFile(file);
+});
+byId('export-report').addEventListener('click', exportReport);
+byId('new-promotion-button').addEventListener('click', () => openPromotionForm());
+byId('cancel-promotion-button').addEventListener('click', closePromotionForm);
+byId('promotion-form').addEventListener('submit', savePromotion);
+byId('promotion-list').addEventListener('click', handlePromotionAction);
+byId('report-search').addEventListener('input', renderOrders);
+byId('report-status').addEventListener('change', renderOrders);
+byId('report-payment').addEventListener('change', renderOrders);
+byId('report-date-from').addEventListener('change', renderOrders);
+byId('report-date-to').addEventListener('change', renderOrders);
+byId('refresh-report').addEventListener('click', loadWooOrders);
+byId('admin-dashboard-period').addEventListener('change', () => {
+  syncDashboardDateInputs();
+  renderAdminDashboard();
+});
+['admin-dashboard-date-from', 'admin-dashboard-date-to'].forEach((id) => byId(id).addEventListener('change', () => {
+  byId('admin-dashboard-period').value = 'custom';
+  renderAdminDashboard();
+}));
+byId('orders-table').addEventListener('click', (event) => {
+  const assignment = event.target.closest('[data-save-assignment]');
+  if (assignment) { saveOrderAssignment(assignment); return; }
+  const button = event.target.closest('[data-order-payment]');
+  if (button) registerOrderPayment(button);
+});
+byId('shop-search').addEventListener('input', renderShopProducts);
+byId('shop-products').addEventListener('click', (event) => {
+  const expandButton = event.target.closest('[data-product-expand]');
+  if (expandButton) {
+    openProductDetail(Number(expandButton.dataset.productExpand));
+    return;
+  }
+  const downloadButton = event.target.closest('[data-package-document-download]');
+  if (downloadButton) {
+    downloadPackageDocument(downloadButton.dataset.packageDocumentDownload, downloadButton);
+    return;
+  }
+  const deleteButton = event.target.closest('[data-package-document-delete]');
+  if (deleteButton) {
+    deletePackageDocument(deleteButton.dataset.packageDocumentDelete);
+    return;
+  }
+  const quantityButton = event.target.closest('[data-product-quantity]');
+  if (quantityButton) {
+    const productId = Number(quantityButton.dataset.productId);
+    if (quantityButton.dataset.productQuantity === 'increase') {
+      addToShopCart(productId);
+      renderShopProducts();
+    } else {
+      updateShopCartItem(productId, 'decrease');
+    }
+    return;
+  }
+  const cartButton = event.target.closest('[data-cart-add]');
+  if (cartButton) {
+    addToShopCart(Number(cartButton.dataset.cartAdd), cartButton);
+    return;
+  }
+  const link = event.target.closest('[data-shop-destination]');
+  if (!link) return;
+  event.preventDefault();
+  openWooSession(link.dataset.shopDestination, link);
+});
+byId('product-detail-dialog').addEventListener('click', (event) => {
+  if (event.target === event.currentTarget || event.target.closest('[data-product-detail-close]')) {
+    event.currentTarget.close();
+    return;
+  }
+  const quantityButton = event.target.closest('[data-detail-quantity]');
+  if (!quantityButton) return;
+  const productId = Number(quantityButton.dataset.productId);
+  if (quantityButton.dataset.detailQuantity === 'increase') addToShopCart(productId);
+  else updateShopCartItem(productId, 'decrease');
+  openProductDetail(productId);
+});
+byId('admin-dashboard').addEventListener('click', (event) => {
+  const button = event.target.closest('[data-dashboard-detail]');
+  if (button) openDashboardDetail(button.dataset.dashboardDetail);
+});
+byId('dashboard-detail-dialog').addEventListener('click', (event) => {
+  if (event.target === event.currentTarget || event.target.closest('[data-dashboard-detail-close]')) event.currentTarget.close();
+});
+byId('shop-products').addEventListener('submit', (event) => {
+  const form = event.target.closest('[data-package-document-form]');
+  if (!form) return;
+  event.preventDefault();
+  uploadPackageDocument(form);
+});
+byId('shop-cart-link').addEventListener('click', (event) => {
+  event.preventDefault();
+  setCartPanel(byId('shop-cart-panel').classList.contains('hidden'));
+});
+byId('shop-cart-close').addEventListener('click', () => setCartPanel(false));
+byId('shop-continue-shopping').addEventListener('click', () => {
+  setCartPanel(false);
+  byId('shop-products').scrollIntoView({ behavior: 'smooth', block: 'start' });
+});
+byId('shop-continue-shopping-top').addEventListener('click', () => {
+  setCartPanel(false);
+  byId('shop-products').scrollIntoView({ behavior: 'smooth', block: 'start' });
+});
+byId('shop-cart-items').addEventListener('click', (event) => {
+  const button = event.target.closest('[data-cart-action]');
+  const item = event.target.closest('[data-cart-product]');
+  if (!button || !item) return;
+  updateShopCartItem(Number(item.dataset.cartProduct), button.dataset.cartAction);
+});
+const openBankCheckout = createBankCheckout({
+  userId: () => currentUser?.id || '',
+  escape: escapeHtml,
+  money,
+  clearCart: () => { shopCart = []; shopQuote = null; shopCoupon = ''; saveShopCart(); renderShopCart(); },
+  api: async (body) => {
+    const { data } = await supabase.auth.getSession();
+    if (!data.session?.access_token) throw new Error('Sessione scaduta. Accedi nuovamente.');
+    const result = await fetch('/api/bank-checkout', {
+      method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${data.session.access_token}` },
+      body: JSON.stringify(body),
+    });
+    const payload = await result.json();
+    if (!result.ok) { const error = new Error(payload.error || 'Conferma non disponibile'); error.code = payload.code; throw error; }
+    return payload;
+  },
+});
+byId('shop-checkout').addEventListener('click', (event) => {
+  if (!shopCart.length) return;
+  if (!validateShopAddress()) return;
+  if (config.bankCheckoutEnabled && ['agent', 'distributor', 'center'].includes(currentUser?.role)) {
+    if (currentUser.role === 'agent' && !selectedAgentCustomer) {
+      showRoute('agent-customers', { push: true });
+      byId('shop-message').textContent = 'Seleziona il cliente per cui ordinare';
+      return;
+    }
+    openBankCheckout({ items: shopCart, coupon: shopCoupon, address: readShopAddress(), customerId: selectedAgentCustomer?.id || null });
+    return;
+  }
+  openWooSession(
+    new URL('/pagamento/', config.wooBaseUrl).toString(),
+    event.currentTarget,
+    shopCart.map(({ productId, quantity }) => ({ productId, quantity })),
+    shopCoupon,
+    { address: readShopAddress(), checkout: true },
+  );
+});
+byId('shop-cart-panel').addEventListener('input', (event) => {
+  if (event.target.closest('.shop-address')) {
+    byId('shop-address-status').textContent = 'Modifiche non ancora salvate';
+  }
+});
+byId('shipping-state').addEventListener('input', (event) => {
+  event.currentTarget.value = event.currentTarget.value.toUpperCase().replace(/[^A-Z]/g, '').slice(0, 2);
+});
+byId('shop-apply-coupon').addEventListener('click', () => applyShopCoupon());
+byId('shop-coupon').addEventListener('keydown', (event) => {
+  if (event.key === 'Enter') {
+    event.preventDefault();
+    applyShopCoupon();
+  }
+});
+byId('shop-coupon').addEventListener('input', (event) => {
+  if (event.currentTarget.value.trim().toLowerCase() === shopCoupon.toLowerCase()) return;
+  shopCoupon = '';
+  shopQuote = null;
+  byId('shop-coupon-message').className = '';
+  byId('shop-coupon-message').textContent = 'Premi Applica per verificare il nuovo codice.';
+  renderShopCart();
+});
+byId('shop-categories').addEventListener('change', (event) => {
+  shopCategory = event.currentTarget.value;
+  renderShopProducts();
+});
+byId('marketing-upload-form').addEventListener('submit', uploadMarketingMaterial);
+byId('marketing-list').addEventListener('click', (event) => {
+  const downloadButton = event.target.closest('[data-marketing-download]');
+  if (downloadButton) {
+    downloadMarketingMaterial(downloadButton.dataset.marketingDownload, downloadButton);
+    return;
+  }
+  const shareButton = event.target.closest('[data-marketing-share]');
+  if (shareButton) {
+    shareMarketingMaterial(shareButton.dataset.marketingShare, shareButton);
+    return;
+  }
+  const deleteButton = event.target.closest('[data-marketing-delete]');
+  if (deleteButton) deleteMarketingMaterial(deleteButton.dataset.marketingDelete);
+});
+
+syncDashboardDateInputs();
+initSupabaseStatus();
+initRouting();
+if (supabase) {
+  supabase.auth.onAuthStateChange((event) => {
+    if (event !== 'PASSWORD_RECOVERY') return;
+    passwordRecoveryActive = true;
+    setAuthMode('reset');
+    showAuthMessage('Link verificato. Scegli ora la nuova password.', 'success');
+  });
+}
+renderCodes();
+renderPromotions();
+renderNetwork();
+renderOrders();
+updateMetrics();
+if (passwordRecoveryActive) setAuthMode('reset');
+restoreSession();
+
+['customer-report-search','customer-report-from','customer-report-to'].forEach(id => byId(id).addEventListener('input',renderAdminCustomerReport));
+byId('customer-report-all').addEventListener('click', () => {
+  byId('customer-report-from').value = ''; byId('customer-report-to').value = ''; renderAdminCustomerReport();
+});
+byId('customer-report-refresh').addEventListener('click', () => loadAdminCustomerReport(true));
+byId('customer-report-table').addEventListener('click', event => {
+  const button = event.target.closest('[data-customer-turnover]');
+  if (button) openCustomerTurnover(Number(button.dataset.customerTurnover));
+});
+
+['products', 'promotions'].forEach(kind => {
+  byId(`admin-${kind}-expand`).addEventListener('click', () => {
+    if (currentUser?.role !== 'admin') return;
+    dashboardSalesExpanded[kind] = !dashboardSalesExpanded[kind];
+    renderAdminDashboard();
+  });
+});
+
+byId('request-new-recovery-link').addEventListener('click', () => {
+  passwordRecoveryActive = false;
+  window.history.replaceState({}, '', '/recupera-password');
+  setAuthMode('recovery');
+});
+
+byId('dashboard-profile-select').addEventListener('change', event => selectDashboardProfile(event.target.value));
+byId('dashboard-profile-search').addEventListener('input', renderDashboardProfilePicker);
+byId('dashboard-profile-reset').addEventListener('click', () => selectDashboardProfile(''));
