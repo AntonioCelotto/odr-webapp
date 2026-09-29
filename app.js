@@ -2512,6 +2512,10 @@ async function loadAgentCustomers() {
 
 async function saveAgentCustomer(event) {
   event.preventDefault();
+  if (!byId('agent-customer-pec').value.trim() && !byId('agent-customer-sdi').value.trim()) {
+    byId('agent-customer-message').textContent = 'Inserisci almeno uno tra PEC e codice SDI.';
+    byId('agent-customer-pec').focus(); return;
+  }
   const { data } = await supabase.auth.getSession();
   const button = event.currentTarget.querySelector('[type="submit"]');
   button.disabled = true;
@@ -2523,6 +2527,9 @@ async function saveAgentCustomer(event) {
       headers: { Authorization: `Bearer ${data.session?.access_token || ''}`, 'Content-Type': 'application/json' },
       body: JSON.stringify({
         customerId: editId || undefined, name: byId('agent-customer-name').value,
+        soleTrader: byId('agent-customer-sole-trader').checked,
+        storeRequested: byId('agent-customer-store').checked,
+        storeCategory: byId('agent-customer-store-category').value,
         company: byId('agent-customer-company').value,
         email: byId('agent-customer-email').value,
         phone: byId('agent-customer-phone').value,
@@ -2593,6 +2600,12 @@ function handleAgentCustomerClick(event) {
     };
     Object.entries(fields).forEach(([id, value]) => { byId(id).value = value || ''; });
     document.querySelectorAll('[name="agent-payment-term"]').forEach((input) => { input.checked = (customer.paymentTerms || [30]).includes(Number(input.value)); });
+    byId('agent-customer-sole-trader').checked = Boolean(customer.soleTrader);
+    byId('agent-customer-tax-code').required = Boolean(customer.soleTrader);
+    byId('agent-customer-store').checked = Boolean(customer.storeRequested);
+    byId('agent-customer-store').disabled = Boolean(customer.storeRequested);
+    byId('agent-customer-store-category').value = customer.storeCategory || 'beauty';
+    byId('agent-customer-store-category').disabled = Boolean(customer.storeRequested);
     byId('agent-customer-edit-id').value = customer.id;
     byId('agent-customer-extra').classList.remove('hidden');
     byId('agent-customer-form').classList.remove('hidden');
@@ -3250,10 +3263,13 @@ byId('refresh-users').addEventListener('click', loadAdminUsers);
 byId('admin-users-table').addEventListener('click', handleAdminUserAction);
 byId('new-agent-customer').addEventListener('click', () => {
   byId('agent-customer-form').reset(); byId('agent-customer-edit-id').value = '';
-  byId('agent-customer-extra').classList.add('hidden'); byId('agent-customer-form').classList.remove('hidden');
+  byId('agent-customer-tax-code').required = false;
+  byId('agent-customer-store').disabled = false;
+  byId('agent-customer-store-category').disabled = false;
+  byId('agent-customer-form').classList.remove('hidden');
 });
 byId('cancel-agent-customer').addEventListener('click', () => { byId('agent-customer-form').classList.add('hidden'); byId('agent-customer-edit-id').value = ''; });
-byId('toggle-agent-customer-extra').addEventListener('click', () => byId('agent-customer-extra').classList.toggle('hidden'));
+byId('agent-customer-sole-trader').addEventListener('change', () => { byId('agent-customer-tax-code').required = byId('agent-customer-sole-trader').checked; });
 byId('agent-customer-form').addEventListener('submit', saveAgentCustomer);
 byId('agent-customer-list').addEventListener('click', handleAgentCustomerClick);
 byId('agent-customer-search').addEventListener('input', renderAgentCustomers);

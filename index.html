@@ -533,20 +533,20 @@
             </div>
             <div class="form-grid">
               <label>Nome centro / cliente <input id="agent-customer-name" required maxlength="250" /></label>
-              <label>Ragione sociale <input id="agent-customer-company" maxlength="250" /></label>
+              <label>Ragione sociale <input id="agent-customer-company" required maxlength="250" /></label>
               <label>Email <input id="agent-customer-email" type="email" required maxlength="200" /></label>
-              <label>Telefono <input id="agent-customer-phone" maxlength="60" /></label>
-              <label class="wide agent-customer-wide">Indirizzo <input id="agent-customer-address" maxlength="160" /></label>
-              <label>CAP <input id="agent-customer-postcode" maxlength="20" /></label>
-              <label>Città <input id="agent-customer-city" maxlength="100" /></label>
-              <label>Provincia <input id="agent-customer-state" maxlength="2" /></label>
+              <label>Telefono <input id="agent-customer-phone" required maxlength="60" /></label>
+              <label class="wide agent-customer-wide">Indirizzo <input id="agent-customer-address" required maxlength="160" /></label>
+              <label>CAP <input id="agent-customer-postcode" required maxlength="20" /></label>
+              <label>Città <input id="agent-customer-city" required maxlength="100" /></label>
+              <label>Provincia <input id="agent-customer-state" required maxlength="2" /></label>
             </div>
-            <button id="toggle-agent-customer-extra" class="customer-extra-toggle" type="button"><span>＋</span> Aggiungi dati fiscali, spedizione e pagamenti</button>
-            <div id="agent-customer-extra" class="customer-extra hidden">
-              <h3>Dati fiscali</h3>
+            <p>Dati fiscali obbligatori: inserisci almeno uno tra PEC e codice SDI.</p>
+            <div id="agent-customer-extra" class="customer-extra">
+              <h3>Dati fiscali</h3><label><input id="agent-customer-sole-trader" type="checkbox" /> Ditta individuale (codice fiscale obbligatorio)</label>
               <div class="form-grid">
                 <label>Codice fiscale <input id="agent-customer-tax-code" maxlength="32" /></label>
-                <label>Partita IVA <input id="agent-customer-vat" maxlength="32" /></label>
+                <label>Partita IVA <input id="agent-customer-vat" required maxlength="32" /></label>
                 <label>PEC <input id="agent-customer-pec" type="email" maxlength="200" /></label>
                 <label>Codice SDI <input id="agent-customer-sdi" maxlength="20" /></label>
               </div>
@@ -568,6 +568,11 @@
               </div>
               <label class="customer-notes">Altre informazioni <textarea id="agent-customer-notes" rows="3" maxlength="1000"></textarea></label>
             </div>
+            <fieldset class="customer-extra"><legend>Store Locator</legend>
+              <label><input id="agent-customer-store" type="checkbox" /> Inserisci anche nello Store Locator</label>
+<label>Tipologia Store Locator <select id="agent-customer-store-category"><option value="beauty">Centro estetico</option><option value="problem_skin">Pelli problematiche</option><option value="oncology">Estetica oncologica</option><option value="hair">Parrucchiere</option><option value="distributor">Distributore</option></select></label>
+<p>La scheda sarà assegnata al tuo profilo e dovrà essere approvata dall’amministratore. Nello Store Locator potrai completarla e usare “Trova posizione dall’indirizzo”. Le modifiche successive alla scheda si effettuano nello Store Locator.</p>
+</fieldset>
             <div class="action-row">
               <button class="primary-action" type="submit">Salva cliente</button><input id="agent-customer-edit-id" type="hidden" />
               <button id="cancel-agent-customer" class="secondary-action" type="button">Annulla</button>

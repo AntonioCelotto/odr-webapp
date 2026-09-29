@@ -94,6 +94,13 @@ export default async function handler(req, res) {
     const email = clean(body.email, 200).toLowerCase();
     const name = clean(body.name);
     if (!name || !email || !/^\S+@\S+\.\S+$/.test(email)) return json(res, 400, { error: 'Nome ed email validi sono obbligatori' });
+    for (const field of ['company','phone','address1','postcode','city','state','vatNumber']) {
+      if (!clean(body[field])) return json(res, 400, { error: 'Completa ragione sociale, telefono, indirizzo e partita IVA' });
+    }
+    if (body.soleTrader === true && !clean(body.taxCode)) return json(res, 400, { error: 'Codice fiscale obbligatorio per la ditta individuale' });
+    if (!clean(body.pec) && !clean(body.sdiCode)) return json(res, 400, { error: 'Inserisci almeno uno tra PEC e codice SDI' });
+    if (clean(body.pec) && !/^\S+@\S+\.\S+$/.test(clean(body.pec))) return json(res,400,{error:'PEC non valida'});
+    if (body.storeRequested === true && !['beauty','problem_skin','oncology','hair','distributor'].includes(body.storeCategory)) return json(res,400,{error:'Scegli la tipologia Store Locator'});
     const editingId = clean(body.customerId, 80).replace(/^app-/, '');
     const duplicateUrl = new URL('/rest/v1/agent_app_customers', base);
     duplicateUrl.searchParams.set('agent_profile_id', `eq.${profile.id}`);
@@ -118,6 +125,7 @@ export default async function handler(req, res) {
       headers: { ...customerHeaders, Prefer: 'return=representation' },
       body: JSON.stringify({
         agent_profile_id: profile.id,
+        sole_trader: body.soleTrader === true, store_requested: body.storeRequested === true, store_category: body.storeCategory || 'beauty',
         name,
         company: clean(body.company) || null,
         email,
@@ -138,7 +146,11 @@ export default async function handler(req, res) {
       }),
     });
     const [saved] = create.ok ? await create.json() : [];
-    if (!saved) throw new Error('Salvataggio cliente nell’app non riuscito');
+    if (!saved) {
+      const failure = await create.json().catch(() => ({}));
+      if (failure.code === '23505') return json(res,409,{error:'Esiste già una scheda Store Locator con questo nome e indirizzo. Salva senza il flag e verifica la scheda esistente.'});
+      throw new Error('Salvataggio cliente non riuscito. Controlla anche tipologia e indirizzo Store Locator. Nessuna modifica è stata salvata.');
+    }
     return json(res, req.method === 'PUT' ? 200 : 201, { customer: {
       id: `app-${saved.id}`, name, email, phone: clean(body.phone, 60), area: clean(body.city, 100), source: 'app',
       address: {
@@ -182,7 +194,7 @@ export async function listManagedCustomers(profile) {
           email: item.email,
           phone: item.phone || '',
           area: item.city || '',
-          source: 'app',
+          source: 'app', soleTrader: item.sole_trader, storeRequested: item.store_requested, storeCategory: item.store_category,
           taxCode: item.tax_code || '', vatNumber: item.vat_number || '', pec: item.pec || '', sdiCode: item.sdi_code || '',
           paymentTerms: item.payment_terms?.length ? item.payment_terms : [30], notes: item.notes || '',
           orders: [],
