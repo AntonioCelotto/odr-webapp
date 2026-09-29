@@ -2512,15 +2512,16 @@ async function loadAgentCustomers() {
 
 async function saveAgentCustomer(event) {
   event.preventDefault();
+  const form = event.currentTarget;
   if (!byId('agent-customer-pec').value.trim() && !byId('agent-customer-sdi').value.trim()) {
     byId('agent-customer-message').textContent = 'Inserisci almeno uno tra PEC e codice SDI.';
     byId('agent-customer-pec').focus(); return;
   }
-  const { data } = await supabase.auth.getSession();
-  const button = event.currentTarget.querySelector('[type="submit"]');
+  const button = form.querySelector('[type="submit"]');
   button.disabled = true;
     byId('agent-customer-message').textContent = 'Salvataggio cliente nell’app...';
   try {
+    const { data } = await supabase.auth.getSession();
     const editId = byId('agent-customer-edit-id').value;
     const response = await fetch('/api/agent-customers', {
       method: editId ? 'PUT' : 'POST',
@@ -2548,8 +2549,8 @@ async function saveAgentCustomer(event) {
     });
     const payload = await response.json();
     if (!response.ok) throw new Error(payload.error || 'Creazione non riuscita');
-    event.currentTarget.reset();
-    event.currentTarget.classList.add('hidden');
+    form.reset();
+    form.classList.add('hidden');
     await loadAgentCustomers();
     byId('agent-customer-edit-id').value = '';
     byId('agent-customer-message').textContent = editId ? 'Cliente aggiornato correttamente.' : 'Cliente salvato correttamente nell’app.';
