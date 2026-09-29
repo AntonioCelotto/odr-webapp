@@ -1299,6 +1299,19 @@ h2 {
   box-shadow: 0 0 0 3px rgba(142, 129, 170, 0.13);
 }
 
+#agent-customer-form .check-row {
+  grid-template-columns: 18px minmax(0, 1fr);
+  align-items: center;
+}
+
+#agent-customer-form .check-row input[type="checkbox"] {
+  width: 18px;
+  height: 18px;
+  min-height: 18px;
+  padding: 0;
+  margin: 0;
+}
+
 #agent-customer-form .agent-customer-wide {
   grid-column: 1 / -1;
 }
