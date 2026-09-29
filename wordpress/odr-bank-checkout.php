@@ -23,10 +23,51 @@ function odr_bank_checkout_bank() {
     return array('instructions' => wp_strip_all_tags($gateway->instructions), 'accounts' => array_values((array) get_option('woocommerce_bacs_accounts', array())));
 }
 
+function odr_bank_checkout_payment($option) {
+    $labels = array('bacs'=>'Bonifico bancario', 'bacs_30'=>'Bonifico bancario a 30 giorni', 'bacs_60'=>'Bonifico bancario a 60 giorni', 'bacs_90'=>'Bonifico bancario a 90 giorni', 'cod'=>'Contrassegno', 'bacs_advance'=>'Bonifico anticipato - sconto 3%');
+    if (!isset($labels[$option])) throw new Exception('Modalità di pagamento non valida');
+    return array('option'=>$option, 'gateway'=>$option === 'cod' ? 'cod' : 'bacs', 'label'=>$labels[$option], 'days'=>in_array($option,array('bacs_30','bacs_60','bacs_90'),true) ? (int) substr($option,5) : 0);
+}
+
+function odr_bank_checkout_advance_fee($cart) {
+    $net = (float) $cart->get_cart_contents_total();
+    foreach ($cart->get_fees() as $fee) {
+        if ($fee->id !== 'odr-advance-discount' && $fee->amount < 0) $net += $fee->amount;
+    }
+    $discount = round(max(0, $net) * 0.03, wc_get_price_decimals());
+    if ($discount > 0) $cart->fees_api()->add_fee(array('id'=>'odr-advance-discount', 'name'=>'Sconto bonifico anticipato 3%', 'amount'=>-$discount, 'taxable'=>true));
+}
+
+// Allocate discount VAT only across product tax classes, never shipping.
+function odr_bank_checkout_advance_taxes($taxes, $fee) {
+    if ($fee->object->id !== 'odr-advance-discount') return $taxes;
+    if (WC()->customer->get_is_vat_exempt()) return array();
+    $base = 0; $groups = array();
+    foreach (WC()->cart->get_cart() as $line) {
+        $amount = max(0, (float) $line['line_total']);
+        $base += $amount;
+        $class = $line['data']->is_taxable() ? $line['data']->get_tax_class() : 'non-taxable';
+        $groups[$class] = ($groups[$class] ?? 0) + $amount;
+    }
+    $taxes = array();
+    if ($base <= 0) return $taxes;
+    foreach ($groups as $class=>$amount) {
+        if ($class === 'non-taxable') continue;
+        foreach (WC_Tax::calc_tax($fee->total * $amount / $base, WC_Tax::get_rates($class, WC()->customer), false) as $rate=>$tax) {
+            $taxes[$rate] = ($taxes[$rate] ?? 0) + $tax;
+        }
+    }
+    return $taxes;
+}
+
 function odr_bank_checkout_cart($data) {
     // Request-local session: do not init/load/save cookies or persistent customer carts.
     add_filter('woocommerce_persistent_cart_enabled', '__return_false', PHP_INT_MAX);
     WC()->session = new WC_Session_Handler();
+    $payment = odr_bank_checkout_payment($data['payment_option'] ?? 'bacs');
+    add_filter('woocommerce_cart_totals_get_fees_from_cart_taxes','odr_bank_checkout_advance_taxes',10,2);
+    WC()->session->set('chosen_payment_method', $payment['gateway']);
+    if ($payment['option'] === 'bacs_advance') add_action('woocommerce_cart_calculate_fees','odr_bank_checkout_advance_fee',PHP_INT_MAX);
     $user = get_user_by('email', $data['customer_email']);
     $actor = get_user_by('email', $data['actor_email']);
     wp_set_current_user($actor ? $actor->ID : 0);
@@ -74,7 +115,7 @@ function odr_bank_checkout_cart($data) {
     if (WC()->cart->needs_shipping() && !$packages) throw new Exception('Calcolo spedizione non disponibile');
     WC()->session->set('chosen_shipping_methods', $selected);
     WC()->cart->calculate_totals();
-    if (!isset(WC()->payment_gateways()->get_available_payment_gateways()['bacs'])) throw new Exception('Bonifico non disponibile per questo ordine');
+    if (!isset(WC()->payment_gateways()->get_available_payment_gateways()[$payment['gateway']])) throw new Exception('Modalità di pagamento non disponibile per questo ordine');
     WC()->checkout()->check_cart_items();
     if (wc_notice_count('error')) {
         $errors = wc_get_notices('error');
@@ -84,13 +125,21 @@ function odr_bank_checkout_cart($data) {
     foreach (WC()->cart->get_cart() as $line) {
         $lines[] = array('id'=>$line['product_id'], 'name'=>$line['data']->get_name(), 'quantity'=>$line['quantity'], 'total'=>wc_format_decimal($line['line_total'], wc_get_price_decimals()), 'tax'=>wc_format_decimal($line['line_tax'], wc_get_price_decimals()));
     }
-    return array('lines'=>$lines, 'subtotal'=>WC()->cart->get_subtotal(), 'discount'=>WC()->cart->get_discount_total(),
+    $advance = 0; $adjustments = 0; $product_fees = 0;
+    foreach (WC()->cart->get_fees() as $fee) {
+        if ($fee->id === 'odr-advance-discount') $advance -= $fee->total;
+        elseif ($fee->total < 0) $product_fees += $fee->total;
+        else $adjustments += $fee->total;
+    }
+    return array('checkoutVersion'=>2, 'paymentOption'=>$payment['option'], 'advanceDiscount'=>$advance, 'adjustments'=>$adjustments,
+        'productsNet'=>WC()->cart->get_cart_contents_total() + $product_fees, 'lines'=>$lines, 'subtotal'=>WC()->cart->get_subtotal(), 'discount'=>WC()->cart->get_discount_total(),
         'shipping'=>WC()->cart->get_shipping_total(), 'tax'=>WC()->cart->get_total_tax(), 'fees'=>WC()->cart->get_fee_total(),
-        'total'=>WC()->cart->get_total('edit'), 'currency'=>get_woocommerce_currency(), 'shippingOptions'=>$choices, 'shippingMethods'=>array_values($selected), 'bank'=>odr_bank_checkout_bank());
+        'total'=>WC()->cart->get_total('edit'), 'currency'=>get_woocommerce_currency(), 'shippingOptions'=>$choices, 'shippingMethods'=>array_values($selected), 'bank'=>$payment['gateway'] === 'cod' ? null : odr_bank_checkout_bank());
 }
 
 function odr_bank_checkout_result($order) {
-    return array('orderId'=>$order->get_id(), 'orderNumber'=>$order->get_order_number(), 'status'=>$order->get_status(), 'total'=>$order->get_total(), 'currency'=>$order->get_currency(), 'bank'=>odr_bank_checkout_bank());
+    $payment = odr_bank_checkout_payment($order->get_meta('_odr_payment_option') ?: 'bacs');
+    return array('orderId'=>$order->get_id(), 'orderNumber'=>$order->get_order_number(), 'status'=>$order->get_status(), 'total'=>$order->get_total(), 'currency'=>$order->get_currency(), 'paymentOption'=>$payment['option'], 'bank'=>$payment['gateway'] === 'cod' ? null : odr_bank_checkout_bank());
 }
 
 function odr_bank_checkout_request(WP_REST_Request $r) {
@@ -100,7 +149,7 @@ function odr_bank_checkout_request(WP_REST_Request $r) {
         if (!$actor) throw new Exception('Profilo mancante');
         if ('quote' === $r['action']) {
             $data = array();
-            foreach (array('actor_id','role','actor_name','entity_id','actor_email','customer_reference','customer_email','billing','shipping','payment_terms','items','coupon','shipping_methods') as $field) $data[$field] = $r[$field];
+            foreach (array('actor_id','role','actor_name','entity_id','actor_email','customer_reference','customer_email','billing','shipping','payment_terms','items','coupon','shipping_methods','payment_option','order_notes') as $field) $data[$field] = $r[$field];
             if (!in_array($data['role'],array('agent','distributor','center'),true) || !is_array($data['items']) || !count($data['items']) || count($data['items']) > 50) throw new Exception('Carrello non valido');
             foreach ($data['items'] as $item) if (empty($item['product_id']) || !is_int($item['quantity']) || $item['quantity'] < 1 || $item['quantity'] > 99) throw new Exception('Quantità non valida');
             foreach (array('billing','shipping') as $type) {
@@ -108,6 +157,9 @@ function odr_bank_checkout_request(WP_REST_Request $r) {
                 foreach (array('first_name','last_name','address_1','city','postcode','country','state') as $field) if (empty($data[$type][$field])) throw new Exception('Indirizzo incompleto');
                 if (!WC_Validation::is_postcode($data[$type]['postcode'],$data[$type]['country'])) throw new Exception('CAP non valido');
             }
+            $data['payment_option'] = $data['payment_option'] ?: 'bacs';
+            odr_bank_checkout_payment($data['payment_option']);
+            $data['order_notes'] = sanitize_textarea_field(substr((string) $data['order_notes'],0,8000));
             if (!is_email($data['customer_email'])) throw new Exception('Email non valida');
             $summary = odr_bank_checkout_cart($data);
             $data['shipping_methods'] = $summary['shippingMethods'];
@@ -123,7 +175,7 @@ function odr_bank_checkout_request(WP_REST_Request $r) {
         if ($done) {
             $existing = wc_get_order($done);
             if (!$existing) throw new Exception('Ordine da verificare con amministrazione');
-            if ($existing->has_status('pending')) $existing->update_status('on-hold','Ordine ODR: in attesa di bonifico bancario.');
+            if ($existing->has_status('pending')) $existing->update_status('on-hold','Ordine ODR: in attesa di pagamento.');
             return rest_ensure_response(odr_bank_checkout_result($existing));
         }
         $quote = get_transient('odr_bq_' . $token);
@@ -135,16 +187,20 @@ function odr_bank_checkout_request(WP_REST_Request $r) {
         $data = $quote['data'];
         $summary = odr_bank_checkout_cart($data);
         if (wp_json_encode($summary) !== wp_json_encode($quote['summary'])) return new WP_Error('quote_changed','Prezzi o spedizione sono cambiati. Ricalcola prima di confermare.',array('status'=>409));
-        $posted = array('payment_method'=>'bacs','ship_to_different_address'=>1,'terms'=>1,'createaccount'=>0,'shipping_method'=>$summary['shippingMethods']);
+        $payment = odr_bank_checkout_payment($data['payment_option'] ?? 'bacs');
+        $posted = array('order_comments'=>$data['order_notes'] ?? '', 'payment_method'=>$payment['gateway'],'ship_to_different_address'=>1,'terms'=>1,'createaccount'=>0,'shipping_method'=>$summary['shippingMethods']);
         foreach (array('billing','shipping') as $type) foreach ($data[$type] as $field=>$value) $posted[$type.'_'.$field] = wc_clean($value);
         $customer = get_user_by('email', $data['customer_email']);
         add_filter('woocommerce_checkout_customer_id', function () use ($customer) { return $customer ? $customer->ID : 0; });
         // Store attribution before WooCommerce persists the new order and fires its hooks.
-        add_action('woocommerce_checkout_create_order', function ($order) use ($data,$key) {
+        add_action('woocommerce_checkout_create_order', function ($order) use ($data,$key,$payment) {
             $order->set_created_via('odr-bank-app');
             $order->update_meta_data('_odr_bank_request', $key);
             $order->update_meta_data('_odr_customer_reference',$data['customer_reference']);
-            $order->update_meta_data('_odr_payment_terms',implode(',', (array)$data['payment_terms']));
+            $order->update_meta_data('_odr_payment_option',$payment['option']);
+            $order->update_meta_data('_odr_payment_terms',$payment['days'] ? (string) $payment['days'] : '');
+            $order->set_payment_method_title($payment['label']);
+            $order->set_customer_note($data['order_notes'] ?? '');
             if (in_array($data['role'],array('agent','distributor'),true)) {
                 $order->update_meta_data('_odr_agent_profile_id',$data['actor_id']);
                 $order->update_meta_data('_odr_agent_entity_id',$data['entity_id']);
@@ -159,13 +215,15 @@ function odr_bank_checkout_request(WP_REST_Request $r) {
         if (!$order) throw new Exception('Conferma da verificare con amministrazione');
         update_option('odr_bo_' . $key, $id, false);
         do_action('woocommerce_checkout_order_processed', $id, $posted, $order);
-        // BACS means unpaid: on-hold triggers WooCommerce stock, coupon and email hooks.
-        $order->update_status('on-hold','Ordine ODR: in attesa di bonifico bancario.');
+        // Offline payments remain unpaid; on-hold triggers stock, coupon and email hooks.
+        $order->update_status('on-hold','Ordine ODR: in attesa di pagamento.');
         delete_option($lock);
         return rest_ensure_response(odr_bank_checkout_result($order));
     } catch (Throwable $e) {
         return new WP_Error('bank_checkout_error',wp_strip_all_tags($e->getMessage()),array('status'=>400));
     } finally {
         if ($locked && $lock) delete_option($lock);
+        remove_filter('woocommerce_cart_totals_get_fees_from_cart_taxes','odr_bank_checkout_advance_taxes',10);
+        remove_action('woocommerce_cart_calculate_fees','odr_bank_checkout_advance_fee',PHP_INT_MAX);
     }
 }

@@ -1,7 +1,9 @@
 import assert from 'node:assert/strict';
-import handler, { validateItems, address } from '../api/bank-checkout.js';
+import handler, { validateItems, address, payment } from '../api/bank-checkout.js';
 assert.deepEqual(validateItems([{productId:1,quantity:2}]),[{product_id:1,quantity:2}]);
 for (const items of [[], [{productId:1,quantity:1.5}], [{productId:1,quantity:100}], [{productId:1,quantity:1},{productId:1,quantity:2}]]) assert.throws(()=>validateItems(items));
+for (const option of ['bacs','bacs_30','bacs_60','bacs_90','cod','bacs_advance']) assert.equal(payment(option),option);
+assert.throws(()=>payment('stripe'));
 const delivery = {firstName:'Anna',lastName:'Test',address1:'Via Roma 1',postcode:'10100',city:'Torino',state:'to',country:'it',phone:'123'};
 assert.equal(address(delivery,'verified@example.test').email,'verified@example.test');
 assert.throws(()=>address({...delivery,postcode:'abc'},'a@b.it'));
@@ -16,7 +18,7 @@ globalThis.fetch=async (url,options={})=>{
   if(String(url).endsWith('/auth/v1/user')) return Response.json({id:'verified-user',email:'verified@example.test'});
   if(String(url).includes('/rest/v1/profiles')) return Response.json([{id:'verified-user',role,approval_status:approved}]);
   if(String(url).includes('/promo-codes')) return Response.json({activeCode:null});
-  if(String(url).includes('/bank-checkout')) {upstream=JSON.parse(options.body);return Response.json({quoteToken:'a'.repeat(64),total:'100.00'});}
+  if(String(url).includes('/bank-checkout')) {upstream=JSON.parse(options.body);return Response.json({checkoutVersion:2,quoteToken:'a'.repeat(64),total:'100.00'});}
   throw Error('Unexpected request '+url);
 };
 async function call(body,authorization='Bearer test') {
@@ -31,6 +33,11 @@ approved='approved'; assert.equal((await call({action:'quote',customerId:'wc-9'}
 role='agent'; assert.equal((await call({action:'quote'})).status,400);
 role='center'; assert.equal((await call({action:'quote',items:[{productId:1,quantity:2}],address:delivery,coupon:'SAVE',role:'admin',actor_id:'attacker',total:1})).status,200);
 assert.equal(upstream.actor_id,'verified-user'); assert.equal(upstream.role,'center'); assert.equal(upstream.customer_email,'verified@example.test'); assert.equal(upstream.total,undefined);
+for (const option of ['bacs_30','bacs_60','bacs_90','cod','bacs_advance']) {
+  assert.equal((await call({action:'quote',items:[{productId:1,quantity:2}],address:delivery,paymentOption:option,orderNotes:'Note consegna',discount:99})).status,200);
+  assert.equal(upstream.payment_option,option); assert.equal(upstream.order_notes,'Note consegna'); assert.equal(upstream.discount,undefined);
+}
+assert.equal((await call({action:'quote',items:[{productId:1,quantity:2}],address:delivery,paymentOption:'invalid'})).status,400);
 assert.equal((await call({action:'confirm',quoteToken:'bad'})).status,400);
 await call({action:'confirm',quoteToken:'b'.repeat(64),items:[{productId:99,quantity:5}],total:1});
 assert.equal(upstream.items,undefined);assert.equal(upstream.quote_token,'b'.repeat(64));assert.equal(upstream.actor_id,'verified-user');

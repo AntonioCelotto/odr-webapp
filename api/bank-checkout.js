@@ -20,6 +20,10 @@ export function address(value, email) {
   if (['first_name','last_name','address_1','postcode','city','state','phone'].some(k=>!result[k]) || result.country !== 'IT' || !/^\d{5}$/.test(result.postcode) || !/^[A-Z]{2}$/.test(result.state)) throw new Error('Completa nome, indirizzo, CAP, provincia e telefono');
   return result;
 }
+export function payment(value = 'bacs') {
+  if (!['bacs','bacs_30','bacs_60','bacs_90','cod','bacs_advance'].includes(value)) throw new Error('Modalità di pagamento non valida');
+  return value;
+}
 export default async function handler(req,res) {
   if (req.method !== 'POST') return reply(res,405,{error:'Metodo non consentito'});
   const token = String(req.headers.authorization || '').replace(/^Bearer\s+/i,'');
@@ -57,6 +61,7 @@ export default async function handler(req,res) {
       payload = {...payload, role:profile.role, actor_name:profile.full_name || '', entity_id:profile.network_entity_id || '', actor_email:user.email,
         customer_reference:customerId, customer_email:email, billing, shipping,
         payment_terms:customer?.paymentTerms || [],
+        payment_option:payment(req.body.paymentOption), order_notes:String(req.body.orderNotes || '').trim().slice(0,2000),
         items:validateItems(req.body.items), coupon:String(req.body.coupon || '').trim().slice(0,100),
         shipping_methods:Array.isArray(req.body.shippingMethods) ? req.body.shippingMethods.map(String).slice(0,10) : [],
       };
@@ -70,9 +75,10 @@ export default async function handler(req,res) {
     const result = await fetch(endpoint,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({...payload,consumer_key:process.env.WOOCOMMERCE_CONSUMER_KEY,consumer_secret:process.env.WOOCOMMERCE_CONSUMER_SECRET}),signal:AbortSignal.timeout(55000)});
     const data = await result.json().catch(()=>({}));
     if (!result.ok) return reply(res,result.status >= 500 ? 502 : result.status,{error:data.message || 'Checkout non disponibile',code:data.code});
+    if (action === 'quote' && data.checkoutVersion !== 2) return reply(res,503,{error:'Aggiornamento checkout in corso. Riprova tra poco.'});
     return reply(res,200,data);
   } catch(error) {
-    const expected = /Carrello|Quantità|Completa|Verifica codice/.test(error.message);
+    const expected = /Carrello|Quantità|Completa|Verifica codice|Modalità/.test(error.message);
     return reply(res,expected ? 400 : 502,{error:expected ? error.message : 'Conferma non disponibile. Riprova: la stessa richiesta non crea un secondo ordine.'});
   }
 }

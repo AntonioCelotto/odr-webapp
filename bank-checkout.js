@@ -3,6 +3,8 @@ export function createBankCheckout({ api, userId, clearCart, escape, money }) {
   let quote = null;
   let payload = null;
   let busy = false;
+  let notesDirty = false;
+  const paymentLabels = {bacs:'Bonifico bancario',bacs_30:'Bonifico bancario a 30 giorni',bacs_60:'Bonifico bancario a 60 giorni',bacs_90:'Bonifico bancario a 90 giorni',cod:'Contrassegno',bacs_advance:'Bonifico anticipato — sconto 3% sui prodotti'};
   const dialog = document.createElement('dialog');
   dialog.className = 'bank-checkout-dialog';
   dialog.setAttribute('aria-label','Riepilogo e conferma ordine');
@@ -19,20 +21,29 @@ export function createBankCheckout({ api, userId, clearCart, escape, money }) {
     shell(`<p>Controlla il riepilogo prima di confermare. L’ordine resterà in attesa di pagamento.</p>
       <p>${escape(payload.address.firstName)} ${escape(payload.address.lastName)} · ${escape(payload.address.address1)}, ${escape(payload.address.postcode)} ${escape(payload.address.city)}</p>
       <ul>${quote.lines.map(l=>`<li>${escape(l.name)} × ${l.quantity} — ${money(Number(l.total)+Number(l.tax))}</li>`).join('')}</ul>
-      ${(quote.shippingOptions || []).map((rates,i)=>`<label>Spedizione ${i+1}<select data-shipping="${i}">${rates.map(r=>`<option value="${escape(r.id)}" ${quote.shippingMethods[i]===r.id ? 'selected' : ''}>${escape(r.label)} — ${money(r.total)} IVA inclusa</option>`).join('')}</select></label>`).join('')}
-      <dl><dt>Prodotti, IVA esclusa</dt><dd>${money(quote.subtotal)}</dd><dt>Sconto, IVA esclusa</dt><dd>− ${money(quote.discount)}</dd><dt>Spedizione, IVA esclusa</dt><dd>${money(quote.shipping)}</dd>${Number(quote.fees) ? `<dt>Altri costi, IVA esclusa</dt><dd>${money(quote.fees)}</dd>` : ''}<dt>IVA totale</dt><dd>${money(quote.tax)}</dd><dt><strong>Totale ordine</strong></dt><dd><strong>${money(quote.total)}</strong></dd></dl>${bank(quote.bank)}
-      <label><input type="checkbox" data-consent> Confermo i dati e l’ordine con pagamento tramite bonifico.</label>`,
+      <dl><dt>Subtotale prodotti, IVA esclusa</dt><dd>${money(quote.productsNet ?? (Number(quote.subtotal)-Number(quote.discount)+Number(quote.fees)))}</dd>
+      <dt>Spedizione, IVA esclusa</dt><dd>${money(quote.shipping)}</dd>
+      ${Number(quote.advanceDiscount) ? `<dt>Sconto bonifico anticipato (3%)</dt><dd>− ${money(quote.advanceDiscount)}</dd>` : ''}
+      ${Number(quote.adjustments) ? `<dt>Altri costi, IVA esclusa</dt><dd>${money(quote.adjustments)}</dd>` : ''}
+      <dt><strong>Totale imponibile</strong></dt><dd><strong>${money(Number(quote.total)-Number(quote.tax))}</strong></dd>
+      <dt>IVA</dt><dd>${money(quote.tax)}</dd><dt><strong>Totale acquisto / fattura</strong></dt><dd><strong>${money(quote.total)}</strong></dd></dl>
+      ${(quote.shippingOptions || []).map((rates,i)=>`<label>Metodo di spedizione<select data-shipping="${i}">${rates.map(r=>`<option value="${escape(r.id)}" ${quote.shippingMethods[i]===r.id ? 'selected' : ''}>${escape(r.label)}</option>`).join('')}</select></label>`).join('')}
+      <label>Modalità di pagamento<select data-payment>${Object.entries(paymentLabels).map(([value,label])=>`<option value="${value}" ${quote.paymentOption===value?'selected':''}>${label}</option>`).join('')}</select></label>
+      <label>Note ordine<textarea data-notes maxlength="2000" rows="3" placeholder="Indicazioni per l’ordine o la consegna">${escape(payload.orderNotes || '')}</textarea></label>
+      ${quote.paymentOption==='cod' ? '<p>Pagamento alla consegna tramite contrassegno.</p>' : bank(quote.bank)}
+      <label><input type="checkbox" data-consent> Confermo i dati e la modalità di pagamento selezionata.</label>`,
       '<button type="button" data-close>Torna al carrello</button><button type="button" data-confirm disabled>Conferma ordine</button>');
   }
   async function calculate() {
     busy = true; quote = null;
     shell('<p role="status">Calcolo spedizione e totale…</p>','');
-    try { quote = await api({...payload,action:'quote'}); renderQuote(); }
-    catch(e) { shell(`<p>${escape(e.message)}</p>`,'<button type="button" data-close>Torna al carrello</button><button type="button" data-recalculate>Riprova</button>'); }
+    try { quote = await api({...payload,action:'quote'}); notesDirty = false; renderQuote(); }
+    catch(e) { shell(`<p>${escape(e.message)}</p>`,'<button type="button" data-close>Torna al carrello</button><button type="button" data-recalculate>Riprova</button><button type="button" data-reset-payment>Usa bonifico bancario</button>'); }
     finally { busy = false; }
   }
   async function confirm() {
     if (busy) return;
+    if (!pending() && notesDirty) { await calculate(); return; }
     const token = pending() || quote?.quoteToken;
     if (!token) return;
     // Persist before sending. A reload/retry uses the same token, never a new order.
@@ -42,7 +53,7 @@ export function createBankCheckout({ api, userId, clearCart, escape, money }) {
     try {
       const order = await api({action:'confirm',quoteToken:token});
       localStorage.removeItem(storageKey()); clearCart(); quote = null;
-      shell(`<h3>Ordine ${escape(String(order.orderNumber || order.orderId))} ricevuto</h3><p>Totale: <strong>${money(order.total)}</strong></p><p>In attesa di pagamento tramite bonifico. Causale: ordine ${escape(String(order.orderNumber || order.orderId))}.</p>${bank(order.bank)}`,'<button type="button" data-close>Chiudi</button>');
+      shell(`<h3>Ordine ${escape(String(order.orderNumber || order.orderId))} ricevuto</h3><p>Totale: <strong>${money(order.total)}</strong></p><p>${escape(paymentLabels[order.paymentOption] || 'Bonifico bancario')} · In attesa di pagamento.</p>${order.paymentOption==='cod' ? '' : bank(order.bank)}`,'<button type="button" data-close>Chiudi</button>');
     } catch(e) {
       if (['quote_expired','quote_changed'].includes(e.code)) {
         localStorage.removeItem(storageKey());
@@ -53,7 +64,11 @@ export function createBankCheckout({ api, userId, clearCart, escape, money }) {
     } finally { busy = false; }
   }
   dialog.addEventListener('cancel',e=>{ if(busy) e.preventDefault(); });
+  dialog.addEventListener('input',e=>{
+    if(e.target.matches('[data-notes]')) { payload.orderNotes=e.target.value; notesDirty=true; dialog.querySelector('[data-confirm]').textContent='Aggiorna riepilogo'; }
+  });
   dialog.addEventListener('change',e=>{
+    if(e.target.matches('[data-payment]') && !busy) { payload.paymentOption=e.target.value; calculate(); }
     if (e.target.matches('[data-consent]')) dialog.querySelector('[data-confirm]').disabled = !e.target.checked;
     if (e.target.matches('[data-shipping]') && !busy) {
       payload.shippingMethods = [...quote.shippingMethods];
@@ -64,11 +79,12 @@ export function createBankCheckout({ api, userId, clearCart, escape, money }) {
     if (busy) return;
     if (e.target.closest('[data-close]')) dialog.close();
     if (e.target.closest('[data-recalculate]')) calculate();
+    if (e.target.closest('[data-reset-payment]')) { payload.paymentOption='bacs'; calculate(); }
     if (e.target.closest('[data-confirm]')) confirm();
   });
   return async function open(data) {
     if (busy) return;
-    payload = structuredClone(data);
+    payload = {...structuredClone(data),paymentOption:'bacs',orderNotes:''}; notesDirty=false;
     if (!dialog.open) dialog.showModal();
     if (pending()) {
       shell('<p>È presente una conferma da verificare. Controllala prima di inviare un altro ordine.</p>','<button type="button" data-close>Chiudi</button><button type="button" data-confirm>Verifica conferma</button>');
