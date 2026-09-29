@@ -886,7 +886,7 @@ function renderShopCart() {
   byId('shop-discount-row').classList.toggle('hidden', discount <= 0);
   byId('shop-cart-total').textContent = money(shopQuote?.total ?? total);
   byId('shop-checkout').disabled = false;
-  byId('shop-checkout').textContent = config.bankCheckoutEnabled && ['agent', 'distributor', 'center'].includes(currentUser?.role) ? 'Riepilogo e bonifico' : 'Concludi ordine e paga';
+  byId('shop-checkout').textContent = config.bankCheckoutEnabled && ['agent', 'distributor', 'center'].includes(currentUser?.role) ? 'Chiudi ordine' : 'Concludi ordine e paga';
 }
 
 function setCartPanel(open) {

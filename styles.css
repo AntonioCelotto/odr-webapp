@@ -1300,11 +1300,16 @@ h2 {
 }
 
 #agent-customer-form .check-row {
+  display: flex;
+  flex-direction: row;
+  justify-content: flex-start;
+  gap: 7px;
   grid-template-columns: 18px minmax(0, 1fr);
   align-items: center;
 }
 
 #agent-customer-form .check-row input[type="checkbox"] {
+  flex: 0 0 18px;
   width: 18px;
   height: 18px;
   min-height: 18px;
