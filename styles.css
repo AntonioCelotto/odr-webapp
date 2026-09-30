@@ -3510,6 +3510,10 @@ body .shop-cart-thumb img {
 #agent-customer-form .customer-field-error { display: block; color: #b42318; font-size: 12px; font-weight: 700; margin-top: 3px; }
 
 .shop-cart-totals .shop-cart-grand-total { justify-content: flex-end; gap: 12px; flex-wrap: wrap; }
-.shop-cart-totals .shop-cart-grand-total span { color: inherit; }
+.shop-cart-totals .shop-cart-grand-total { padding: 16px 18px; border-radius: 16px; background: #f2edf5; border: 1px solid #ded3e5; color: #4c3655; align-items: center; }
+.shop-cart-totals .shop-cart-grand-total span { color: inherit; font-size: 15px; font-weight: 700; line-height: 1.4; }
+.shop-cart-totals .shop-cart-grand-total strong { font-size: 26px; white-space: nowrap; }
+.checkout-payment-summary { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 12px; }
+.checkout-payment-summary span { font-weight: 700; }
 .shop-order-notes { display: grid; gap: 8px; width: 100%; font-weight: 700; }
 .shop-order-notes textarea { width: 100%; box-sizing: border-box; padding: 12px; border: 1px solid var(--line); border-radius: 12px; font: inherit; resize: vertical; }

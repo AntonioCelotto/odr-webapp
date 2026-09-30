@@ -139,7 +139,7 @@ function odr_bank_checkout_cart($data) {
 
 function odr_bank_checkout_result($order) {
     $payment = odr_bank_checkout_payment($order->get_meta('_odr_payment_option') ?: 'bacs');
-    return array('orderId'=>$order->get_id(), 'orderNumber'=>$order->get_order_number(), 'status'=>$order->get_status(), 'total'=>$order->get_total(), 'currency'=>$order->get_currency(), 'paymentOption'=>$payment['option'], 'bank'=>$payment['gateway'] === 'cod' ? null : odr_bank_checkout_bank());
+    return array('orderId'=>$order->get_id(), 'orderNumber'=>$order->get_order_number(), 'status'=>$order->get_status(), 'total'=>$order->get_total(), 'currency'=>$order->get_currency(), 'paymentOption'=>$payment['option'], 'paymentTerms'=>array_values(array_filter(array_map('intval',explode(',',(string)$order->get_meta('_odr_payment_terms'))),function($day){ return in_array($day,array(30,60,90,120),true); })), 'bank'=>$payment['gateway'] === 'cod' ? null : odr_bank_checkout_bank());
 }
 
 function odr_bank_checkout_request(WP_REST_Request $r) {

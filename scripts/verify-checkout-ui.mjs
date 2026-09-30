@@ -1,14 +1,14 @@
 import assert from 'node:assert/strict';
 import {createBankCheckout} from '../bank-checkout.js';
-let html='',requests=[],cleared=0;const listeners={};const consentButton={disabled:true};
+let html='',requests=[],cleared=0,confirmedPayment='cod';const listeners={};const consentButton={disabled:true};
 const dialog={setAttribute(){},set innerHTML(s){html=s},get innerHTML(){return html},addEventListener(k,fn){listeners[k]=fn},showModal(){this.open=true},close(){this.open=false},querySelector(){return consentButton}};
 globalThis.document={createElement:()=>dialog,body:{append(){}}};
 const storage=new Map();globalThis.localStorage={getItem:k=>storage.get(k),setItem:(k,v)=>storage.set(k,v),removeItem:k=>storage.delete(k)};
 const flush=()=>new Promise(r=>setTimeout(r,0));
 const open=createBankCheckout({userId:()=>1,clearCart:()=>cleared++,escape:s=>String(s).replaceAll('<','&lt;'),money:n=>Number(n).toFixed(2),api:async data=>{
  requests.push(structuredClone(data));
- if(data.action==='confirm')return {orderId:5,total:126.88,paymentOption:'cod'};
- return {quoteToken:'abc',paymentOption:data.paymentOption,productsNet:100,advanceDiscount:data.paymentOption==='bacs_advance'?3:0,shipping:7,tax:22.88,total:126.88,lines:[],shippingOptions:[],shippingMethods:[],bank:{accounts:[]}};
+ if(data.action==='confirm')return {orderId:5,total:126.88,paymentOption:confirmedPayment,paymentTerms:[30,60,90]};
+ return {quoteToken:'abc',paymentOption:data.paymentOption,productsNet:100,advanceDiscount:data.paymentOption==='bacs_advance'?2:0,shipping:7,tax:22.88,total:126.88,lines:[],shippingOptions:[],shippingMethods:[],bank:{accounts:[]}};
 }});
 await open({address:{},items:[]});
 assert.ok(html.indexOf('Subtotale prodotti')<html.indexOf('Spedizione, IVA esclusa'));
@@ -17,10 +17,18 @@ assert.ok(html.includes('bacs_90') && html.includes('Contrassegno'));
 listeners.input({target:{matches:s=>s==='[data-notes]',value:'Consegna <test>'}});
 listeners.change({target:{matches:s=>s==='[data-payment]',value:'bacs_advance'}});await flush();
 assert.equal(requests.at(-1).orderNotes,'Consegna <test>');assert.equal(requests.at(-1).paymentOption,'bacs_advance');
-assert.ok(html.includes('− 3.00') && html.includes('&lt;test>'));
+assert.ok(html.includes('− 2.00') && html.includes('&lt;test>'));
 listeners.change({target:{matches:s=>s==='[data-payment]',value:'cod'}});await flush();
 assert.ok(!html.includes('IBAN:'));
 listeners.click({target:{closest:s=>s==='[data-confirm]'}});await flush();
 assert.deepEqual(requests.at(-1),{action:'confirm',quoteToken:'abc'});assert.equal(cleared,1);assert.equal(storage.size,0);
 assert.ok(html.includes('Contrassegno') && !html.includes('IBAN:'));
 console.log('Checkout UI: totals order, payment recalculation, escaped/preserved notes, frozen confirm and cart clearing OK');
+
+assert.ok(!html.includes('In attesa di pagamento') && html.includes('126.88'));
+confirmedPayment='bacs';
+await open({address:{},items:[]});
+listeners.click({target:{closest:s=>s==='[data-confirm]'}});await flush();
+assert.ok(html.includes('30 giorni — 42.29') && html.includes('60 giorni — 42.29') && html.includes('90 giorni — 42.30'));
+assert.ok(!html.includes('In attesa di pagamento'));
+console.log('Confirmed payment schedule preserves cents and replaces pending label OK');

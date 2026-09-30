@@ -17,16 +17,16 @@ export function createBankCheckout({ api, userId, clearCart, escape, money }) {
   function shell(content, actions) {
     dialog.innerHTML = `<h2>Il tuo ordine</h2>${content}<p class="bank-checkout-error" role="alert"></p><div class="bank-checkout-actions">${actions}</div>`;
   }
-  function paymentSchedule() {
-    const option = quote.paymentOption;
-    const days = option === 'bacs' ? (quote.paymentTerms || []) : /^bacs_\d+$/.test(option) ? [Number(option.slice(5))] : [];
-    if (!days.length) return '';
-    const cents = Math.round(Number(quote.total) * 100);
+  function paymentSchedule(data = quote) {
+    const option = data.paymentOption;
+    const days = option === 'bacs' ? (data.paymentTerms || []) : /^bacs_\d+$/.test(option) ? [Number(option.slice(5))] : [];
+    if (!days.length) return `<p class="checkout-payment-summary"><strong>${escape(paymentLabels[option] || 'Bonifico bancario')}</strong><span>${money(data.total)}</span></p>`;
+    const cents = Math.round(Number(data.total) * 100);
     const part = Math.floor(cents / days.length);
     return `<p><strong>Bonifico bancario — ${days.join(' / ')} giorni</strong></p><ul>${days.map((day, i) => `<li>${day} giorni — ${money((i === days.length - 1 ? cents - part * i : part) / 100)}</li>`).join('')}</ul>`;
   }
   function renderQuote() {
-    shell(`<p>Controlla il riepilogo prima di confermare. L’ordine resterà in attesa di pagamento.</p>
+    shell(`<p>Controlla il riepilogo prima di confermare.</p>
       <p>${escape(payload.address.firstName)} ${escape(payload.address.lastName)} · ${escape(payload.address.address1)}, ${escape(payload.address.postcode)} ${escape(payload.address.city)}</p>
       <ul>${quote.lines.map(l=>`<li>${escape(l.name)} × ${l.quantity} — ${money(Number(l.total)+Number(l.tax))}</li>`).join('')}</ul>
       <dl><dt>Subtotale prodotti, IVA esclusa</dt><dd>${money(quote.productsNet ?? (Number(quote.subtotal)-Number(quote.discount)+Number(quote.fees)))}</dd>
@@ -62,7 +62,7 @@ export function createBankCheckout({ api, userId, clearCart, escape, money }) {
     try {
       const order = await api({action:'confirm',quoteToken:token});
       localStorage.removeItem(storageKey()); clearCart(); quote = null;
-      shell(`<h3>Ordine ${escape(String(order.orderNumber || order.orderId))} ricevuto</h3><p>Totale: <strong>${money(order.total)}</strong></p><p>${escape(paymentLabels[order.paymentOption] || 'Bonifico bancario')} · In attesa di pagamento.</p>${order.paymentOption==='cod' ? '' : bank(order.bank)}`,'<button type="button" data-close>Chiudi</button>');
+      shell(`<h3>Ordine ${escape(String(order.orderNumber || order.orderId))} ricevuto</h3><p>Totale: <strong>${money(order.total)}</strong></p>${paymentSchedule(order)}${order.paymentOption==='cod' ? '' : bank(order.bank)}`,'<button type="button" data-close>Chiudi</button>');
     } catch(e) {
       if (['quote_expired','quote_changed'].includes(e.code)) {
         localStorage.removeItem(storageKey());
