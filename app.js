@@ -2510,9 +2510,25 @@ async function loadAgentCustomers() {
   }
 }
 
+const customerShippingFields = ['name', 'company', 'address', 'postcode', 'city', 'state'];
+function copyCustomerLegalAddress() {
+  if (!byId('agent-customer-shipping-same').checked) return;
+  customerShippingFields.forEach((field) => {
+    byId(`agent-customer-shipping-${field}`).value = byId(`agent-customer-${field}`).value;
+  });
+}
+byId('agent-customer-shipping-same').addEventListener('change', copyCustomerLegalAddress);
+customerShippingFields.forEach((field) => {
+  byId(`agent-customer-${field}`).addEventListener('input', copyCustomerLegalAddress);
+  byId(`agent-customer-shipping-${field}`).addEventListener('input', () => {
+    byId('agent-customer-shipping-same').checked = false;
+  });
+});
+
 async function saveAgentCustomer(event) {
   event.preventDefault();
   const form = event.currentTarget;
+  copyCustomerLegalAddress();
   if (!byId('agent-customer-pec').value.trim() && !byId('agent-customer-sdi').value.trim()) {
     byId('agent-customer-message').textContent = 'Inserisci almeno uno tra PEC e codice SDI.';
     byId('agent-customer-pec').focus(); return;
@@ -2600,6 +2616,7 @@ function handleAgentCustomerClick(event) {
       'agent-customer-notes': customer.notes,
     };
     Object.entries(fields).forEach(([id, value]) => { byId(id).value = value || ''; });
+    byId('agent-customer-shipping-same').checked = customerShippingFields.every((field) => byId(`agent-customer-shipping-${field}`).value === byId(`agent-customer-${field}`).value);
     document.querySelectorAll('[name="agent-payment-term"]').forEach((input) => { input.checked = (customer.paymentTerms || [30]).includes(Number(input.value)); });
     byId('agent-customer-sole-trader').checked = Boolean(customer.soleTrader);
     byId('agent-customer-tax-code').required = Boolean(customer.soleTrader);

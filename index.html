@@ -545,12 +545,13 @@
             <div id="agent-customer-extra" class="customer-extra">
               <h3>Dati fiscali</h3><label class="check-row"><input id="agent-customer-sole-trader" type="checkbox" /> <span>Ditta individuale (codice fiscale obbligatorio)</span></label>
               <div class="form-grid">
-                <label>Codice fiscale <input id="agent-customer-tax-code" maxlength="32" /></label>
-                <label>Partita IVA <input id="agent-customer-vat" required maxlength="32" /></label>
+                <label>Codice fiscale <input id="agent-customer-tax-code" maxlength="16" /></label>
+                <label>Partita IVA <input id="agent-customer-vat" required maxlength="11" pattern="[0-9]{11}" inputmode="numeric" title="Inserisci 11 cifre" /></label>
                 <label>PEC <input id="agent-customer-pec" type="email" maxlength="200" /></label>
                 <label>Codice SDI <input id="agent-customer-sdi" maxlength="20" /></label>
               </div>
-              <h3>Indirizzo di spedizione <small>(se diverso)</small></h3>
+              <h3>Indirizzo di spedizione <small>(se diverso dalla sede legale)</small></h3>
+              <label class="check-row"><input id="agent-customer-shipping-same" type="checkbox" /> <span>Indirizzo di spedizione uguale alla sede legale</span></label>
               <div class="form-grid">
                 <label>Destinatario <input id="agent-customer-shipping-name" maxlength="250" /></label>
                 <label>Azienda <input id="agent-customer-shipping-company" maxlength="250" /></label>
@@ -568,11 +569,11 @@
               </div>
               <label class="customer-notes">Altre informazioni <textarea id="agent-customer-notes" rows="3" maxlength="1000"></textarea></label>
             </div>
-            <fieldset class="customer-extra"><legend>Store Locator</legend>
-              <label><input id="agent-customer-store" type="checkbox" /> Inserisci anche nello Store Locator</label>
+            <div class="customer-extra"><h3>Store Locator</h3>
+              <label class="check-row"><input id="agent-customer-store" type="checkbox" /> <span>Inserisci anche nello Store Locator</span></label>
 <label>Tipologia Store Locator <select id="agent-customer-store-category"><option value="beauty">Centro estetico</option><option value="problem_skin">Pelli problematiche</option><option value="oncology">Estetica oncologica</option><option value="hair">Parrucchiere</option><option value="distributor">Distributore</option></select></label>
 <p>La scheda sarà assegnata al tuo profilo e dovrà essere approvata dall’amministratore. Nello Store Locator potrai completarla e usare “Trova posizione dall’indirizzo”. Le modifiche successive alla scheda si effettuano nello Store Locator.</p>
-</fieldset>
+</div>
             <div class="action-row">
               <button class="primary-action" type="submit">Salva cliente</button><input id="agent-customer-edit-id" type="hidden" />
               <button id="cancel-agent-customer" class="secondary-action" type="button">Annulla</button>

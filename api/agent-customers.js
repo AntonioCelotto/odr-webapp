@@ -97,6 +97,8 @@ export default async function handler(req, res) {
     for (const field of ['company','phone','address1','postcode','city','state','vatNumber']) {
       if (!clean(body[field])) return json(res, 400, { error: 'Completa ragione sociale, telefono, indirizzo e partita IVA' });
     }
+    if (String(body.taxCode || '').trim().length > 16) return json(res, 400, { error: 'Il codice fiscale non può superare 16 caratteri' });
+    if (!/^[0-9]{11}$/.test(String(body.vatNumber || '').trim())) return json(res, 400, { error: 'La partita IVA deve contenere 11 cifre' });
     if (body.soleTrader === true && !clean(body.taxCode)) return json(res, 400, { error: 'Codice fiscale obbligatorio per la ditta individuale' });
     if (!clean(body.pec) && !clean(body.sdiCode)) return json(res, 400, { error: 'Inserisci almeno uno tra PEC e codice SDI' });
     if (clean(body.pec) && !/^\S+@\S+\.\S+$/.test(clean(body.pec))) return json(res,400,{error:'PEC non valida'});

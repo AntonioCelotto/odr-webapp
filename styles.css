@@ -3500,3 +3500,7 @@ body .shop-cart-thumb img {
 .bank-checkout-actions button:disabled { opacity:.5; cursor:default; }
 
 .bank-checkout-dialog textarea { display: block; width: 100%; box-sizing: border-box; padding: 12px; border: 1px solid var(--line); border-radius: 12px; font: inherit; resize: vertical; }
+
+/* Customer form section headings and accessible checkboxes. */
+#agent-customer-form .customer-extra h3 { font-weight: 800; }
+#agent-customer-form .check-row input[type="checkbox"] { flex-basis: 22px; width: 22px; height: 22px; min-height: 22px; accent-color: var(--violet-strong); }
