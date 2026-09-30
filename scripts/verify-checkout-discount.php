@@ -26,11 +26,11 @@ function check($value,$expected) { if (abs($value-$expected)>0.00001) throw new 
 // Load implementation after stubs.
 require __DIR__.'/../wordpress/odr-bank-checkout.php';
 $wc->cart->fees=array((object)array('id'=>'role','amount'=>-255),(object)array('id'=>'handling','amount'=>10));
-odr_bank_checkout_advance_fee($wc->cart); check($wc->cart->added['amount'],-7.65);
-$wc->cart->net=100;$wc->cart->fees=array();odr_bank_checkout_advance_fee($wc->cart);check($wc->cart->added['amount'],-3);
+odr_bank_checkout_advance_fee($wc->cart); check($wc->cart->added['amount'],-5.10);
+$wc->cart->net=100;$wc->cart->fees=array();odr_bank_checkout_advance_fee($wc->cart);check($wc->cart->added['amount'],-2);
 $wc->cart->lines=array(array('line_total'=>50,'data'=>new FakeProduct('')),array('line_total'=>50,'data'=>new FakeProduct('reduced')));
-$fee=(object)array('object'=>(object)array('id'=>'odr-advance-discount'),'total'=>-300);
-$taxes=odr_bank_checkout_advance_taxes(array(),$fee);check($taxes['standard'],-33);check($taxes['reduced'],-15);
+$fee=(object)array('object'=>(object)array('id'=>'odr-advance-discount'),'total'=>-200);
+$taxes=odr_bank_checkout_advance_taxes(array(),$fee);check($taxes['standard'],-22);check($taxes['reduced'],-10);
 $wc->customer->exempt=true;if(odr_bank_checkout_advance_taxes(array(),$fee)!==array())throw new Exception('Exemption');
 foreach(array(30,60,90) as $days)check(odr_bank_checkout_payment('bacs_'.$days)['days'],$days);
 if(odr_bank_checkout_payment('cod')['gateway']!=='cod')throw new Exception('COD');

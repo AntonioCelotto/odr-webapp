@@ -24,7 +24,7 @@ function odr_bank_checkout_bank() {
 }
 
 function odr_bank_checkout_payment($option) {
-    $labels = array('bacs'=>'Bonifico bancario', 'bacs_30'=>'Bonifico bancario a 30 giorni', 'bacs_60'=>'Bonifico bancario a 60 giorni', 'bacs_90'=>'Bonifico bancario a 90 giorni', 'cod'=>'Contrassegno', 'bacs_advance'=>'Bonifico anticipato - sconto 3%');
+    $labels = array('bacs'=>'Bonifico bancario', 'bacs_30'=>'Bonifico bancario a 30 giorni', 'bacs_60'=>'Bonifico bancario a 60 giorni', 'bacs_90'=>'Bonifico bancario a 90 giorni', 'cod'=>'Contrassegno', 'bacs_advance'=>'Bonifico anticipato - sconto 2%');
     if (!isset($labels[$option])) throw new Exception('Modalità di pagamento non valida');
     return array('option'=>$option, 'gateway'=>$option === 'cod' ? 'cod' : 'bacs', 'label'=>$labels[$option], 'days'=>in_array($option,array('bacs_30','bacs_60','bacs_90'),true) ? (int) substr($option,5) : 0);
 }
@@ -34,8 +34,8 @@ function odr_bank_checkout_advance_fee($cart) {
     foreach ($cart->get_fees() as $fee) {
         if ($fee->id !== 'odr-advance-discount' && $fee->amount < 0) $net += $fee->amount;
     }
-    $discount = round(max(0, $net) * 0.03, wc_get_price_decimals());
-    if ($discount > 0) $cart->fees_api()->add_fee(array('id'=>'odr-advance-discount', 'name'=>'Sconto bonifico anticipato 3%', 'amount'=>-$discount, 'taxable'=>true));
+    $discount = round(max(0, $net) * 0.02, wc_get_price_decimals());
+    if ($discount > 0) $cart->fees_api()->add_fee(array('id'=>'odr-advance-discount', 'name'=>'Sconto bonifico anticipato 2%', 'amount'=>-$discount, 'taxable'=>true));
 }
 
 // Allocate discount VAT only across product tax classes, never shipping.
@@ -131,7 +131,7 @@ function odr_bank_checkout_cart($data) {
         elseif ($fee->total < 0) $product_fees += $fee->total;
         else $adjustments += $fee->total;
     }
-    return array('checkoutVersion'=>2, 'paymentOption'=>$payment['option'], 'advanceDiscount'=>$advance, 'adjustments'=>$adjustments,
+    return array('checkoutVersion'=>2, 'paymentOption'=>$payment['option'], 'paymentTerms'=>array_values(array_unique(array_filter(array_map('intval',(array)($data['payment_terms'] ?? array())),function($day){ return in_array($day,array(30,60,90,120),true); }))), 'advanceDiscount'=>$advance, 'adjustments'=>$adjustments,
         'productsNet'=>WC()->cart->get_cart_contents_total() + $product_fees, 'lines'=>$lines, 'subtotal'=>WC()->cart->get_subtotal(), 'discount'=>WC()->cart->get_discount_total(),
         'shipping'=>WC()->cart->get_shipping_total(), 'tax'=>WC()->cart->get_total_tax(), 'fees'=>WC()->cart->get_fee_total(),
         'total'=>WC()->cart->get_total('edit'), 'currency'=>get_woocommerce_currency(), 'shippingOptions'=>$choices, 'shippingMethods'=>array_values($selected), 'bank'=>$payment['gateway'] === 'cod' ? null : odr_bank_checkout_bank());
@@ -198,7 +198,7 @@ function odr_bank_checkout_request(WP_REST_Request $r) {
             $order->update_meta_data('_odr_bank_request', $key);
             $order->update_meta_data('_odr_customer_reference',$data['customer_reference']);
             $order->update_meta_data('_odr_payment_option',$payment['option']);
-            $order->update_meta_data('_odr_payment_terms',$payment['days'] ? (string) $payment['days'] : '');
+            $order->update_meta_data('_odr_payment_terms',$payment['days'] ? (string) $payment['days'] : ($payment['option'] === 'bacs' ? implode(',', array_filter(array_map('intval',(array)$data['payment_terms']),function($day){ return in_array($day,array(30,60,90,120),true); })) : ''));
             $order->set_payment_method_title($payment['label']);
             $order->set_customer_note($data['order_notes'] ?? '');
             if (in_array($data['role'],array('agent','distributor'),true)) {

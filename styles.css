@@ -3508,3 +3508,8 @@ body .shop-cart-thumb img {
 #agent-customer-form [aria-invalid="true"] { border: 2px solid #b42318; background: #fff5f4; }
 #agent-customer-form [aria-invalid="true"]:focus { box-shadow: 0 0 0 3px rgba(180,35,24,.15); }
 #agent-customer-form .customer-field-error { display: block; color: #b42318; font-size: 12px; font-weight: 700; margin-top: 3px; }
+
+.shop-cart-totals .shop-cart-grand-total { justify-content: flex-end; gap: 12px; flex-wrap: wrap; }
+.shop-cart-totals .shop-cart-grand-total span { color: inherit; }
+.shop-order-notes { display: grid; gap: 8px; width: 100%; font-weight: 700; }
+.shop-order-notes textarea { width: 100%; box-sizing: border-box; padding: 12px; border: 1px solid var(--line); border-radius: 12px; font: inherit; resize: vertical; }

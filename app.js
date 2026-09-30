@@ -3462,7 +3462,7 @@ const openBankCheckout = createBankCheckout({
   userId: () => currentUser?.id || '',
   escape: escapeHtml,
   money,
-  clearCart: () => { shopCart = []; shopQuote = null; shopCoupon = ''; saveShopCart(); renderShopCart(); },
+  clearCart: () => { byId('shop-order-notes').value = ''; shopCart = []; shopQuote = null; shopCoupon = ''; saveShopCart(); renderShopCart(); },
   api: async (body) => {
     const { data } = await supabase.auth.getSession();
     if (!data.session?.access_token) throw new Error('Sessione scaduta. Accedi nuovamente.');
@@ -3484,7 +3484,7 @@ byId('shop-checkout').addEventListener('click', (event) => {
       byId('shop-message').textContent = 'Seleziona il cliente per cui ordinare';
       return;
     }
-    openBankCheckout({ items: shopCart, coupon: shopCoupon, address: readShopAddress(), customerId: selectedAgentCustomer?.id || null });
+    openBankCheckout({ orderNotes: byId('shop-order-notes').value, items: shopCart, coupon: shopCoupon, address: readShopAddress(), customerId: selectedAgentCustomer?.id || null });
     return;
   }
   openWooSession(
