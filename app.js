@@ -845,7 +845,6 @@ function renderShopCart() {
 
   if (!shopCart.length) {
     byId('shop-cart-items').innerHTML = '<div class="shop-cart-empty">Il carrello è vuoto. Aggiungi uno o più prodotti.</div>';
-    byId('shop-cart-subtotal').textContent = money(0);
     byId('shop-cart-discount').textContent = `− ${money(0)}`;
     byId('shop-discount-row').classList.add('hidden');
     byId('shop-cart-total').textContent = money(0);
@@ -879,9 +878,7 @@ function renderShopCart() {
       </article>
     `;
   }).join('');
-  const subtotal = shopQuote?.subtotal ?? total;
   const discount = shopQuote?.discount ?? 0;
-  byId('shop-cart-subtotal').textContent = money(subtotal);
   byId('shop-cart-discount').textContent = `− ${money(discount)}`;
   byId('shop-discount-row').classList.toggle('hidden', discount <= 0);
   byId('shop-cart-total').textContent = money(shopQuote?.total ?? total);
