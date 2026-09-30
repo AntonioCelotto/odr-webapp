@@ -2522,14 +2522,56 @@ customerShippingFields.forEach((field) => {
   });
 });
 
+function clearCustomerErrors() {
+  const form = byId('agent-customer-form');
+  delete form.dataset.validationStarted;
+  form.querySelectorAll('.customer-field-error').forEach((node) => node.remove());
+  form.querySelectorAll('[aria-invalid]').forEach((field) => {
+    field.removeAttribute('aria-invalid');
+    field.removeAttribute('aria-describedby');
+  });
+}
+function validateCustomerForm(focusFirst = false) {
+  const form = byId('agent-customer-form');
+  form.dataset.validationStarted = 'true';
+  const fields = [...form.querySelectorAll('input, select, textarea')].filter((field) => !field.disabled && field.type !== 'hidden');
+  let first = null;
+  const missingFiscalContact = !byId('agent-customer-pec').value.trim() && !byId('agent-customer-sdi').value.trim();
+  fields.forEach((field) => {
+    let message = '';
+    if (field.required && !field.value.trim()) message = 'Questo campo è obbligatorio.';
+    else if (!field.validity.valid) message = field.validity.typeMismatch ? 'Inserisci un indirizzo email valido.' : field.id === 'agent-customer-vat' ? 'Inserisci una partita IVA di 11 cifre.' : 'Controlla il valore inserito.';
+    if (missingFiscalContact && ['agent-customer-pec', 'agent-customer-sdi'].includes(field.id)) message = 'Compila almeno uno tra PEC e codice SDI.';
+    const errorId = `${field.id}-error`;
+    let error = document.getElementById(errorId);
+    if (message) {
+      if (!error) { error = document.createElement('small'); error.id = errorId; error.className = 'customer-field-error'; field.insertAdjacentElement('afterend', error); }
+      error.textContent = message;
+      field.setAttribute('aria-invalid', 'true'); field.setAttribute('aria-describedby', errorId);
+      first ||= field;
+    } else {
+      error?.remove(); field.removeAttribute('aria-invalid'); field.removeAttribute('aria-describedby');
+    }
+  });
+  if (first && focusFirst) {
+    byId('agent-customer-message').textContent = 'Controlla i campi evidenziati in rosso.';
+    first.scrollIntoView({ behavior: 'smooth', block: 'center' }); first.focus({ preventScroll: true });
+  } else if (!first && byId('agent-customer-message').textContent === 'Controlla i campi evidenziati in rosso.') byId('agent-customer-message').textContent = '';
+  return !first;
+}
+byId('agent-customer-form').addEventListener('input', () => {
+  if (byId('agent-customer-form').dataset.validationStarted) validateCustomerForm();
+});
+byId('agent-customer-form').addEventListener('change', () => {
+  if (byId('agent-customer-form').dataset.validationStarted) validateCustomerForm();
+});
+byId('agent-customer-form').addEventListener('reset', clearCustomerErrors);
+
 async function saveAgentCustomer(event) {
   event.preventDefault();
   const form = event.currentTarget;
   copyCustomerLegalAddress();
-  if (!byId('agent-customer-pec').value.trim() && !byId('agent-customer-sdi').value.trim()) {
-    byId('agent-customer-message').textContent = 'Inserisci almeno uno tra PEC e codice SDI.';
-    byId('agent-customer-pec').focus(); return;
-  }
+  if (!validateCustomerForm(true)) return;
   const button = form.querySelector('[type="submit"]');
   button.disabled = true;
     byId('agent-customer-message').textContent = 'Salvataggio cliente nell’app...';
@@ -2604,6 +2646,7 @@ function handleAgentCustomerClick(event) {
   if (editButton) {
     const customer = agentCustomers.find((item) => item.id === editButton.dataset.editAgentCustomer);
     if (!customer) return;
+    clearCustomerErrors();
     const fields = {
       'agent-customer-name': customer.name, 'agent-customer-company': customer.company, 'agent-customer-email': customer.email, 'agent-customer-phone': customer.phone,
       'agent-customer-address': customer.address?.address1, 'agent-customer-postcode': customer.address?.postcode, 'agent-customer-city': customer.address?.city, 'agent-customer-state': customer.address?.state,

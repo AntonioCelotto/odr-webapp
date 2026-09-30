@@ -3504,3 +3504,7 @@ body .shop-cart-thumb img {
 /* Customer form section headings and accessible checkboxes. */
 #agent-customer-form .customer-extra h3 { font-weight: 800; }
 #agent-customer-form .check-row input[type="checkbox"] { flex-basis: 22px; width: 22px; height: 22px; min-height: 22px; accent-color: var(--violet-strong); }
+
+#agent-customer-form [aria-invalid="true"] { border: 2px solid #b42318; background: #fff5f4; }
+#agent-customer-form [aria-invalid="true"]:focus { box-shadow: 0 0 0 3px rgba(180,35,24,.15); }
+#agent-customer-form .customer-field-error { display: block; color: #b42318; font-size: 12px; font-weight: 700; margin-top: 3px; }
