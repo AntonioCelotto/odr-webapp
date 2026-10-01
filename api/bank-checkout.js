@@ -21,7 +21,7 @@ export function address(value, email) {
   return result;
 }
 export function payment(value = 'bacs') {
-  if (!['bacs','bacs_30','bacs_60','bacs_90','cod','bacs_advance'].includes(value)) throw new Error('Modalità di pagamento non valida');
+  if (!['bacs','bacs_30_60','bacs_30','bacs_60','bacs_90','cod','bacs_advance'].includes(value)) throw new Error('Modalità di pagamento non valida');
   return value;
 }
 export default async function handler(req,res) {

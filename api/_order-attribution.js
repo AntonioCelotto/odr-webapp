@@ -84,7 +84,11 @@ export function createAttributionIndex(network, profiles, accounts, appCustomers
     return { agent, distributor, center, entityId: entity?.id || '', source, conflict };
   };
   const visible = (order, profile, attribution) => {
+    if (order.status === 'trash') return false;
     if (profile.role === 'admin') return true;
+    const manual = metaValue(order, assignmentKey);
+    if (manual?.mode !== 'manual' && ['agent','distributor'].includes(profile.role)
+      && metaValue(order, '_odr_agent_profile_id') === profile.id) return true;
     if (profile.email && normalizeIdentity(order.billing?.email) === normalizeIdentity(profile.email)) return true;
     const own = profileEntity(profile);
     if (!own) return false;

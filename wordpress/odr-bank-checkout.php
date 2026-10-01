@@ -24,7 +24,7 @@ function odr_bank_checkout_bank() {
 }
 
 function odr_bank_checkout_payment($option) {
-    $labels = array('bacs'=>'Bonifico bancario', 'bacs_30'=>'Bonifico bancario a 30 giorni', 'bacs_60'=>'Bonifico bancario a 60 giorni', 'bacs_90'=>'Bonifico bancario a 90 giorni', 'cod'=>'Contrassegno', 'bacs_advance'=>'Bonifico anticipato - sconto 2%');
+    $labels = array('bacs'=>'Bonifico bancario', 'bacs_30_60'=>'Bonifico bancario a 30 / 60 giorni', 'bacs_30'=>'Bonifico bancario a 30 giorni', 'bacs_60'=>'Bonifico bancario a 60 giorni', 'bacs_90'=>'Bonifico bancario a 90 giorni', 'cod'=>'Contrassegno', 'bacs_advance'=>'Bonifico anticipato - sconto 2%');
     if (!isset($labels[$option])) throw new Exception('Modalità di pagamento non valida');
     return array('option'=>$option, 'gateway'=>$option === 'cod' ? 'cod' : 'bacs', 'label'=>$labels[$option], 'days'=>in_array($option,array('bacs_30','bacs_60','bacs_90'),true) ? (int) substr($option,5) : 0);
 }
@@ -198,7 +198,7 @@ function odr_bank_checkout_request(WP_REST_Request $r) {
             $order->update_meta_data('_odr_bank_request', $key);
             $order->update_meta_data('_odr_customer_reference',$data['customer_reference']);
             $order->update_meta_data('_odr_payment_option',$payment['option']);
-            $order->update_meta_data('_odr_payment_terms',$payment['days'] ? (string) $payment['days'] : ($payment['option'] === 'bacs' ? implode(',', array_filter(array_map('intval',(array)$data['payment_terms']),function($day){ return in_array($day,array(30,60,90,120),true); })) : ''));
+            $order->update_meta_data('_odr_payment_terms',$payment['option'] === 'bacs_30_60' ? '30,60' : ($payment['days'] ? (string) $payment['days'] : ($payment['option'] === 'bacs' ? implode(',', array_filter(array_map('intval',(array)$data['payment_terms']),function($day){ return in_array($day,array(30,60,90,120),true); })) : '')));
             $order->set_payment_method_title($payment['label']);
             $order->set_customer_note($data['order_notes'] ?? '');
             if (in_array($data['role'],array('agent','distributor'),true)) {

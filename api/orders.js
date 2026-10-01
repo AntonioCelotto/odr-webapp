@@ -84,7 +84,8 @@ export default async function handler(request, response) {
         const commissionBase = (order.line_items || [])
           .reduce((sum, line) => sum + (Number(line.total) || 0), 0);
         const commissionRate = Number(agentEntity?.commission_rate) || 0;
-        const terms = customerTerms.get(customerReference) || [30];
+        const savedTerms = String(metaValue(order, '_odr_payment_terms') || '').split(',').map(Number).filter(day => [30,60,90,120].includes(day));
+        const terms = savedTerms.length ? [...new Set(savedTerms)] : customerTerms.get(customerReference) || [30];
         const recorded = manualPayments.filter((entry) => Number(entry.woo_order_id) === Number(order.id));
         const totalCents = Math.round((Number(order.total) || 0) * 100);
         const baseCents = Math.floor(totalCents / terms.length);
