@@ -32,3 +32,9 @@ listeners.click({target:{closest:s=>s==='[data-confirm]'}});await flush();
 assert.ok(html.includes('30 giorni — 42.29') && html.includes('60 giorni — 42.29') && html.includes('90 giorni — 42.30'));
 assert.ok(!html.includes('In attesa di pagamento'));
 console.log('Confirmed payment schedule preserves cents and replaces pending label OK');
+
+await open({address:{},items:[]});
+listeners.change({target:{matches:s=>s==='[data-payment]',value:'bacs_30_60_90'}});await flush();
+assert.ok(html.includes('30 giorni — 42.29') && html.includes('60 giorni — 42.29') && html.includes('90 giorni — 42.30'));
+assert.ok(html.includes('value="bacs_30_60"'));
+console.log('30/60/90 option and amounts OK, 30/60 retained');

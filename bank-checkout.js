@@ -4,7 +4,7 @@ export function createBankCheckout({ api, userId, clearCart, escape, money }) {
   let payload = null;
   let busy = false;
   let notesDirty = false;
-  const paymentLabels = {bacs:'Bonifico bancario',bacs_30:'Bonifico bancario a 30 giorni',bacs_30_60:'Bonifico bancario a 30 / 60 giorni',bacs_60:'Bonifico bancario a 60 giorni',bacs_90:'Bonifico bancario a 90 giorni',cod:'Contrassegno',bacs_advance:'Bonifico anticipato — sconto 2% sui prodotti'};
+  const paymentLabels = {bacs:'Bonifico bancario',bacs_30:'Bonifico bancario a 30 giorni',bacs_30_60_90:'Bonifico bancario a 30 / 60 / 90 giorni',bacs_30_60:'Bonifico bancario a 30 / 60 giorni',bacs_60:'Bonifico bancario a 60 giorni',bacs_90:'Bonifico bancario a 90 giorni',cod:'Contrassegno',bacs_advance:'Bonifico anticipato — sconto 2% sui prodotti'};
   const dialog = document.createElement('dialog');
   dialog.className = 'bank-checkout-dialog';
   dialog.setAttribute('aria-label','Riepilogo e conferma ordine');
@@ -19,7 +19,7 @@ export function createBankCheckout({ api, userId, clearCart, escape, money }) {
   }
   function paymentSchedule(data = quote) {
     const option = data.paymentOption;
-    const days = option === 'bacs_30_60' ? [30,60] : option === 'bacs' ? (data.paymentTerms || []) : /^bacs_\d+$/.test(option) ? [Number(option.slice(5))] : [];
+    const days = option === 'bacs_30_60_90' ? [30,60,90] : option === 'bacs_30_60' ? [30,60] : option === 'bacs' ? (data.paymentTerms || []) : /^bacs_\d+$/.test(option) ? [Number(option.slice(5))] : [];
     if (!days.length) return `<p class="checkout-payment-summary"><strong>${escape(paymentLabels[option] || 'Bonifico bancario')}</strong><span>${money(data.total)}</span></p>`;
     const cents = Math.round(Number(data.total) * 100);
     const part = Math.floor(cents / days.length);
