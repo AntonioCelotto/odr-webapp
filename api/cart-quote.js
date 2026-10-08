@@ -1,7 +1,7 @@
 import { Buffer } from 'node:buffer';
 
 const ROLE_CATEGORIES = {
-  patient: ['persone-fisiche'],
+  patient: ['2-linea-online-pf'],
   center: ['prodotti', 'prodotti-2', 'pacchetti-promozionali', '2-linea-retail', '2-linea-retail-pf'],
   agent: ['prodotti', 'prodotti-2', 'pacchetti-promozionali', '2-linea-professional', 'merchandising'],
   distributor: ['confezione_distributore', 'pacchetti-promozionali', 'merchandising'],
