@@ -2893,9 +2893,19 @@ function updateRegistrationCodeRequirement() {
   const required = byId('register-role').value === 'patient';
   byId('register-code').required = required;
   byId('register-code').setCustomValidity('');
+  setRegistrationCodeError('');
   byId('register-code-hint').textContent = required
     ? 'Obbligatorio per il profilo Cliente.'
     : 'Facoltativo per il tuo profilo.';
+}
+
+function setRegistrationCodeError(message) {
+  const input = byId('register-code');
+  const error = byId('register-code-error');
+  input.setAttribute('aria-invalid', message ? 'true' : 'false');
+  error.textContent = message;
+  error.classList.toggle('hidden', !message);
+  if (message) input.focus();
 }
 
 async function submitRegistration(event) {
@@ -2919,6 +2929,7 @@ async function submitRegistration(event) {
 
   const email = byId('register-email').value.trim();
   const fullName = `${byId('register-name').value.trim()} ${byId('register-surname').value.trim()}`.trim();
+  setRegistrationCodeError('');
   setAuthBusy(true);
   showAuthMessage('Creazione del profilo in corso...');
 
@@ -2933,12 +2944,14 @@ async function submitRegistration(event) {
         validation_code: code,
       },
     },
-  });
+  }).catch(() => ({ data: null, error: { message: 'Connessione non riuscita. Riprova tra poco.' } }));
 
   if (error) {
-    const message = requestedRole === 'patient' && /database error|unexpected_failure/i.test(`${error.message || ''} ${error.code || ''}`)
-      ? 'Registrazione non riuscita. Verifica che il codice ENTE sia corretto, attivo e non scaduto; se necessario richiedilo al tuo referente.'
+    const invalidCode = requestedRole === 'patient' && /database error|unexpected_failure|codice ENTE/i.test(`${error.message || ''} ${error.code || ''}`);
+    const message = invalidCode
+      ? 'Codice errato'
       : error.message || 'Non è stato possibile creare il profilo.';
+    if (invalidCode) setRegistrationCodeError('Codice errato');
     showAuthMessage(message, 'error');
     setAuthBusy(false);
     return;
@@ -3353,7 +3366,10 @@ byId('change-password-form').addEventListener('submit', changePassword);
 byId('login-form').addEventListener('submit', submitLogin);
 byId('register-form').addEventListener('submit', submitRegistration);
 byId('register-role').addEventListener('change', updateRegistrationCodeRequirement);
-byId('register-code').addEventListener('input', () => byId('register-code').setCustomValidity(''));
+byId('register-code').addEventListener('input', () => {
+  byId('register-code').setCustomValidity('');
+  setRegistrationCodeError('');
+});
 byId('password-recovery-form').addEventListener('submit', submitPasswordRecovery);
 byId('password-reset-form').addEventListener('submit', submitPasswordReset);
 byId('password-reset-form').addEventListener('click', (event) => {

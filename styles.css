@@ -3517,3 +3517,6 @@ body .shop-cart-thumb img {
 .checkout-payment-summary span { font-weight: 700; }
 .shop-order-notes { display: grid; gap: 8px; width: 100%; font-weight: 700; }
 .shop-order-notes textarea { width: 100%; box-sizing: border-box; padding: 12px; border: 1px solid var(--line); border-radius: 12px; font: inherit; resize: vertical; }
+
+#register-code[aria-invalid="true"] { border: 2px solid #b42318; background: #fff5f4; }
+#register-code-error { color: #b42318; font-weight: 700; margin: 0; }

@@ -5,7 +5,7 @@ const app = fs.readFileSync('app.js', 'utf8');
 const extract = (name, next) => app.slice(app.indexOf(name), app.indexOf(next, app.indexOf(name)));
 const fields = new Map();
 const byId = id => {
-  if (!fields.has(id)) fields.set(id, {value:'',checked:true, required:false,setCustomValidity(v){this.validity=v},reportValidity(){},focus(){}});
+  if (!fields.has(id)) fields.set(id, {setAttribute(k,v){this[k]=v},classList:{toggle(){}},value:'',checked:true, required:false,setCustomValidity(v){this.validity=v},reportValidity(){},focus(){}});
   return fields.get(id);
 };
 let signups = 0;
@@ -29,3 +29,21 @@ for (const role of ['patient','agent','distributor','center','admin',undefined])
   assert.equal(context.canAccessMarketing(),['agent','distributor','center','admin'].includes(role));
 }
 console.log('Cliente: ENTE required including whitespace; professional registration unaffected; MKT role access OK.');
+
+context.currentUser = null;
+byId('register-role').value = 'patient';
+byId('register-code').value = '0000';
+byId('register-name').value = 'Nome conservato';
+let busy = true;
+context.setAuthBusy = value => { busy = value; };
+context.supabase.auth.signUp = async () => ({data:null,error:{code:'unexpected_failure',message:'Database error saving new user'}});
+await context.submitRegistration({preventDefault(){}});
+assert.equal(byId('register-code-error').textContent, 'Codice errato');
+assert.equal(byId('register-code')['aria-invalid'], 'true');
+assert.equal(byId('register-name').value, 'Nome conservato');
+assert.equal(busy, false);
+context.supabase.auth.signUp = async () => { throw Error('network'); };
+await context.submitRegistration({preventDefault(){}});
+assert.equal(byId('register-code-error').textContent, '');
+assert.equal(busy, false);
+console.log('Invalid code displayed inline; data preserved; network failure releases submit button.');

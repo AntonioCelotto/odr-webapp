@@ -82,7 +82,8 @@
           </label>
           <label>
             Codice ENTE
-            <input id="register-code" autocomplete="off" required aria-describedby="register-code-hint" />
+            <input id="register-code" autocomplete="off" required aria-describedby="register-code-hint register-code-error" />
+            <small id="register-code-error" class="auth-message error hidden" role="alert"></small>
             <small id="register-code-hint">Obbligatorio per il profilo Cliente.</small>
           </label>
           <label class="check-row">
