@@ -24,7 +24,7 @@ const roleLabels = {
   distributor: 'Distributore',
   agent: 'Agente',
   center: 'Centro / punto vendita',
-  patient: 'Paziente',
+  patient: 'Cliente',
 };
 
 let validationCodes = [];
@@ -589,7 +589,8 @@ function openMobileMenu() {
 function showRoute(routeId, options = {}) {
   const requested = appRoutes[routeId] ? routeId : 'dashboard';
   const target = byId(requested);
-  const blocked = !target || target.classList.contains('module-denied');
+  const blocked = !target || target.classList.contains('module-denied')
+    || (requested === 'marketing' && !canAccessMarketing());
   const activeRoute = blocked
     ? [...document.querySelectorAll('.route-screen:not(.module-denied)')][0]?.id || 'dashboard'
     : requested;
@@ -1145,19 +1146,19 @@ async function deletePackageDocument(documentId) {
 }
 
 const marketingAudienceRoles = {
-  all: ['agent', 'distributor', 'center', 'patient'],
+  all: ['agent', 'distributor', 'center'],
   agent: ['agent'],
   distributor: ['distributor'],
   center: ['center'],
 };
 
 function marketingAudienceLabel(roles = []) {
-  if (marketingAudienceRoles.all.every((role) => roles.includes(role))) return 'Tutti gli account';
+  if (marketingAudienceRoles.all.every((role) => roles.includes(role))) return 'Agenti, distributori e centri';
   if (roles.length === 1) return {
     agent: 'Solo agenti',
     distributor: 'Solo distributori',
     center: 'Solo centri benessere',
-    patient: 'Solo pazienti',
+    patient: 'Solo clienti',
   }[roles[0]] || roleLabels[roles[0]] || roles[0];
   return roles.map((role) => roleLabels[role] || role).join(', ');
 }
@@ -1191,8 +1192,25 @@ function renderMarketingMaterials() {
   `).join('');
 }
 
+function canAccessMarketing() {
+  return ['admin', 'agent', 'distributor', 'center'].includes(currentUser?.role);
+}
+
+function applyMarketingVisibility() {
+  const allowed = canAccessMarketing();
+  byId('marketing')?.classList.toggle('module-denied', !allowed);
+  document.querySelectorAll('[data-route="marketing"]').forEach((link) => {
+    link.classList.toggle('hidden', !allowed);
+  });
+  if (!allowed) {
+    marketingMaterials = [];
+    renderMarketingMaterials();
+  }
+}
+
 async function loadMarketingMaterials() {
-  if (!supabase || !currentUser) return;
+  if (!supabase || !canAccessMarketing()) return;
+  const userId = currentUser.id;
   const { data, error } = await supabase
     .from('marketing_materials')
     .select('id,title,description,file_name,file_size,storage_path,audience_roles,created_at')
@@ -1202,6 +1220,7 @@ async function loadMarketingMaterials() {
     byId('marketing-message').textContent = 'Non è stato possibile caricare il materiale marketing.';
     return;
   }
+  if (currentUser?.id !== userId || !canAccessMarketing()) return;
   marketingMaterials = data || [];
   renderMarketingMaterials();
 }
@@ -1259,6 +1278,7 @@ async function uploadMarketingMaterial(event) {
 }
 
 async function marketingMaterialBlob(material) {
+  if (!canAccessMarketing()) throw new Error("Materiale non disponibile per il tuo profilo.");
   const { data, error } = await supabase.storage.from('marketing-materials').download(material.storage_path);
   if (error) throw error;
   return data;
@@ -2298,13 +2318,14 @@ function setAuthMode(mode) {
   byId('show-register').disabled = resetActive;
   byId('login-form').classList.toggle('hidden', !loginActive);
   byId('register-form').classList.toggle('hidden', !registerActive);
+  updateRegistrationCodeRequirement();
   byId('password-recovery-form').classList.toggle('hidden', !recoveryActive);
   byId('password-reset-form').classList.toggle('hidden', !resetActive);
   showAuthMessage(
     loginActive
       ? ''
       : registerActive
-        ? 'Il paziente viene attivato subito; gli altri profili richiedono approvazione.'
+        ? 'Il cliente viene attivato subito; gli altri profili richiedono approvazione.'
         : '',
   );
 }
@@ -2356,6 +2377,7 @@ async function enterAuthenticatedApp(user) {
 
 function enterApp(user) {
   currentUser = user;
+  applyMarketingVisibility();
   dashboardProfileId = '';
   dashboardSalesExpanded.products = false;
   dashboardSalesExpanded.promotions = false;
@@ -2867,6 +2889,15 @@ async function submitLogin(event) {
   }
 }
 
+function updateRegistrationCodeRequirement() {
+  const required = byId('register-role').value === 'patient';
+  byId('register-code').required = required;
+  byId('register-code').setCustomValidity('');
+  byId('register-code-hint').textContent = required
+    ? 'Obbligatorio per il profilo Cliente.'
+    : 'Facoltativo per il tuo profilo.';
+}
+
 async function submitRegistration(event) {
   event.preventDefault();
   if (authBusy || !supabase) return;
@@ -2877,6 +2908,14 @@ async function submitRegistration(event) {
 
   const requestedRole = byId('register-role').value;
   const code = byId('register-code').value.trim();
+  if (requestedRole === 'patient' && !code) {
+    const input = byId('register-code');
+    input.setCustomValidity('Inserisci il codice ENTE.');
+    input.reportValidity();
+    input.focus();
+    showAuthMessage('Il codice ENTE è obbligatorio per il profilo Cliente.', 'error');
+    return;
+  }
 
   const email = byId('register-email').value.trim();
   const fullName = `${byId('register-name').value.trim()} ${byId('register-surname').value.trim()}`.trim();
@@ -3310,6 +3349,8 @@ byId('change-password-form').addEventListener('click', (event) => {
 byId('change-password-form').addEventListener('submit', changePassword);
 byId('login-form').addEventListener('submit', submitLogin);
 byId('register-form').addEventListener('submit', submitRegistration);
+byId('register-role').addEventListener('change', updateRegistrationCodeRequirement);
+byId('register-code').addEventListener('input', () => byId('register-code').setCustomValidity(''));
 byId('password-recovery-form').addEventListener('submit', submitPasswordRecovery);
 byId('password-reset-form').addEventListener('submit', submitPasswordReset);
 byId('password-reset-form').addEventListener('click', (event) => {

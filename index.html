@@ -73,7 +73,7 @@
           <label>
             Tipo di profilo
             <select id="register-role">
-              <option value="patient">Paziente</option>
+              <option value="patient">Cliente</option>
               <option value="center">Centro / punto vendita</option>
               <option value="agent">Agente</option>
               <option value="distributor">Distributore</option>
@@ -81,8 +81,9 @@
             <small>Se l’email è già presente su WordPress, verrà utilizzato il ruolo associato.</small>
           </label>
           <label>
-            Codice fornito dall'ospedale (facoltativo)
-            <input id="register-code" autocomplete="off" />
+            Codice ENTE
+            <input id="register-code" autocomplete="off" required aria-describedby="register-code-hint" />
+            <small id="register-code-hint">Obbligatorio per il profilo Cliente.</small>
           </label>
           <label class="check-row">
             <input id="register-privacy" type="checkbox" checked />
@@ -182,7 +183,7 @@
               <option value="distributor">Distributore</option>
               <option value="agent">Agente</option>
               <option value="center">Centro / punto vendita</option>
-              <option value="patient">Paziente</option>
+              <option value="patient">Cliente</option>
             </select>
             <input id="account-email" aria-label="Email account" readonly />
             <button id="logout-button" class="icon-button" type="button" aria-label="Esci">Esci</button>
@@ -408,7 +409,7 @@
               </label>
               <label>Destinatari
                 <select name="audience" required>
-                  <option value="all">Tutti gli account</option>
+                  <option value="all">Agenti, distributori e centri</option>
                   <option value="agent">Solo agenti</option>
                   <option value="distributor">Solo distributori</option>
                   <option value="center">Solo centri benessere</option>
@@ -434,14 +435,14 @@
         <section id="access" class="split route-screen">
           <div class="panel">
             <div class="panel-title">
-              <h2>Validazione codice paziente</h2>
+              <h2>Validazione codice cliente</h2>
             </div>
             <div class="code-form">
-              <input id="code-input" placeholder="Inserisci codice ospedaliero" />
+              <input id="code-input" placeholder="Inserisci codice ENTE" />
               <button id="validate-code" type="button">Valida</button>
             </div>
             <div id="code-result" class="empty-box">
-              <span>Inserisci il codice ricevuto dall’ospedale o dalla convenzione.</span>
+              <span>Inserisci il codice ENTE ricevuto.</span>
             </div>
           </div>
 
@@ -474,7 +475,7 @@
                 Profilo autorizzato
                 <select id="admin-code-audience">
                   <option value="">Tutti i profili</option>
-                  <option value="patient">Paziente</option>
+                  <option value="patient">Cliente</option>
                   <option value="center">Centro / punto vendita</option>
                   <option value="agent">Agente</option>
                   <option value="distributor">Distributore</option>
@@ -720,7 +721,7 @@
               <h2>Flusso di acquisto</h2>
             </div>
             <ol class="flow">
-              <li>ODR valida codice o accesso paziente.</li>
+              <li>ODR valida codice o accesso cliente.</li>
               <li>ODR apre WooCommerce con coupon/convenzione.</li>
               <li>WooCommerce gestisce prodotti, carrello e pagamento.</li>
               <li>ODR importa ordini per report di rete.</li>
@@ -804,7 +805,7 @@
                   <th>Distributore</th>
                   <th>Agente</th>
                   <th>Centro</th>
-                  <th>Paziente</th>
+                  <th>Cliente</th>
                 </tr>
               </thead>
               <tbody id="permissions-table"></tbody>
