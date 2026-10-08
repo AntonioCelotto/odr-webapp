@@ -2936,7 +2936,10 @@ async function submitRegistration(event) {
   });
 
   if (error) {
-    showAuthMessage(error.message || 'Non è stato possibile creare il profilo.', 'error');
+    const message = requestedRole === 'patient' && /database error|unexpected_failure/i.test(`${error.message || ''} ${error.code || ''}`)
+      ? 'Registrazione non riuscita. Verifica che il codice ENTE sia corretto, attivo e non scaduto; se necessario richiedilo al tuo referente.'
+      : error.message || 'Non è stato possibile creare il profilo.';
+    showAuthMessage(message, 'error');
     setAuthBusy(false);
     return;
   }
