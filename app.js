@@ -2905,7 +2905,28 @@ function setRegistrationCodeError(message) {
   input.setAttribute('aria-invalid', message ? 'true' : 'false');
   error.textContent = message;
   error.classList.toggle('hidden', !message);
-  if (message) input.focus();
+
+}
+
+async function checkRegistrationCode() {
+  const code = byId('register-code').value.trim();
+  if (byId('register-role').value !== 'patient' || !code) return false;
+  try {
+    const response = await fetch('/api/registration-code', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ code }), signal: AbortSignal.timeout(12000),
+    });
+    const result = await response.json();
+    if (byId('register-code').value.trim() !== code || byId('register-role').value !== 'patient') return false;
+    if (!response.ok) throw new Error('Verification unavailable');
+    setRegistrationCodeError(result.valid === true ? '' : 'Codice errato');
+    return result.valid === true;
+  } catch {
+    if (byId('register-code').value.trim() === code && byId('register-role').value === 'patient') {
+      setRegistrationCodeError('Verifica codice non disponibile. Riprova.');
+    }
+    return false;
+  }
 }
 
 async function submitRegistration(event) {
@@ -2931,6 +2952,11 @@ async function submitRegistration(event) {
   const fullName = `${byId('register-name').value.trim()} ${byId('register-surname').value.trim()}`.trim();
   setRegistrationCodeError('');
   setAuthBusy(true);
+  if (requestedRole === 'patient' && !(await checkRegistrationCode())) {
+    setAuthBusy(false);
+    byId('register-code').focus();
+    return;
+  }
   showAuthMessage('Creazione del profilo in corso...');
 
   const { data, error } = await supabase.auth.signUp({
@@ -3366,6 +3392,7 @@ byId('change-password-form').addEventListener('submit', changePassword);
 byId('login-form').addEventListener('submit', submitLogin);
 byId('register-form').addEventListener('submit', submitRegistration);
 byId('register-role').addEventListener('change', updateRegistrationCodeRequirement);
+byId('register-code').addEventListener('blur', checkRegistrationCode);
 byId('register-code').addEventListener('input', () => {
   byId('register-code').setCustomValidity('');
   setRegistrationCodeError('');

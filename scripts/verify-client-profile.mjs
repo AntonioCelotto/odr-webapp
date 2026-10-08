@@ -9,7 +9,7 @@ const byId = id => {
   return fields.get(id);
 };
 let signups = 0;
-const context = vm.createContext({byId, authBusy:false, supabase:{auth:{signUp:async()=>{signups++;return {data:{}}}}},showAuthMessage(){},setAuthBusy(){},setAuthMode(){},currentUser:null});
+const context = vm.createContext({byId, AbortSignal, fetch:async()=>({ok:true,json:async()=>({valid:true})}), authBusy:false, supabase:{auth:{signUp:async()=>{signups++;return {data:{}}}}},showAuthMessage(){},setAuthBusy(){},setAuthMode(){},currentUser:null});
 vm.runInContext(extract('function updateRegistrationCodeRequirement()', 'function passwordRecoveryErrorMessage'), context);
 for (const role of ['patient','agent','center','distributor','patient']) {
   byId('register-role').value=role;
@@ -47,3 +47,12 @@ await context.submitRegistration({preventDefault(){}});
 assert.equal(byId('register-code-error').textContent, '');
 assert.equal(busy, false);
 console.log('Invalid code displayed inline; data preserved; network failure releases submit button.');
+
+context.fetch = async () => ({ok:true,json:async()=>({valid:false})});
+let attempted = false;
+context.supabase.auth.signUp = async () => { attempted = true; };
+await context.submitRegistration({preventDefault(){}});
+assert.equal(attempted, false);
+assert.equal(byId('register-code-error').textContent,'Codice errato');
+assert.equal(busy,false);
+console.log('Code precheck blocks signup and displays Codice errato before account creation.');
