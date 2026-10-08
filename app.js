@@ -884,7 +884,7 @@ function renderShopCart() {
   byId('shop-discount-row').classList.toggle('hidden', discount <= 0);
   byId('shop-cart-total').textContent = money(shopQuote?.total ?? total);
   byId('shop-checkout').disabled = false;
-  byId('shop-checkout').textContent = config.bankCheckoutEnabled && ['agent', 'distributor', 'center'].includes(currentUser?.role) ? 'Chiudi ordine' : 'Concludi ordine e paga';
+  byId('shop-checkout').textContent = ['agent', 'distributor', 'center'].includes(currentUser?.role) ? 'Chiudi ordine' : 'Paga con carta';
 }
 
 function setCartPanel(open) {
@@ -3565,7 +3565,7 @@ const openBankCheckout = createBankCheckout({
 byId('shop-checkout').addEventListener('click', (event) => {
   if (!shopCart.length) return;
   if (!validateShopAddress()) return;
-  if (config.bankCheckoutEnabled && ['agent', 'distributor', 'center'].includes(currentUser?.role)) {
+  if (['agent', 'distributor', 'center'].includes(currentUser?.role)) {
     if (currentUser.role === 'agent' && !selectedAgentCustomer) {
       showRoute('agent-customers', { push: true });
       byId('shop-message').textContent = 'Seleziona il cliente per cui ordinare';

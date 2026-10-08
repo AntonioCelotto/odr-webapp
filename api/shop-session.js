@@ -151,6 +151,9 @@ export default async function handler(request, response) {
   try {
     const profile = await getAuthenticatedProfile(token);
     if (!profile) return json(response, 403, { error: 'Profilo non autorizzato' });
+    if (request.body?.checkout && ['agent', 'distributor', 'center'].includes(profile.role)) {
+      return json(response, 403, { error: 'Per questo profilo chiudi l’ordine direttamente nell’app.' });
+    }
 
     const storeUrl = process.env.WOOCOMMERCE_STORE_URL;
     const key = process.env.WOOCOMMERCE_CONSUMER_KEY;
