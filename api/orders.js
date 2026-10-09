@@ -105,9 +105,12 @@ export default async function handler(request, response) {
           : 0;
         return {
           id: `WC-${order.id}`,
+          number: String(order.number || order.id),
           date: order.date_created?.slice(0, 10) || '',
           customer: `${order.billing?.first_name || ''} ${order.billing?.last_name || ''}`.trim() || order.billing?.email || 'Cliente',
           customerEmail: order.billing?.email || '',
+          customerCompany: order.billing?.company || '',
+          customerPhone: order.billing?.phone || '',
           ...(profile.role === 'admin' ? {
             customerId: Number(order.customer_id) || 0, customerReference,
             customerBilling: order.billing || {},
@@ -134,6 +137,7 @@ export default async function handler(request, response) {
           agentEarning,
           items: (order.line_items || []).map((line) => ({
             productId: Number(line.product_id) || 0,
+            sku: String(line.sku || ''),
             name: line.name || 'Prodotto',
             quantity: Number(line.quantity) || 0,
             total: Number(line.total) || 0,
