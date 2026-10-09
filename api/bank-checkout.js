@@ -13,12 +13,27 @@ export function validateItems(items) {
     ids.add(productId); return { product_id: productId, quantity };
   });
 }
-export function address(value, email) {
+export function address(value, email, label = 'Dati di consegna') {
   const fields = { firstName:'first_name', lastName:'last_name', company:'company', address1:'address_1', address2:'address_2', postcode:'postcode', city:'city', state:'state', country:'country', phone:'phone' };
   const result = Object.fromEntries(Object.entries(fields).map(([k,v]) => [v, String(value?.[k] || '').trim().slice(0,160)]));
   result.email = email; result.country = result.country.toUpperCase(); result.state = result.state.toUpperCase();
-  if (['first_name','last_name','address_1','postcode','city','state','phone'].some(k=>!result[k]) || result.country !== 'IT' || !/^\d{5}$/.test(result.postcode) || !/^[A-Z]{2}$/.test(result.state)) throw new Error('Completa nome, indirizzo, CAP, provincia e telefono');
+  const required = {first_name:'nome',last_name:'cognome',address_1:'indirizzo',postcode:'CAP',city:'città',state:'provincia',phone:'telefono'};
+  const missing = Object.entries(required).filter(([key])=>!result[key]).map(([,name])=>name);
+  if (missing.length) throw new Error(`Completa ${label.toLowerCase()}: ${missing.join(', ')}.`);
+  if (result.country !== 'IT') throw new Error(`${label}: seleziona Italia come paese.`);
+  if (!/^\d{5}$/.test(result.postcode)) throw new Error(`${label}: il CAP deve contenere 5 cifre.`);
+  if (!/^[A-Z]{2}$/.test(result.state)) throw new Error(`${label}: inserisci la sigla della provincia (es. TO).`);
   return result;
+}
+export function billingAddress(customer, enteredAddress, email) {
+  if (!customer) return address(enteredAddress,email,'Dati di fatturazione');
+  // Saved business details remain authoritative. Complete only missing contact
+  // names from the values the agent has explicitly entered in the cart.
+  const saved = customer.address || {};
+  return address({...saved,
+    firstName: String(saved.firstName || '').trim() || enteredAddress?.firstName,
+    lastName: String(saved.lastName || '').trim() || enteredAddress?.lastName,
+  },email,'Dati di fatturazione');
 }
 export function payment(value = 'bacs') {
   if (!['bacs','bacs_30_60_90','bacs_30_60','bacs_30','bacs_60','bacs_90','cod','bacs_advance'].includes(value)) throw new Error('Modalità di pagamento non valida');
@@ -56,7 +71,7 @@ export default async function handler(req,res) {
         if (!customer) return reply(res,403,{error:'Cliente non associato al tuo profilo'});
       }
       const email = customer?.email || user.email;
-      const billing = address(customer?.address || req.body.address,email);
+      const billing = billingAddress(customer,req.body.address,email);
       const shipping = address(req.body.address,email);
       payload = {...payload, role:profile.role, actor_name:profile.full_name || '', entity_id:profile.network_entity_id || '', actor_email:user.email,
         customer_reference:customerId, customer_email:email, billing, shipping,
@@ -78,7 +93,7 @@ export default async function handler(req,res) {
     if (action === 'quote' && data.checkoutVersion !== 2) return reply(res,503,{error:'Aggiornamento checkout in corso. Riprova tra poco.'});
     return reply(res,200,data);
   } catch(error) {
-    const expected = /Carrello|Quantità|Completa|Verifica codice|Modalità/.test(error.message);
+    const expected = /Carrello|Quantità|Completa|Dati di fatturazione|Dati di consegna|Verifica codice|Modalità/.test(error.message);
     return reply(res,expected ? 400 : 502,{error:expected ? error.message : 'Conferma non disponibile. Riprova: la stessa richiesta non crea un secondo ordine.'});
   }
 }

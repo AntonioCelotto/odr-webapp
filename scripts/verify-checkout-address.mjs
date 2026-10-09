@@ -1,0 +1,15 @@
+import assert from 'node:assert/strict';
+import { address, billingAddress } from '../api/bank-checkout.js';
+const saved={firstName:'pippo',lastName:'',company:'pippo lippo',address1:'Via Stampatori, 21',postcode:'10122',city:'Torino',state:'TO',country:'IT',phone:'3939428089'};
+const entered={...saved,lastName:'lippo',address1:'Indirizzo consegna diverso'};
+const result=billingAddress({address:saved},entered,'davideactis@gmail.com');
+assert.equal(result.last_name,'lippo');assert.equal(result.first_name,'pippo');
+assert.equal(result.address_1,saved.address1);assert.equal(result.company,saved.company);
+assert.equal(result.email,'davideactis@gmail.com');
+assert.equal(address(entered,'customer@example.test').address_1,entered.address1);
+assert.equal(billingAddress({address:{...saved,lastName:'Cognome salvato'}},entered,'customer@example.test').last_name,'Cognome salvato');
+assert.throws(()=>billingAddress({address:saved},{...entered,lastName:''},'customer@example.test'),/fatturazione: cognome/);
+assert.throws(()=>address({...entered,postcode:'123'},'customer@example.test'),/CAP deve contenere 5 cifre/);
+assert.throws(()=>address({...entered,state:'Torino'},'customer@example.test'),/sigla della provincia/);
+assert.throws(()=>billingAddress({address:{...saved,phone:''}},entered,'customer@example.test'),/fatturazione: telefono/);
+console.log('Checkout: missing saved surname uses entered surname, existing billing preserved, delivery separate, exact validation errors OK');
