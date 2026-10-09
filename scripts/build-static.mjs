@@ -5,6 +5,7 @@ const requiredFiles = ['index.html', 'styles.css', 'app.js', 'odr-logo.svg', 'au
 const outputDirectories = ['dist', 'public'];
 const appRouteFiles = [
   'dashboard',
+  'corsi-da-assegnare',
   'gestione-store-locator',
   'shop',
   'profilo',

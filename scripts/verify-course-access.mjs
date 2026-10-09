@@ -1,0 +1,11 @@
+import assert from 'node:assert/strict';
+import handler,{orderSupports} from '../api/academy-access.js';
+const order={status:'processing',line_items:[{product_id:4,quantity:2},{product_id:4,quantity:1}]};
+assert(orderSupports(order,4,3,1));assert(!orderSupports(order,4,4,1));assert(!orderSupports(order,99,1,1));
+for(const status of ['refunded','cancelled','failed','pending','on-hold'])assert(!orderSupports({...order,status},4,1,1));
+assert(orderSupports(order,4,6,2));
+let status,body;
+const res={status(s){status=s;return this},setHeader(){},json(v){body=v}};
+await handler({method:'GET',headers:{}},res);assert.equal(status,401);assert(body.error);
+await handler({method:'POST',headers:{}},res);assert.equal(status,405);
+console.log('Course access: confirmed order, product/quantity limits, invalid order denial, authentication and method guards OK');
