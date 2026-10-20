@@ -11,3 +11,6 @@
 .locator-map .locator-pin-shape svg{display:block;width:44px;height:58px}
 .locator-map .marker-cluster{background:rgba(160,24,133,.20)}
 .locator-map .marker-cluster div{background:#a01885;color:#fff}
+
+/* Richer map palette without affecting controls, markers or map data. */
+.locator-map .leaflet-tile-pane{filter:saturate(1.85) contrast(1.12) brightness(1.03)}
