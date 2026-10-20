@@ -7,10 +7,10 @@
 
 /* ODR locator: map pins inspired by supplied reference. */
 .locator-map .locator-pin{background:transparent;border:0;filter:drop-shadow(0 3px 3px rgba(45,15,48,.24))}
-.locator-map .locator-pin-shape{display:block;width:44px;height:58px;background:none;border:0;box-shadow:none}
-.locator-map .locator-pin-shape svg{display:block;width:44px;height:58px}
+.locator-map .locator-pin-shape{display:block;width:29px;height:38px;background:none;border:0;box-shadow:none}
+.locator-map .locator-pin-shape svg{display:block;width:29px;height:38px}
 .locator-map .marker-cluster{background:rgba(160,24,133,.20)}
 .locator-map .marker-cluster div{background:#a01885;color:#fff}
 
 /* Richer map palette without affecting controls, markers or map data. */
-.locator-map .leaflet-tile-pane{filter:saturate(1.85) contrast(1.12) brightness(1.03)}
+.locator-map .leaflet-tile-pane{filter:saturate(2.15) contrast(1.14)}
