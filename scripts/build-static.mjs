@@ -1,5 +1,7 @@
 import { build } from 'esbuild';
-import { cp, mkdir, rm, copyFile, readFile, writeFile } from 'node:fs/promises';
+import { cp, mkdir, rm, copyFile, readFile, writeFile, mkdtemp } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 
 const requiredFiles = ['index.html', 'styles.css', 'app.js', 'odr-logo.svg', 'auth-molecule-bg.webp', 'italy-map.svg'];
 const outputDirectories = ['dist', 'public'];
@@ -40,6 +42,10 @@ for (const expected of ['/styles.css', '/app.js', '/odr-logo.svg']) {
   }
 }
 
+// Keep the user-supplied campaign landing assets before rebuilding public/.
+const guideStaging = await mkdtemp(join(tmpdir(), 'odr-guida-'));
+await cp('public/guida', join(guideStaging, 'guida'), { recursive: true });
+
 for (const directory of outputDirectories) {
   await rm(directory, { recursive: true, force: true });
   await mkdir(directory, { recursive: true });
@@ -49,6 +55,7 @@ for (const directory of outputDirectories) {
   }
   await copyFile('manifest.webmanifest', `${directory}/manifest.webmanifest`);
   await cp('app-icons', `${directory}/app-icons`, { recursive: true });
+  await cp(join(guideStaging, 'guida'), `${directory}/guida`, { recursive: true });
   await cp('product-images', `${directory}/product-images`, { recursive: true });
   for (const route of appRouteFiles) {
     await copyFile('index.html', `${directory}/${route}.html`);
