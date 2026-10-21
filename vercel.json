@@ -3,6 +3,10 @@
   "trailingSlash": false,
   "rewrites": [
     {
+      "source": "/guida",
+      "destination": "/guida/index.html"
+    },
+    {
       "source": "/store-locator",
       "destination": "/store-locator.html"
     },
