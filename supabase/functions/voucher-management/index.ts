@@ -14,14 +14,20 @@ Deno.serve(async req=>{
  async function notify(v:any){
   if(!v.recipient_email||v.email_status==='sent')return;
   let status='failed';
-  try{const r=await fetch('https://www.appita318.it/api/voucher-email',{method:'POST',headers:{Authorization:auth,'Content-Type':'application/json'},body:JSON.stringify({voucherId:v.id}),signal:AbortSignal.timeout(15000)});status=r.ok?'sent':r.status===503?'not_configured':'failed';}catch{}
-  const {error}=await db.from('odr_course_vouchers').update({email_status:status,...(status==='sent'?{email_sent_at:new Date().toISOString()}: {})}).eq('id',v.id);if(error)throw error;
+  try{const r=await fetch('https://www.appita318.it/api/voucher-email',{method:'POST',headers:{Authorization:auth,'Content-Type':'application/json'},body:JSON.stringify({voucherId:v.id}),signal:AbortSignal.timeout(40000)});if(r.status===409){warning='Invio email già in corso. Ricarica tra poco.';return;}status=r.ok?'sent':r.status===503?'not_configured':'failed';}catch{}
+  let update=db.from('odr_course_vouchers').update({email_status:status,...(status==='sent'?{email_sent_at:new Date().toISOString()}: {})}).eq('id',v.id);if(status!=='sent')update=update.neq('email_status','sent');const {error}=await update;if(error)throw error;
   if(status!=='sent')warning='Voucher salvato. Email non inviata: usa WhatsApp o riprova dopo la configurazione del mittente.';
   await db.from('odr_course_audit').insert({actor_id:p.id,action:'voucher-email',details:{voucherId:v.id,status}});
  }
  try{
   if(req.method==='POST'){
    const b=await req.json();
+   if(['email-ticket','email-result'].includes(b.action)){
+    const secret=req.headers.get('x-voucher-mail-secret')||'';
+    const hash=Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256',new TextEncoder().encode(secret)))).map(v=>v.toString(16).padStart(2,'0')).join('');
+    const {data:config,error}=await db.from('odr_voucher_mail_config').select('secret_hash').eq('id',true).single();
+    if(error||!secret||hash!==config?.secret_hash)return json({error:'Operazione riservata al servizio email'},403);
+   }
    if(b.action==='sync'){
     const r=await fetch('https://www.appita318.it/api/orders',{headers:{Authorization:auth},signal:AbortSignal.timeout(50000)});if(!r.ok)throw Error('Ordini non disponibili');
     const {orders}=await r.json();
@@ -41,10 +47,22 @@ Deno.serve(async req=>{
     let pending=db.from('odr_course_vouchers').select('*').eq('active',true).eq('email_status','pending').limit(20);if(!admin)pending=pending.eq('owner_id',p.id);
     const {data:queued}=await pending;for(const v of queued||[])await notify(v);
     await db.from('odr_course_audit').insert({actor_id:p.id,action:'voucher-sync',details:{orders:plan.result.length,unmatched:plan.unmatched}});
-   }else if(['assign','send-email'].includes(b.action)){
+   }else if(['assign','send-email','email-ticket','email-result'].includes(b.action)){
     const {data:v}=await db.from('odr_course_vouchers').select('*').eq('id',b.voucherId).maybeSingle();
     if(!v||(!admin&&v.owner_id!==p.id))return json({error:'Voucher non disponibile'},403);
     if(!v.active)return json({error:'Voucher non attivo'},409);
+    if(b.action==='email-ticket'){
+     if(v.email_status==='sent')return json({alreadySent:true});
+     if(!v.assigned_at||!v.recipient_email)return json({error:'Email destinatario mancante'},400);
+     const ticket=crypto.randomUUID(),cutoff=new Date(Date.now()-120000).toISOString();
+     const {data:reserved,error}=await db.from('odr_course_vouchers').update({email_attempt_id:ticket,email_attempt_at:new Date().toISOString()}).eq('id',v.id).neq('email_status','sent').or(`email_attempt_at.is.null,email_attempt_at.lt.${cutoff}`).select('*');if(error)throw error;
+     if(!reserved?.length)return json({error:'Invio già in corso o appena tentato. Riprova tra due minuti.'},409);
+     return json({ticket,voucher:reserved[0]});
+    }
+    if(b.action==='email-result'){
+     const {data:updated,error}=await db.from('odr_course_vouchers').update({email_status:b.sent===true?'sent':'failed',...(b.sent===true?{email_sent_at:new Date().toISOString()}: {})}).eq('id',v.id).eq('email_attempt_id',String(b.ticket||'')).select('id');if(error)throw error;if(!updated?.length)return json({error:'Tentativo email non valido'},409);
+     return json({recorded:true});
+    }
     if(b.action==='assign'){
      if(v.assigned_at||v.activated_by)return json({error:'Voucher già assegnato'},409);
      let recipient;try{recipient={recipient_name:String(b.name||'').trim().slice(0,200),...contact(b.email,b.phone)};}catch(e){return json({error:String((e as Error).message)},400);}
