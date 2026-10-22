@@ -43,16 +43,16 @@ try {
  const root={innerHTML:'',textContent:'',querySelector:()=>null,querySelectorAll:()=>[]};
  globalThis.fetch=async input=>{
   const url=String(input);
-  const value=url.includes('/course-management')?{courses,accesses:[accesses[0]],owners:[],mappings:[],canManage:false}
+  const value=url.includes('/voucher-management')?{vouchers:[],owners:[],history:[],canManage:false}:url.includes('/course-management')?{courses,accesses:[accesses[0]],owners:[],mappings:[],canManage:false}
    :url==='/api/orders'?{orders:projected}:url==='/api/catalog'?{products:[]}:{customers:[]};
   return new Response(JSON.stringify(value));
  };
  const supabase={supabaseUrl:'https://supabase.example.test',supabaseKey:'test-public',auth:{getSession:async()=>({data:{session:{access_token:'mocked-test-token'}}})}};
  await mountCourseAssignments(root,supabase,{});
  assert(root.innerHTML.includes('ODR-101'));assert(root.innerHTML.includes('Centro Anna'));assert(root.innerHTML.includes('Video da collegare'));
- assert(root.innerHTML.includes('Codice ordine'));assert(root.innerHTML.includes('Cliente dell’ordine'));
+ assert(root.innerHTML.includes('Ordine'));assert(root.innerHTML.includes('Cliente'));
  // A failed request must be reported, never rendered as an empty, successful search.
- globalThis.fetch=async input=>new Response(JSON.stringify(String(input)==='/api/orders'?{error:'Ordini non disponibili'}:{courses:[],accesses:[],owners:[],mappings:[],canManage:false}),{status:String(input)==='/api/orders'?502:200});
+ globalThis.fetch=async input=>new Response(JSON.stringify(String(input)==='/api/orders'?{error:'Ordini non disponibili'}:{courses:[],accesses:[],owners:[],mappings:[],canManage:false,vouchers:[],history:[]}),{status:String(input)==='/api/orders'?502:200});
  await mountCourseAssignments(root,supabase,{});assert(root.innerHTML.includes('role="alert"'));assert(!root.innerHTML.includes('0 ordini trovati'));
  console.log('ODR1 recognition, legacy orders, order batches, customer data, scoped API visibility, anonymous denial and UI error states OK');
 } finally {globalThis.fetch=originalFetch;for(const k of Object.keys(process.env))if(!(k in savedEnv))delete process.env[k];Object.assign(process.env,savedEnv);}

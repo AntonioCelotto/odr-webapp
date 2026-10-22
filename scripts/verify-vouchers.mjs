@@ -1,0 +1,14 @@
+import assert from 'node:assert/strict';
+import {contact,plans} from '../supabase/functions/voucher-management/model.js';
+const owners=[{id:'agent',email:'agent@example.test'},{id:'distributor',email:'distributor@example.test'}];
+const mappings=[{product_id:1,course_id:'a'},{product_id:1,course_id:'b'}];
+const courses=[{id:'a',active:true,title:'Corso A',material_ids:['v1']},{id:'b',active:true,title:'Corso B',material_ids:['v2']}];
+const order={id:'WC-1',number:'123',status:'processing',customer:'Centro',customerEmail:'center@example.test',agentProfileId:'agent',items:[{productId:1,quantity:3,name:'Promo'}]};
+let p=plans([order],mappings,courses,owners,'agent',false);assert.equal(p.result.length,1);assert.equal(p.result[0].quantity,3);assert.deepEqual(p.result[0].materialIds,['v1','v2']);assert.equal(p.result[0].recipient.recipient_email,'center@example.test');
+p=plans([{...order,agentProfileId:'',customerEmail:'distributor@example.test'}],mappings,courses,owners,'distributor',false);assert.equal(p.result[0].direct,false);assert.equal(p.result[0].recipient,null);
+assert.equal(plans([order],mappings,courses,owners,'distributor',false).result.length,0);
+assert.equal(plans([{...order,status:'cancelled'}],mappings,courses,owners,'agent',false).result[0].eligible,false);
+assert.deepEqual(contact('','333 1234567'),{recipient_email:null,recipient_phone:'+393331234567'});
+assert.throws(()=>contact('',''));assert.throws(()=>contact('broken-email',''));assert.throws(()=>contact('','123'));
+assert.equal(plans([{...order,items:[{productId:99,quantity:1}]}],mappings,courses,owners,'agent',false).result.length,0);
+console.log('Voucher planning: one code per package, multi-course snapshots, direct assignment, distributor stock, ownership scope, cancellations and contacts OK');

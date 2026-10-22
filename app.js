@@ -54,7 +54,7 @@ const moduleLabels = {
 };
 
 const appRoutes = {
-  'course-assignments': { path: '/corsi-da-assegnare', title: 'Corsi da assegnare' },
+  'course-assignments': { path: '/corsi-da-assegnare', title: 'Voucher corsi di formazione' },
   dashboard: { path: '/dashboard', title: 'Dashboard' },
   shop: { path: '/shop', title: 'Shop' },
   'store-management': { path: '/gestione-store-locator', title: 'Store Locator' },

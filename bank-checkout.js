@@ -62,7 +62,7 @@ export function createBankCheckout({ api, userId, clearCart, escape, money }) {
     try {
       const order = await api({action:'confirm',quoteToken:token});
       localStorage.removeItem(storageKey()); clearCart(); quote = null;
-      shell(`<h3>Ordine ${escape(String(order.orderNumber || order.orderId))} ricevuto</h3><p>Totale Ordine (compreso IVA): <strong>${money(order.total)}</strong></p>${paymentSchedule(order)}${order.paymentOption==='cod' ? '' : bank(order.bank)}`,'<button type="button" data-close>Chiudi</button>');
+      shell(`<h3>Ordine ${escape(String(order.orderNumber || order.orderId))} ricevuto</h3><p>Totale Ordine (compreso IVA): <strong>${money(order.total)}</strong></p>${order.voucherWarning ? '<p role="status">'+escape(order.voucherWarning)+'</p>' : ''}${paymentSchedule(order)}${order.paymentOption==='cod' ? '' : bank(order.bank)}`,'<button type="button" data-close>Chiudi</button>');
     } catch(e) {
       if (['quote_expired','quote_changed'].includes(e.code)) {
         localStorage.removeItem(storageKey());

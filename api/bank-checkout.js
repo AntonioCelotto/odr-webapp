@@ -91,6 +91,16 @@ export default async function handler(req,res) {
     const data = await result.json().catch(()=>({}));
     if (!result.ok) return reply(res,result.status >= 500 ? 502 : result.status,{error:data.message || 'Checkout non disponibile',code:data.code});
     if (action === 'quote' && data.checkoutVersion !== 2) return reply(res,503,{error:'Aggiornamento checkout in corso. Riprova tra poco.'});
+    if (action === 'confirm' && (data.orderId || data.orderNumber)) {
+      try {
+        const sync = await fetch(`${process.env.SUPABASE_URL}/functions/v1/voucher-management`, {
+          method:'POST', headers:{...headers,'Content-Type':'application/json'},
+          body:JSON.stringify({action:'sync',orderId:data.orderId || data.orderNumber}), signal:AbortSignal.timeout(55000),
+        });
+        const vouchers = await sync.json();
+        if (!sync.ok || vouchers.warning) data.voucherWarning = vouchers.warning || 'Ordine ricevuto. Aggiorna i voucher nella sezione Voucher corsi di formazione.';
+      } catch { data.voucherWarning = 'Ordine ricevuto. Aggiorna i voucher nella sezione Voucher corsi di formazione.'; }
+    }
     return reply(res,200,data);
   } catch(error) {
     const expected = /Carrello|Quantità|Completa|Dati di fatturazione|Dati di consegna|Verifica codice|Modalità/.test(error.message);
