@@ -1,5 +1,6 @@
 import {createClient} from 'npm:@supabase/supabase-js@2.110.8';
 import {contact,plans} from './model.js';
+import {prepareAlignment,AlignmentError} from './manual.js';
 const cors={'Access-Control-Allow-Origin':'*','Access-Control-Allow-Headers':'authorization,apikey,content-type,x-client-info','Access-Control-Allow-Methods':'GET,POST,OPTIONS','Content-Type':'application/json','Cache-Control':'no-store'};
 Deno.serve(async req=>{
  const json=(v:unknown,s=200)=>new Response(JSON.stringify(v),{status:s,headers:cors});
@@ -10,7 +11,7 @@ Deno.serve(async req=>{
  const {data:{user},error}=await db.auth.getUser(token);if(error||!user)return json({error:'Sessione non valida'},401);
  const {data:p}=await db.from('profiles').select('id,role,approval_status').eq('id',user.id).single();
  if(!p||p.approval_status!=='approved'||!['admin','agent','distributor'].includes(p.role))return json({error:'Profilo non autorizzato'},403);
- const admin=p.role==='admin';let warning='';
+ const admin=p.role==='admin';let warning='',alignment:any=null;
  async function notify(v:any){
   if(!v.recipient_email||v.email_status==='sent')return;
   let status='failed';
@@ -28,23 +29,47 @@ Deno.serve(async req=>{
     const {data:config,error}=await db.from('odr_voucher_mail_config').select('secret_hash').eq('id',true).single();
     if(error||!secret||hash!==config?.secret_hash)return json({error:'Operazione riservata al servizio email'},403);
    }
-   if(b.action==='sync'){
+   if(['sync','align'].includes(b.action)){
+    const manual=b.action==='align';
+    if(manual&&!admin)return json({error:'Allineamento riservato agli amministratori'},403);
     const r=await fetch('https://www.appita318.it/api/orders',{headers:{Authorization:auth},signal:AbortSignal.timeout(50000)});if(!r.ok)throw Error('Ordini non disponibili');
     const {orders}=await r.json();
     const [{data:courses,error:ce},{data:mappings,error:me},{data:owners,error:oe}]=await Promise.all([db.from('odr_courses').select('*'),db.from('odr_course_products').select('*'),db.from('profiles').select('id,email,role,network_entity_id').eq('approval_status','approved').in('role',['agent','distributor','admin'])]);if(ce||me||oe)throw ce||me||oe;
     const emails=new Map();for(let page=1;page<=100;page++){const {data,error}=await db.auth.admin.listUsers({page,perPage:1000});if(error)throw error;for(const u of data.users)emails.set(u.id,u.email?.toLowerCase());if(data.users.length<1000)break;}
     const canonicalOwners=(owners||[]).map(o=>({...o,email:emails.get(o.id)||''}));
-    const plan=plans((orders||[]).filter((o:any)=>!b.orderId||o.id===b.orderId||o.id==='WC-'+b.orderId),mappings||[],courses||[],canonicalOwners,p.id,admin);
+    let plan,previous:any[]=[];
+    if(manual){
+     const source='WC-'+String(b.orderId||'').replace(/^WC-/,'');
+     const {data:before,error}=await db.from('odr_course_vouchers').select('id,owner_id,assigned_at,activated_at,activated_by').eq('source_order',source);if(error)throw error;previous=before||[];
+     const prepared=prepareAlignment({admin,orderId:b.orderId,ownerId:b.ownerId,orders:orders||[],owners:canonicalOwners,mappings:mappings||[],courses:courses||[],existing:previous});
+     // Persist the same association used by the Orders page so future syncs agree.
+     const saved=await fetch('https://www.appita318.it/api/orders',{method:'PATCH',headers:{Authorization:auth,'Content-Type':'application/json'},body:JSON.stringify({orderId:prepared.order.id.replace(/^WC-/,''),mode:'manual',entityId:prepared.owner.network_entity_id}),signal:AbortSignal.timeout(30000)});
+     if(!saved.ok)throw new AlignmentError('Associazione non salvata. Nessun voucher è stato modificato. Riprova.',502);
+     plan=prepared.plan;
+     alignment={orderId:prepared.order.id,orderNumber:String(prepared.order.number||prepared.order.id),ownerId:prepared.owner.id,created:0,existing:previous.length,total:0};
+    }else plan=plans((orders||[]).filter((o:any)=>!b.orderId||o.id===b.orderId||o.id==='WC-'+b.orderId),mappings||[],courses||[],canonicalOwners,p.id,admin);
     if(plan.unmatched.length)warning=`${plan.unmatched.length} ordini richiedono un controllo del referente o del recapito del centro.`;
     for(const x of plan.result){
      // One code per physical promotional package. The included courses are snapshotted.
      if(x.eligible&&x.quantity){const rows=Array.from({length:x.quantity},(_,i)=>({owner_id:x.owner.id,source_order:x.order.id,order_number:String(x.order.number||x.order.id),product_id:x.productId,slot:i+1,package_name:x.packageName,course_titles:x.titles,material_ids:x.materialIds,customer_name:x.order.customerCompany||x.order.customer||'',customer_email:x.order.customerEmail||'',...(x.recipient?{...x.recipient,assigned_by:x.owner.id,assigned_at:new Date().toISOString(),email_status:x.recipient.recipient_email?'pending':'not_required'}:{})}));
       const {error}=await db.from('odr_course_vouchers').upsert(rows,{onConflict:'source_order,product_id,slot',ignoreDuplicates:true});if(error)throw error;
      }
+     if(manual){
+      const changes:any={owner_id:x.owner.id,customer_name:x.order.customerCompany||x.order.customer||'',customer_email:x.order.customerEmail||'',...(x.recipient?{...x.recipient,assigned_by:x.owner.id,assigned_at:new Date().toISOString(),email_status:x.recipient.recipient_email?'pending':'not_required'}:{})};
+      // Compare-and-set: never move or overwrite a voucher claimed meanwhile.
+      const {error}=await db.from('odr_course_vouchers').update(changes).eq('source_order',x.order.id).eq('product_id',x.productId).lte('slot',x.quantity).is('assigned_at',null).is('activated_by',null).is('activated_at',null);if(error)throw error;
+     }
      const {error:up}=await db.from('odr_course_vouchers').update({active:x.eligible}).eq('source_order',x.order.id).eq('product_id',x.productId).lte('slot',x.quantity);if(up)throw up;
      const {error:down}=await db.from('odr_course_vouchers').update({active:false}).eq('source_order',x.order.id).eq('product_id',x.productId).gt('slot',x.quantity);if(down)throw down;
     }
+    if(manual){
+     const {data:after,error}=await db.from('odr_course_vouchers').select('id,owner_id,assigned_at,activated_by').eq('source_order',alignment.orderId);if(error)throw error;
+     const oldIds=new Set(previous.map(v=>v.id));alignment.created=(after||[]).filter(v=>!oldIds.has(v.id)).length;alignment.total=(after||[]).length;
+     const {error:auditError}=await db.from('odr_course_audit').insert({actor_id:p.id,action:'voucher-manual-alignment',details:{...alignment,previousOwners:[...new Set(previous.map(v=>v.owner_id))],unmatched:plan.unmatched}});if(auditError)throw auditError;
+     if(plan.unmatched.length)warning='Voucher allineati. Controlla i recapiti del centro per l’assegnazione automatica.';
+    }
     let pending=db.from('odr_course_vouchers').select('*').eq('active',true).eq('email_status','pending').limit(20);if(!admin)pending=pending.eq('owner_id',p.id);
+    if(manual)pending=pending.eq('source_order',alignment.orderId);
     const {data:queued}=await pending;for(const v of queued||[])await notify(v);
     await db.from('odr_course_audit').insert({actor_id:p.id,action:'voucher-sync',details:{orders:plan.result.length,unmatched:plan.unmatched}});
    }else if(['assign','send-email','email-ticket','email-result'].includes(b.action)){
@@ -76,7 +101,8 @@ Deno.serve(async req=>{
   const {data:vouchers,error}=await q;if(error)throw error;
   const ids=[...new Set((vouchers||[]).map(v=>v.owner_id))];
   const {data:owners}=ids.length?await db.from('profiles').select('id,full_name,email,role').in('id',ids):{data:[]};
+  const {data:alignmentOwners,error:aoe}=admin?await db.from('profiles').select('id,full_name,role,network_entity_id').eq('approval_status','approved').in('role',['agent','distributor']).not('network_entity_id','is',null):{data:[],error:null};if(aoe)throw aoe;
   let history:any[]=[];if(admin){const {data}=await db.from('odr_course_audit').select('id,actor_id,action,details,created_at').like('action','voucher-%').order('created_at',{ascending:false}).limit(500);history=data||[];}
-  return json({vouchers:vouchers||[],owners:owners||[],history,canManage:admin,warning});
- }catch(e){console.error('voucher-management',String(e));return json({error:'Gestione voucher non disponibile. Riprova tra poco.'},503);}
+  return json({vouchers:vouchers||[],owners:owners||[],history,canManage:admin,warning,alignmentOwners:alignmentOwners||[],alignment});
+ }catch(e){if(e instanceof AlignmentError)return json({error:e.message},e.status);console.error('voucher-management',String(e));return json({error:'Gestione voucher non disponibile. Riprova tra poco.'},503);}
 });

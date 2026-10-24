@@ -3522,3 +3522,12 @@ body .shop-cart-thumb img {
 #register-code-error { color: #b42318; font-weight: 700; margin: 0; }
 
 .course-kpis{display:flex;gap:16px;margin-bottom:20px}.course-kpis .panel{flex:1}.course-kpis strong{display:block;font-size:30px}.course-kpis span{display:block}.course-form{display:grid;gap:16px;margin:20px 0}.course-form label{display:grid;gap:6px}.course-form input,.course-form select{width:100%;padding:12px;border:1px solid #ddd;border-radius:10px;font:inherit}.course-form .course-checkbox{display:flex;align-items:center;gap:10px}.course-checkbox input{width:auto}.course-form fieldset{max-height:260px;overflow:auto;border:1px solid #ddd;border-radius:10px;padding:16px}.course-table-scroll{overflow:auto}.course-table-scroll table{width:100%;text-align:left;border-collapse:collapse}.course-table-scroll td,.course-table-scroll th{padding:12px;border-bottom:1px solid #ddd}.course-settings{margin-top:24px}.course-settings summary{cursor:pointer;font-weight:700}.course-settings-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:24px}.course-settings .course-form{align-content:start}.course-settings p{font-size:14px}.course-table-scroll button{margin:4px}@media(max-width:900px){.course-settings-grid{grid-template-columns:1fr}.course-kpis{flex-wrap:wrap}}
+
+.course-alignment-dialog{width:min(660px,calc(100vw - 24px));max-height:calc(100dvh - 32px);box-sizing:border-box;overflow:auto;border:1px solid var(--line);border-radius:22px;padding:24px;background:#fffdfa;color:var(--ink)}
+.course-alignment-dialog::backdrop{background:#23162e99}
+.course-alignment-heading{display:flex;align-items:center;justify-content:space-between;gap:16px}
+.course-alignment-heading h2{margin:0}.course-alignment-dialog .course-form input,.course-alignment-dialog .course-form select{box-sizing:border-box;min-width:0}
+.course-voucher-codes{list-style:none;padding:0;display:grid;gap:10px;max-height:240px;overflow:auto}
+.course-voucher-codes li{padding:12px;background:#f3eff5;border-radius:10px;display:grid;gap:4px;overflow-wrap:anywhere}
+.course-voucher-codes code{white-space:normal}.course-voucher-codes span{font-size:13px}
+@media(max-width:600px){.course-alignment-dialog{padding:18px}.course-alignment-heading{align-items:flex-start}.course-alignment-heading h2{font-size:22px}.course-alignment-dialog .course-form button{width:100%}}
