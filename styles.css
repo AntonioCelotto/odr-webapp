@@ -3531,3 +3531,5 @@ body .shop-cart-thumb img {
 .course-voucher-codes li{padding:12px;background:#f3eff5;border-radius:10px;display:grid;gap:4px;overflow-wrap:anywhere}
 .course-voucher-codes code{white-space:normal}.course-voucher-codes span{font-size:13px}
 @media(max-width:600px){.course-alignment-dialog{padding:18px}.course-alignment-heading{align-items:flex-start}.course-alignment-heading h2{font-size:22px}.course-alignment-dialog .course-form button{width:100%}}
+
+.course-alignment-picker{display:grid;gap:6px;margin:20px 0}.course-alignment-picker select{width:100%;min-width:0;box-sizing:border-box;padding:12px;border:1px solid var(--line);border-radius:10px;font:inherit}

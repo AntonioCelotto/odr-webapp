@@ -1,6 +1,6 @@
 const esc=value=>String(value??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 
-export function openManualAlignment({order,vouchers,owners,statusLabel,onSubmit}){
+export function openManualAlignment({order,vouchers,owners,statusLabel,onSubmit,orders=[]}){
  document.querySelector('[data-manual-alignment-dialog]')?.remove();
  const dialog=document.createElement('dialog'),returnFocus=document.activeElement;
  dialog.className='course-alignment-dialog';dialog.dataset.manualAlignmentDialog='';
@@ -13,6 +13,7 @@ export function openManualAlignment({order,vouchers,owners,statusLabel,onSubmit}
  const status=v=>!v.active?'Non attivo':v.activated_at?'Attivato':v.assigned_at?'Assegnato':'Da assegnare';
  const list=rows=>rows.length?`<ul class="course-voucher-codes">${rows.map(v=>`<li><code>${esc(v.code)}</code><span>${esc(status(v))}</span></li>`).join('')}</ul>`:'<p>Nessun voucher ancora generato.</p>';
  dialog.innerHTML=`<div class="course-alignment-heading"><h2 id="course-alignment-title">Allinea manualmente</h2><button type="button" class="secondary-action" data-close>Chiudi</button></div>
+ ${orders.length?`<label class="course-alignment-picker">Ordine da allineare<select data-pick-order>${orders.map(o=>`<option value="${esc(o.id)}" ${o.id===order.id?'selected':''}>${esc(o.number||o.id)} · ${esc(o.customerCompany||o.customer)}</option>`).join('')}</select></label>`:''}
  <p><strong>Ordine ${esc(order.number||order.id)}</strong><br>${esc(order.customerCompany||order.customer)}<br>${esc(order.customerEmail||'')}</p>
  <p>Stato: <strong>${esc(statusLabel(order.status))}</strong> · Pacchetti acquistati: <strong>${quantity}</strong></p>
  <h3>Voucher dell’ordine</h3><div data-existing-vouchers>${list(existing)}</div>
@@ -22,6 +23,7 @@ export function openManualAlignment({order,vouchers,owners,statusLabel,onSubmit}
  <p class="auth-message" role="status" data-alignment-message></p>
  <button class="primary-action" ${!eligible||!choices.length?'disabled':''}>Conferma allineamento</button></form>`;
  let submitting=false;
+ const picker=dialog.querySelector('[data-pick-order]');if(picker)picker.onchange=()=>{const selected=orders.find(o=>o.id===picker.value);if(selected)openManualAlignment({order:selected,orders,vouchers,owners,statusLabel,onSubmit});};
  dialog.querySelector('[data-close]').onclick=()=>dialog.close();
  dialog.addEventListener('cancel',e=>{if(submitting)e.preventDefault();});
  dialog.addEventListener('close',()=>{dialog.remove();if(returnFocus?.isConnected)returnFocus.focus();},{once:true});
