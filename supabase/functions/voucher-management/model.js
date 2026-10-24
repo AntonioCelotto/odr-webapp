@@ -14,9 +14,15 @@ export function plans(orders,mappings,courses,owners,actor,admin){
   if(!relevant.length)continue;
   const explicit=owners.find(o=>o.id===order.agentProfileId);
   const buyers=owners.filter(o=>o.email&&o.email.toLowerCase()===String(order.customerEmail||'').toLowerCase());
-  const owner=explicit||(buyers.length===1?buyers[0]:null);
+  // Use the same resolved commercial association displayed in Orders, including
+  // corrections saved by administrators; never guess from names or parent networks.
+  const entityId=order.assignmentEntityId||order.agentEntityId||order.distributorEntityId;
+  const associated=entityId?owners.filter(o=>o.network_entity_id===entityId):[];
+  const linked=associated.length===1?associated[0]:null;
+  const buyer=buyers.length===1?buyers[0]:null;
+  const owner=order.assignmentConflict?null:order.assignmentMode==='manual'?linked:explicit||buyer||linked;
   if(!owner||(!admin&&owner.id!==actor)){unmatched.push(order.id);continue;}
-  const direct=!!explicit && String(owner.email||'').toLowerCase()!==String(order.customerEmail||'').toLowerCase();
+  const direct=(owner===explicit||owner.role==='agent') && String(owner.email||'').toLowerCase()!==String(order.customerEmail||'').toLowerCase();
   for(const productId of new Set(relevant.map(l=>Number(l.productId)))){
    const lines=relevant.filter(l=>Number(l.productId)===productId),quantity=lines.reduce((s,l)=>s+Math.max(0,Math.floor(Number(l.quantity)||0)),0);
    if(quantity>1000)throw Error('Quantità voucher troppo elevata');

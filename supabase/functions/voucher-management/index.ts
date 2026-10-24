@@ -31,7 +31,7 @@ Deno.serve(async req=>{
    if(b.action==='sync'){
     const r=await fetch('https://www.appita318.it/api/orders',{headers:{Authorization:auth},signal:AbortSignal.timeout(50000)});if(!r.ok)throw Error('Ordini non disponibili');
     const {orders}=await r.json();
-    const [{data:courses,error:ce},{data:mappings,error:me},{data:owners,error:oe}]=await Promise.all([db.from('odr_courses').select('*'),db.from('odr_course_products').select('*'),db.from('profiles').select('id,email,role').eq('approval_status','approved').in('role',['agent','distributor','admin'])]);if(ce||me||oe)throw ce||me||oe;
+    const [{data:courses,error:ce},{data:mappings,error:me},{data:owners,error:oe}]=await Promise.all([db.from('odr_courses').select('*'),db.from('odr_course_products').select('*'),db.from('profiles').select('id,email,role,network_entity_id').eq('approval_status','approved').in('role',['agent','distributor','admin'])]);if(ce||me||oe)throw ce||me||oe;
     const emails=new Map();for(let page=1;page<=100;page++){const {data,error}=await db.auth.admin.listUsers({page,perPage:1000});if(error)throw error;for(const u of data.users)emails.set(u.id,u.email?.toLowerCase());if(data.users.length<1000)break;}
     const canonicalOwners=(owners||[]).map(o=>({...o,email:emails.get(o.id)||''}));
     const plan=plans((orders||[]).filter((o:any)=>!b.orderId||o.id===b.orderId||o.id==='WC-'+b.orderId),mappings||[],courses||[],canonicalOwners,p.id,admin);

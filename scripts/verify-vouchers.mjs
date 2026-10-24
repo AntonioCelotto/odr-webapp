@@ -12,3 +12,13 @@ assert.deepEqual(contact('','333 1234567'),{recipient_email:null,recipient_phone
 assert.throws(()=>contact('',''));assert.throws(()=>contact('broken-email',''));assert.throws(()=>contact('','123'));
 assert.equal(plans([{...order,items:[{productId:99,quantity:1}]}],mappings,courses,owners,'agent',false).result.length,0);
 console.log('Voucher planning: one code per package, multi-course snapshots, direct assignment, distributor stock, ownership scope, cancellations and contacts OK');
+
+const linkedOwners=[{id:'agent',email:'agent@example.test',role:'agent',network_entity_id:'network-agent'},{id:'distributor',email:'distributor@example.test',role:'distributor',network_entity_id:'network-distributor'}];
+const legacy={...order,agentProfileId:'',agentEntityId:'network-agent',assignmentEntityId:'network-agent',assignmentMode:'automatic'};
+p=plans([legacy],mappings,courses,linkedOwners,'admin',true);assert.equal(p.result[0].owner.id,'agent');assert.equal(p.result[0].recipient.recipient_email,'center@example.test');
+p=plans([{...legacy,assignmentMode:'manual',assignmentEntityId:'network-distributor',agentProfileId:'agent'}],mappings,courses,linkedOwners,'admin',true);assert.equal(p.result[0].owner.id,'distributor');assert.equal(p.result[0].direct,false);
+assert.equal(plans([{...legacy,assignmentConflict:true}],mappings,courses,linkedOwners,'admin',true).result.length,0);
+assert.equal(plans([{...legacy,assignmentMode:'manual',assignmentEntityId:'missing'}],mappings,courses,linkedOwners,'admin',true).result.length,0);
+assert.equal(plans([legacy],mappings,courses,[...linkedOwners,{...linkedOwners[0],id:'duplicate'}],'admin',true).result.length,0);
+assert.equal(plans([legacy],mappings,courses,linkedOwners,'distributor',false).result.length,0);
+console.log('Corrected order associations, manual precedence, ambiguous owners, distributor stock and role isolation OK');
