@@ -2324,6 +2324,7 @@ function setAuthMode(mode) {
   byId('show-register').disabled = resetActive;
   byId('login-form').classList.toggle('hidden', !loginActive);
   byId('register-form').classList.toggle('hidden', !registerActive);
+  byId('register-success').classList.add('hidden');
   updateRegistrationCodeRequirement();
   byId('password-recovery-form').classList.toggle('hidden', !recoveryActive);
   byId('password-reset-form').classList.toggle('hidden', !resetActive);
@@ -2331,7 +2332,7 @@ function setAuthMode(mode) {
     loginActive
       ? ''
       : registerActive
-        ? 'Il cliente viene attivato subito; gli altri profili richiedono approvazione.'
+        ? 'Il profilo Utenti viene attivato subito; gli altri profili richiedono approvazione.'
         : '',
   );
 }
@@ -2896,24 +2897,31 @@ async function submitLogin(event) {
 }
 
 function updateRegistrationCodeRequirement() {
-  const required = byId('register-role').value === 'patient';
-  byId('register-code').required = required;
+  const role = byId('register-role').value;
+  const isUser = role === 'patient';
+  byId('register-code-wrap').classList.toggle('hidden', !isUser);
+  byId('register-code').required = isUser;
   byId('register-code').setCustomValidity('');
-  setRegistrationCodeError('');
-  byId('register-code-hint').textContent = required
-    ? 'Obbligatorio per il profilo Cliente.'
-    : 'Facoltativo per il tuo profilo.';
+  const company = role === 'center' || role === 'distributor';
+  byId('register-company-wrap').classList.toggle('hidden', !company);
+  byId('register-company').required = company;
+  byId('register-approval-note').textContent = isUser
+    ? 'Il profilo Utenti viene attivato subito.'
+    : 'Il profilo richiede l’approvazione dell’amministratore prima dell’accesso.';
 }
-
 function setRegistrationCodeError(message) {
   const input = byId('register-code');
-  const error = byId('register-code-error');
   input.setAttribute('aria-invalid', message ? 'true' : 'false');
-  error.textContent = message;
-  error.classList.toggle('hidden', !message);
-
+  if (message) showAuthMessage(message, 'error');
 }
-
+function showRegistrationComplete(role, email) {
+  byId('register-form').classList.add('hidden');
+  byId('register-success').classList.remove('hidden');
+  byId('register-success-message').textContent = role === 'patient'
+    ? `Profilo creato per ${email}. Vai alla sezione Accedi.`
+    : `Richiesta ricevuta per ${email}. L'accesso sarà disponibile dopo l'approvazione dell'amministratore.`;
+  showAuthMessage('');
+}
 async function checkRegistrationCode() {
   const code = byId('register-code').value.trim();
   if (byId('register-role').value !== 'patient' || !code) return false;
@@ -2943,6 +2951,7 @@ async function submitRegistration(event) {
     return;
   }
 
+  if (!byId('register-phone').value.trim()) { showAuthMessage('Inserisci il cellulare.', 'error'); return; }
   const requestedRole = byId('register-role').value;
   const code = byId('register-code').value.trim();
   if (requestedRole === 'patient' && !code) {
@@ -2974,6 +2983,7 @@ async function submitRegistration(event) {
         phone: byId('register-phone').value.trim(),
         requested_role: requestedRole,
         validation_code: code,
+        company_name: byId('register-company').value.trim(),
       },
     },
   }).catch(() => ({ data: null, error: { message: 'Connessione non riuscita. Riprova tra poco.' } }));
@@ -2989,24 +2999,14 @@ async function submitRegistration(event) {
     return;
   }
 
-  if (!data.session) {
-    setAuthMode('login');
-    byId('login-email').value = email;
-    showAuthMessage(
-      `Profilo creato per ${email}. Se hai richiesto un profilo professionale, dovrà essere approvato dall’amministratore prima dell’accesso.`,
-      'success',
-    );
+  if (!data?.user || (Array.isArray(data.user.identities) && data.user.identities.length === 0)) {
+    showAuthMessage('Questo indirizzo potrebbe essere già registrato. Prova ad accedere o recupera la password.', 'error');
     setAuthBusy(false);
     return;
   }
-
-  try {
-    await enterAuthenticatedApp(data.user);
-  } catch {
-    showAuthMessage('Profilo creato, ma la scheda ODR non è ancora disponibile.', 'error');
-  } finally {
-    setAuthBusy(false);
-  }
+  if (data.session) await supabase.auth.signOut();
+  showRegistrationComplete(requestedRole, email);
+  setAuthBusy(false);
 }
 
 function passwordRecoveryErrorMessage(error) {
