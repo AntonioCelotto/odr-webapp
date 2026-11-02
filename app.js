@@ -3377,6 +3377,7 @@ function openCustomerTurnover(index) {
 
 byId('show-login').addEventListener('click', () => setAuthMode('login'));
 byId('show-register').addEventListener('click', () => setAuthMode('register'));
+byId('register-success-login').addEventListener('click', () => { const email=byId('register-email').value.trim(); setAuthMode('login'); byId('login-email').value=email; });
 byId('show-password-recovery').addEventListener('click', () => {
   byId('recovery-email').value = byId('login-email').value.trim();
   setAuthMode('recovery');
