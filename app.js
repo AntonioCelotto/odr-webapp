@@ -2905,6 +2905,8 @@ function updateRegistrationCodeRequirement() {
   const company = role === 'center' || role === 'distributor';
   byId('register-company-wrap').classList.toggle('hidden', !company);
   byId('register-company').required = company;
+  byId('register-competence-wrap').classList.toggle('hidden', role !== 'center');
+  byId('register-competence').required = role === 'center';
   byId('register-approval-note').textContent = isUser
     ? 'Il profilo Utenti viene attivato subito.'
     : 'Il profilo richiede l’approvazione dell’amministratore prima dell’accesso.';
@@ -2984,6 +2986,7 @@ async function submitRegistration(event) {
         requested_role: requestedRole,
         validation_code: code,
         company_name: byId('register-company').value.trim(),
+        requested_competence_name: requestedRole === 'center' ? byId('register-competence').value.trim() : '',
       },
     },
   }).catch(() => ({ data: null, error: { message: 'Connessione non riuscita. Riprova tra poco.' } }));
