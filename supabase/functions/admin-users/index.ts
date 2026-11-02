@@ -49,7 +49,7 @@ Deno.serve(async (request) => {
   if (request.method === "GET") {
     const { data: users, error } = await admin
       .from("profiles")
-      .select("id,email,full_name,phone,role,requested_role,requested_parent_entity_id,approval_status,wordpress_user_id,created_at")
+      .select("id,email,full_name,phone,role,requested_role,requested_parent_entity_id,company_name,requested_competence_name,approval_status,wordpress_user_id,created_at")
       .order("created_at", { ascending: false });
     if (error) return json({ error: error.message }, 500);
 
@@ -66,20 +66,21 @@ Deno.serve(async (request) => {
     const { data: requestedParents, error: parentsError } = parentIds.length
       ? await admin.from("network_entities").select("id,name").in("id", parentIds)
       : { data: [], error: null };
-    return wordpressError
+    const {data:competenceOptions,error:competenceError}=await admin.from("network_entities").select("id,name,type").in("type",["agent","distributor"]).eq("active",true).order("name");
+    return competenceError ? json({error:competenceError.message},500) : wordpressError
       ? json({ error: wordpressError.message }, 500)
       : adminError
       ? json({ error: adminError.message }, 500)
       : parentsError
       ? json({ error: parentsError.message }, 500)
-      : json({ users, wordpressAccounts, adminMembers, requestedParents, canManageAdmins });
+      : json({ users, wordpressAccounts, adminMembers, requestedParents, competenceOptions, canManageAdmins });
   }
 
   if (request.method !== "POST") {
     return json({ error: "Metodo non supportato." }, 405);
   }
 
-  const { userId, action, role: requestedNewRole } = await request.json();
+  const { userId, action, role: requestedNewRole, competenceEntityId } = await request.json();
   const allowedActions = ["approve", "reject", "promote_admin", "remove_admin", "change_role", "delete_user"];
   if (typeof userId !== "string" || !allowedActions.includes(action)) {
     return json({ error: "Dati non validi." }, 400);
@@ -90,7 +91,7 @@ Deno.serve(async (request) => {
 
   const { data: profile, error: profileError } = await admin
     .from("profiles")
-    .select("requested_role,requested_parent_entity_id,email,full_name,phone,role")
+    .select("requested_role,requested_parent_entity_id,company_name,requested_competence_name,email,full_name,phone,role")
     .eq("id", userId)
     .single();
   if (profileError || !profile) {
@@ -214,6 +215,13 @@ Deno.serve(async (request) => {
     .ilike("email", profile.email)
     .maybeSingle();
 
+  let selectedCompetence = null;
+  if (action === "approve" && profile.requested_role === "center") {
+    if (typeof competenceEntityId !== "string" || !competenceEntityId) return json({error:"Seleziona l'agente o distributore di competenza."},400);
+    const {data:chosen,error:chosenError}=await admin.from("network_entities").select("id,type,name").eq("id",competenceEntityId).eq("active",true).maybeSingle();
+    if(chosenError || !chosen || !["agent","distributor"].includes(chosen.type)) return json({error:"Referente non valido."},400);
+    selectedCompetence=chosen;
+  }
   const approved = action === "approve";
   const role = approved
     ? (wordpressAccount?.mapped_role || profile.requested_role)
@@ -244,6 +252,20 @@ Deno.serve(async (request) => {
         }).select("id").single();
         if (created.error) return json({ error: created.error.message }, 500);
         networkEntity = created.data;
+      }
+    }
+    if (approved && role === "center" && selectedCompetence) {
+      if (!networkEntity) {
+        const created=await admin.from("network_entities").insert({
+          type:"center",name:profile.company_name||profile.full_name||profile.email,
+          email:profile.email,phone:profile.phone||null,parent_id:selectedCompetence.id,
+          active:true,import_source:"Registrazione Istituti Estetici"
+        }).select("id").single();
+        if(created.error) return json({error:created.error.message},500);
+        networkEntity=created.data;
+      } else {
+        const {error:linkError}=await admin.from("network_entities").update({parent_id:selectedCompetence.id,updated_at:new Date().toISOString()}).eq("id",networkEntity.id);
+        if(linkError)return json({error:linkError.message},500);
       }
     }
     networkEntityId = networkEntity?.id || null;
