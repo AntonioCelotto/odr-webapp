@@ -50,12 +50,13 @@
             Tipo di profilo
             <select id="register-role">
               <option value="patient">Utenti</option>
-              <option value="center">Centri</option>
+              <option value="center">Istituti Estetici</option>
               <option value="agent">Agente</option>
               <option value="distributor">Distributore</option>
             </select>
             <small>Se l’email è già presente su WordPress, verrà utilizzato il ruolo associato.</small>
           </label>
+          <label id="register-code-wrap">Codice Convenzione / Ente / Associazione<input id="register-code" autocomplete="off" /></label>
  
           <div class="form-grid">
             <label>
@@ -69,7 +70,7 @@
           </div>
           <label id="register-company-wrap" class="hidden">Ragione sociale / Nome attività<input id="register-company" autocomplete="organization" /></label>
           <label>
-            Email
+            Email *
             <input id="register-email" type="email" autocomplete="email" required />
             <small>Se hai già un account WordPress, usa esattamente la stessa email.</small>
           </label>
@@ -79,13 +80,10 @@
             <small>È indipendente dalla password WordPress e servirà per entrare nell’app.</small>
           </label>
           <label>
-            Telefono
-            <input id="register-phone" autocomplete="tel" />
+            Cellulare *
+            <input id="register-phone" type="tel" autocomplete="tel" required />
           </label>
-         <label>
-            Codice cliente
-            <input id="register-code" autocomplete="off" />
-          </label>
+         
           <small id="register-approval-note">I profili professionali richiedono approvazione dell’amministratore.</small>
           <label class="check-row">
             <input id="register-privacy" type="checkbox" checked />
@@ -93,6 +91,7 @@
           </label>
           <button class="primary-action full" type="submit">Crea profilo</button>
         </form>
+        <div id="register-success" class="auth-form hidden" role="status" aria-live="polite"><h2>Registrazione effettuata!</h2><p id="register-success-message"></p><button id="register-success-login" class="primary-action full" type="button">Vai alla sezione Accedi</button></div>
 
         <form id="password-recovery-form" class="auth-form hidden">
           <div class="auth-form-heading">
