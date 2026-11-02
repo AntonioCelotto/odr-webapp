@@ -2738,7 +2738,7 @@ async function registerOrderPayment(button) {
   await loadWooOrders();
 }
 
-function renderAdminUsers(users, wordpressAccounts = [], adminMembers = [], canManageAdmins = false) {
+function renderAdminUsers(users, wordpressAccounts = [], adminMembers = [], canManageAdmins = false, competenceOptions = []) {
   const normalizeAccountEmail = value => String(value || '').trim().toLowerCase();
   const registeredEmails = new Set(users.map(user => normalizeAccountEmail(user.email)));
   const unregisteredAccounts = wordpressAccounts.filter(account => !account.connected_profile_id && !registeredEmails.has(normalizeAccountEmail(account.email)));
@@ -2749,8 +2749,9 @@ function renderAdminUsers(users, wordpressAccounts = [], adminMembers = [], canM
         normalizeAccountEmail(account.email) === normalizeAccountEmail(user.email)
       ));
       const approvalRole = wordpressAccount?.mapped_role || user.requested_role;
+      const competenceChoice = approvalRole === 'center' ? `<div><small>Ragione sociale: ${escapeHtml(user.company_name || 'Non indicata')}</small><br/><small>Referente richiesto: ${escapeHtml(user.requested_competence_name || 'Non indicato')}</small><br/><select data-competence-for="${user.id}"><option value="">Seleziona agente / distributore</option>${competenceOptions.map(item => `<option value="${escapeHtml(item.id)}">${escapeHtml(item.type === 'agent' ? 'Agente' : 'Distributore')} — ${escapeHtml(item.name)}</option>`).join('')}</select></div>` : '';
       const pendingActions = ['pending', 'rejected'].includes(user.approval_status) ? `
-        <button class="approve" type="button" data-user-action="approve" data-user-id="${user.id}">
+        ${competenceChoice}<button class="approve" type="button" data-user-action="approve" data-user-id="${user.id}">
           ${user.approval_status === 'rejected' ? 'Riattiva e associa come' : 'Approva come'} ${escapeHtml(roleLabels[approvalRole] || approvalRole)}
         </button>
 ${user.approval_status === 'pending' ? `<button class="reject" type="button" data-user-action="reject" data-user-id="${user.id}">Rifiuta</button>` : ''}
@@ -2835,6 +2836,7 @@ async function loadAdminUsers() {
     data.wordpressAccounts || [],
     data.adminMembers || [],
     Boolean(data.canManageAdmins),
+    data.competenceOptions || [],
   );
 }
 
@@ -2849,6 +2851,11 @@ async function handleAdminUserAction(event) {
     if (!confirmed) return;
   }
   const roleSelect = byId('admin-users-table').querySelector(`[data-user-role="${button.dataset.userId}"]`);
+  const competenceSelect = byId('admin-users-table').querySelector(`[data-competence-for="${button.dataset.userId}"]`);
+  if (action === 'approve' && competenceSelect && !competenceSelect.value) {
+    byId('admin-users-message').textContent = 'Seleziona un agente o distributore prima di approvare l’Istituto Estetico.';
+    return;
+  }
   button.disabled = true;
   byId('admin-users-message').textContent = 'Aggiornamento del profilo...';
   const { data, error } = await supabase.functions.invoke('admin-users', {
@@ -2857,6 +2864,7 @@ async function handleAdminUserAction(event) {
       userId: button.dataset.userId,
       action,
       role: action === 'change_role' ? roleSelect?.value : undefined,
+      competenceEntityId: action === 'approve' ? competenceSelect?.value : undefined,
     },
   });
   if (error || data?.error) {
