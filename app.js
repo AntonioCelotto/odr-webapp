@@ -3394,6 +3394,14 @@ byId('show-password-recovery').addEventListener('click', () => {
   setAuthMode('recovery');
 });
 byId('back-to-login').addEventListener('click', () => setAuthMode('login'));
+byId('toggle-register-password').addEventListener('click', () => {
+  const input = byId('register-password');
+  const button = byId('toggle-register-password');
+  const visible = input.type === 'password';
+  input.type = visible ? 'text' : 'password';
+  button.setAttribute('aria-label', visible ? 'Nascondi password' : 'Mostra password');
+  button.setAttribute('aria-pressed', String(visible));
+});
 byId('toggle-login-password').addEventListener('click', () => {
   const input = byId('login-password');
   const button = byId('toggle-login-password');
